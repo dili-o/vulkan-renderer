@@ -1,0 +1,62 @@
+cmake_minimum_required (VERSION 3.13)
+
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
+
+project(HelixEngine)
+set(CMAKE_CXX_STANDARD 17)
+
+file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp" 
+    "vendor/imgui/*.cpp" 
+    "vendor/imgui/*.h"
+    "vendor/enkiTS/TaskScheduler.cpp"
+    "vendor/tlsf.c"
+)
+
+add_executable (HelixEngine ${SOURCE_LIST} )
+
+find_package(Vulkan REQUIRED)
+
+if(Vulkan_FOUND)
+    # Include Vulkan headers
+    target_include_directories(HelixEngine PUBLIC ${Vulkan_INCLUDE_DIRS})
+
+    # Link against Vulkan library using keyword signature
+    target_link_libraries(HelixEngine PUBLIC ${Vulkan_LIBRARIES})
+else()
+    message(FATAL_ERROR "Vulkan SDK not found. Make sure it is installed and accessible.")
+endif()
+
+target_include_directories(HelixEngine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(HelixEngine PUBLIC "src/")
+target_include_directories(HelixEngine PUBLIC "vendor/")
+target_include_directories(HelixEngine PUBLIC "vendor/spdlog/include")
+target_include_directories(HelixEngine PUBLIC "vendor/SDL2/include")
+
+# Vendor Libraries
+# Find SDL2 library
+find_library(SDL2_LIBRARY SDL2 PATHS ${CMAKE_CURRENT_SOURCE_DIR}/vendor/SDL2/lib/x64)
+
+if(SDL2_LIBRARY)
+    target_link_libraries(HelixEngine PRIVATE ${SDL2_LIBRARY})
+else()
+    message(FATAL_ERROR "SDL2 library not found. Make sure it is installed and accessible.")
+endif()
+
+# Set output directory to bin/Engine
+set_target_properties(HelixEngine PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/HelixEngine"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/HelixEngine"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/HelixEngine"
+)
+
+
+target_compile_definitions(HelixEngine PRIVATE
+    $<$<CONFIG:DEBUG>:_DEBUG>
+    CONSOLE
+    UNICODE
+    _UNICODE
+    VEXPORT
+    _CRT_SECURE_NO_WARNINGS
+    HELIX_SHADER_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/"
+)
