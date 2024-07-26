@@ -194,6 +194,7 @@ int main(int argc, char** argv)
     vec3s look = vec3s{ 0.0f, 0.0, -1.0f };
     vec3s right = vec3s{ 1.0f, 0.0, 0.0f };
     vec3s up = vec3s{ 0.0f, 1.0f, 0.0f };
+    vec3s light_position = vec3s{ 0.0f, 5.0f, 0.0f };
 
     f32 yaw = 0.0f;
     f32 pitch = 0.0f;
@@ -239,6 +240,8 @@ int main(int argc, char** argv)
 
             if (ImGui::Begin("Raptor ImGui")) {
                 ImGui::InputFloat("Model scale", &model_scale, 0.001f);
+                ImGui::InputFloat3("Light position", light_position.raw);
+                ImGui::InputFloat3("Camera position", eye.raw);
                 ImGui::InputFloat("Light range", &light_range);
                 ImGui::InputFloat("Light intensity", &light_intensity);
             }
@@ -322,11 +325,7 @@ int main(int argc, char** argv)
                 uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
                 uniform_data.light_intensity = light_intensity;
                 uniform_data.light_range = light_range;
-                static auto startTime = std::chrono::high_resolution_clock::now();
-                auto currentTime = std::chrono::high_resolution_clock::now();
-                float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-                vec4s lightPos{ 0.0f, (sin(time * 0.5f) * 5.0f) + 6.0f, 0.f, 1.0f};
-                uniform_data.light_position = lightPos;
+                uniform_data.light_position = vec4s{ light_position.x, light_position.y, light_position.z, 1.0f };
 
                 memcpy(cb_data, &uniform_data, sizeof(UniformData));
 
@@ -338,7 +337,7 @@ int main(int argc, char** argv)
                 light_uniform_data.texture_index = scene->light_texture.handle.index;
                 
                 mat4s model = glms_mat4_identity();
-                model = glms_translate(model, vec3s{ lightPos.x, lightPos.y, lightPos.z });
+                model = glms_translate(model, light_position);
                 light_uniform_data.model = model;
                 
                 memcpy(light_cb_data, &light_uniform_data, sizeof(LightUniform));
