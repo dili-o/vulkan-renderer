@@ -414,7 +414,8 @@ namespace Helix {
             if (buffer_name == nullptr) {
                 buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
             }
-
+            // TODO: Identify resources (buffers in this case) that have the same name
+            buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
             BufferResource* br = renderer->create_buffer(flags, ResourceUsageType::Immutable, buffer.byte_length, buffer_data, buffer_name);
             HASSERT(br != nullptr);
 

@@ -186,7 +186,8 @@ namespace Helix {
 
             if (creation.name != nullptr) {
                 resource_cache.buffers.insert(hash_calculate(creation.name), buffer);
-            }
+            }else
+                HWARN("Buffer Creation does not have a name");
 
             buffer->references = 1;
 
@@ -211,7 +212,8 @@ namespace Helix {
 
             if (creation.name != nullptr) {
                 resource_cache.textures.insert(hash_calculate(creation.name), texture);
-            }
+            }else
+                HWARN("Texture Creation does not have a name");
 
             texture->references = 1;
 
@@ -247,7 +249,8 @@ namespace Helix {
 
             if (creation.name != nullptr) {
                 resource_cache.samplers.insert(hash_calculate(creation.name), sampler);
-            }
+            }else
+                HWARN("Sampler Creation does not have a name");
 
             sampler->references = 1;
 
@@ -307,7 +310,8 @@ namespace Helix {
 
             if (creation.name != nullptr) {
                 resource_cache.materials.insert(hash_calculate(creation.name), material);
-            }
+            }else
+                HWARN("Material Creation does not have a name");
 
             material->references = 1;
 
