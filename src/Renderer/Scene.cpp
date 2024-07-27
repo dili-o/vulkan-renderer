@@ -317,7 +317,7 @@ namespace Helix {
         for (u32 sampler_index = 0; sampler_index < gltf_scene.samplers_count; ++sampler_index) {
             glTF::Sampler& sampler = gltf_scene.samplers[sampler_index];
 
-            char* sampler_name = name_buffer.append_use_f("sampler_%u", sampler_index);
+            char* sampler_name = renderer->resource_name_buffer.append_use_f("sampler_%u", sampler_index);
 
             SamplerCreation creation;
             switch (sampler.min_filter) {
@@ -412,10 +412,10 @@ namespace Helix {
 
             char* buffer_name = buffer.name.data;
             if (buffer_name == nullptr) {
-                buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
+                //buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
             }
             // TODO: Identify resources (buffers in this case) that have the same name
-            buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
+            buffer_name = renderer->resource_name_buffer.append_use_f("buffer_%u", buffer_index);
             BufferResource* br = renderer->create_buffer(flags, ResourceUsageType::Immutable, buffer.byte_length, buffer_data, buffer_name);
             HASSERT(br != nullptr);
 
@@ -486,9 +486,9 @@ namespace Helix {
 
             pipeline_creation.name = "Light";
 
-            FileReadResult vs_code = file_read_binary("D:/HelixEngine/Engine/assets/shaders/lights/light.vert.glsl", scratch_allocator);
-            FileReadResult fs_code = file_read_binary("D:/HelixEngine/Engine/assets/shaders/lights/light.frag.glsl", scratch_allocator);
-            FileReadResult gs_code = file_read_binary("D:/HelixEngine/Engine/assets/shaders/lights/light.geom.glsl", scratch_allocator);
+            FileReadResult vs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.vert.glsl", scratch_allocator);
+            FileReadResult fs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.frag.glsl", scratch_allocator);
+            FileReadResult gs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.geom.glsl", scratch_allocator);
 
             pipeline_creation.vertex_input.reset();
             pipeline_creation.render_pass = renderer->gpu->get_swapchain_output();

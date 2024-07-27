@@ -228,6 +228,8 @@ int main(int argc, char** argv)
         // This MUST be AFTER os messages!
         imgui->new_frame();
 
+        //ImGui::ShowDemoWindow();
+
         const i64 current_tick = Time::now();
         f32 delta_time = (f32)Time::delta_seconds(begin_frame_tick, current_tick);
         begin_frame_tick = current_tick;
@@ -255,6 +257,8 @@ int main(int argc, char** argv)
 
             }
             ImGui::End();
+
+            renderer.imgui_resources_draw();
 
             //MemoryService::instance()->imgui_draw();
         }

@@ -10,6 +10,8 @@
 #include "vendor/imgui/stb_image.h"
 #include "vendor/imgui/imgui.h"
 
+#include <vulkan/vk_enum_string_helper.h>
+
 namespace Helix {
     // MaterialCreation ///////////////////////////////////////////////////////
     MaterialCreation& MaterialCreation::reset() {
@@ -111,6 +113,8 @@ namespace Helix {
         Program::k_type_hash = hash_calculate(Program::k_type);
         Material::k_type_hash = hash_calculate(Material::k_type);
 
+
+        resource_name_buffer.init(hkilo(100), creation.allocator);
         //s_texture_loader.renderer = this;
         //s_buffer_loader.renderer = this;
         //s_sampler_loader.renderer = this;
@@ -121,6 +125,7 @@ namespace Helix {
 
     void Renderer::shutdown() {
 
+        resource_name_buffer.shutdown();
         resource_cache.shutdown(this);
         gpu_heap_budgets.shutdown();
 
@@ -162,6 +167,67 @@ namespace Helix {
         }
 
         ImGui::Text("GPU Memory Total: %lluMB", total_memory_used / (1024 * 1024));
+    }
+
+    void Renderer::imgui_resources_draw()
+    {
+        if (ImGui::Begin("Renderer Resources")) {
+            
+            if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None)) {
+                if (ImGui::BeginTabItem("Textures"))
+                {
+                    Helix::FlatHashMapIterator it = resource_cache.textures.iterator_begin();
+                    while (it.is_valid()) {
+                        Helix::TextureResource* texture = resource_cache.textures.get(it);
+                        if (ImGui::TreeNode(texture->name)) {
+                            ImGui::Text("Width: %d", texture->desc.width);
+                            ImGui::Text("Height: %d", texture->desc.height);
+                            ImGui::Text("Format: %s", string_VkFormat(texture->desc.format));
+                            ImGui::TreePop();
+                        }
+                        resource_cache.textures.iterator_advance(it);
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Buffers"))
+                {
+                    Helix::FlatHashMapIterator it = resource_cache.buffers.iterator_begin();
+                    while (it.is_valid()) {
+                        Helix::BufferResource* buffer = resource_cache.buffers.get(it);
+                        if (ImGui::TreeNode(buffer->desc.name)) {
+                            ImGui::Text("Size: %d", buffer->desc.size);
+                            //ImGui::Text("Type: %s", string_VkBufferUsageFlags(buffer->desc.type_flags));
+                            ImGui::TreePop();
+                        }
+                        resource_cache.buffers.iterator_advance(it);
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Samplers"))
+                {
+                    Helix::FlatHashMapIterator it = resource_cache.samplers.iterator_begin();
+                    while (it.is_valid()) {
+                        Helix::SamplerResource* sampler = resource_cache.samplers.get(it);
+                        if (ImGui::TreeNode(sampler->desc.name)) {
+                            
+                            ImGui::Text("Min Filter: %s", string_VkFilter(sampler->desc.min_filter));
+                            ImGui::Text("Mag Filter: %s", string_VkFilter(sampler->desc.mag_filter));
+                            ImGui::Text("Mip Filter: %s", string_VkSamplerMipmapMode(sampler->desc.mip_filter));
+
+                            ImGui::Text("Address Mode U: %s", string_VkSamplerAddressMode(sampler->desc.address_mode_u));
+                            ImGui::Text("Address Mode V: %s", string_VkSamplerAddressMode(sampler->desc.address_mode_v));
+                            ImGui::Text("Address Mode W: %s", string_VkSamplerAddressMode(sampler->desc.address_mode_w));
+                            ImGui::TreePop();
+                        }
+                        resource_cache.samplers.iterator_advance(it);
+                    }
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::End();
+        
     }
 
     void Renderer::resize_swapchain(u32 width_, u32 height_) {

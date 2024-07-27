@@ -154,6 +154,7 @@ namespace Helix {
         void                        end_frame();
 
         void                        imgui_draw();
+        void                        imgui_resources_draw();
 
         void                        resize_swapchain(u32 width, u32 height);
 
@@ -206,6 +207,8 @@ namespace Helix {
 
         TextureHandle               textures_to_update[128];
         u32                         num_textures_to_update = 0;
+
+        StringBuffer                resource_name_buffer;
 
         Helix::GpuDevice* gpu;
 
