@@ -64,6 +64,8 @@ namespace Helix {
         vec4s           metallic_roughness_occlusion_factor;
         vec3s           scale;
 
+        mat4s           model;
+
         f32             alpha_cutoff;
         u32             flags;
 

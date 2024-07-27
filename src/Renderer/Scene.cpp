@@ -7,8 +7,24 @@
 #include "Core/Time.hpp"
 #include "Core/File.hpp"
 #include <vendor/tracy/tracy/Tracy.hpp>
+#include <cglm/struct/quat.h>
 
 namespace Helix {
+    struct Transform {
+
+        vec3s                   scale;
+        versors                 rotation;
+        vec3s                   translation;
+
+        //void                    reset();
+        mat4s                   calculate_matrix() const {
+            const mat4s translation_matrix = glms_translate_make(translation);
+            const mat4s scale_matrix = glms_scale_make(scale);
+            const mat4s local_matrix = glms_mat4_mul(glms_mat4_mul(translation_matrix, glms_quat_mat4(rotation)), scale_matrix);
+            return local_matrix;
+        }
+    }; // struct Transform
+
     // Helper functions //////////////////////////////////////////////////
 
     // Light
@@ -161,9 +177,10 @@ namespace Helix {
         mesh_data.flags = mesh_draw.flags;
 
         // NOTE: for left-handed systems (as defined in cglm) need to invert positive and negative Z.
-        mat4s model = glms_scale_make(glms_vec3_mul(mesh_draw.scale, { global_scale, global_scale, -global_scale }));
-        mesh_data.m = model;
-        mesh_data.inverseM = glms_mat4_inv(glms_mat4_transpose(model));
+        mat4s scale_mat = glms_scale_make({ -global_scale, global_scale, global_scale });
+        //mesh_data.m = model;
+        mesh_data.m = glms_mat4_mul(mesh_draw.model, scale_mat);
+        mesh_data.inverseM = glms_mat4_inv(glms_mat4_transpose(mesh_data.m));
     }
 
     static void draw_mesh(Renderer& renderer, CommandBuffer* gpu_commands, MeshDraw& mesh_draw) {
@@ -412,8 +429,6 @@ namespace Helix {
 
         i64 end_creating_buffers = Time::now();
 
-        // This is not needed anymore, free all temp memory after.
-        //resource_name_buffer.shutdown();
         temp_allocator->free_marker(temp_allocator_initial_marker);
 
         // Init runtime meshes
@@ -570,16 +585,79 @@ namespace Helix {
 
         glTF::Scene& root_gltf_scene = gltf_scene.scenes[gltf_scene.scene];
 
+        Array<i32> node_parents;
+        node_parents.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+
+        Array<u32> node_stack;
+        node_stack.init(scratch_allocator, 8);
+
+        Array<mat4s> node_matrix;
+        node_matrix.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+
         for (u32 node_index = 0; node_index < root_gltf_scene.nodes_count; ++node_index) {
-            glTF::Node& node = gltf_scene.nodes[root_gltf_scene.nodes[node_index]];
+            u32 root_node = root_gltf_scene.nodes[node_index];
+            node_parents[root_node] = -1;
+            node_stack.push(root_node);
+        }
+
+        while (node_stack.size) {
+            u32 node_index = node_stack.back();
+            node_stack.pop();
+            glTF::Node& node = gltf_scene.nodes[node_index];
+
+            mat4s local_matrix{ };
+
+            if (node.matrix_count) {
+                memcpy(&local_matrix, node.matrix, sizeof(mat4s));
+            }
+            else {
+                vec3s node_scale{ 1.0f, 1.0f, 1.0f };
+                if (node.scale_count != 0) {
+                    HASSERT(node.scale_count == 3);
+                    node_scale = vec3s{ node.scale[0], node.scale[1], node.scale[2] };
+                }
+
+                vec3s node_translation{ 0.f, 0.f, 0.f };
+                if (node.translation_count) {
+                    HASSERT(node.translation_count == 3);
+                    node_translation = vec3s{ node.translation[0], node.translation[1], node.translation[2] };
+                }
+
+                // Rotation is written as a plain quaternion
+                versors node_rotation = glms_quat_identity();
+                if (node.rotation_count) {
+                    HASSERT(node.rotation_count == 4);
+                    node_rotation = glms_quat_init(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]);
+                }
+
+                Transform transform;
+                transform.translation = node_translation;
+                transform.scale = node_scale;
+                transform.rotation = node_rotation;
+
+                local_matrix = transform.calculate_matrix();
+            }
+
+            node_matrix[node_index] = local_matrix;
+
+            for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
+                u32 child_node_index = node.children[child_index];
+                node_parents[child_node_index] = node_index;
+                node_stack.push(child_node_index);
+            }
 
             if (node.mesh == glTF::INVALID_INT_VALUE) {
                 continue;
             }
 
-            // TODO(marco): children
-
             glTF::Mesh& mesh = gltf_scene.meshes[node.mesh];
+
+            mat4s final_matrix = local_matrix;
+            i32 node_parent = node_parents[node_index];
+            while (node_parent != -1) {
+                final_matrix = glms_mat4_mul(node_matrix[node_parent], final_matrix);
+                node_parent = node_parents[node_parent];
+            }
 
             vec3s node_scale{ 1.0f, 1.0f, 1.0f };
             if (node.scale_count != 0) {
@@ -592,6 +670,8 @@ namespace Helix {
                 MeshDraw mesh_draw{ };
 
                 mesh_draw.scale = node_scale;
+
+                mesh_draw.model = final_matrix;
 
                 glTF::MeshPrimitive& mesh_primitive = mesh.primitives[primitive_index];
 

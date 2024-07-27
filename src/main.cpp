@@ -240,7 +240,7 @@ int main(int argc, char** argv)
 
             if (ImGui::Begin("Raptor ImGui")) {
                 ImGui::InputFloat("Model scale", &model_scale, 0.001f);
-                ImGui::InputFloat3("Light position", light_position.raw);
+                ImGui::SliderFloat3("Light position", light_position.raw, -30.f, 30.f);
                 ImGui::InputFloat3("Camera position", eye.raw);
                 ImGui::InputFloat("Light range", &light_range);
                 ImGui::InputFloat("Light intensity", &light_intensity);
@@ -298,10 +298,10 @@ int main(int argc, char** argv)
                 else if (input_handler.is_key_down(Keys::KEY_A)) {
                     eye = glms_vec3_sub(eye, glms_vec3_scale(right, 5.0f * delta_time));
                 }
-                if (input_handler.is_key_down(Keys::KEY_SPACE)) {
+                if (input_handler.is_key_down(Keys::KEY_E)) {
                     eye = glms_vec3_add(eye, glms_vec3_scale(up, 5.0f * delta_time));
                 }
-                else if (input_handler.is_key_down(Keys::KEY_LCTRL)) {
+                else if (input_handler.is_key_down(Keys::KEY_Q)) {
                     eye = glms_vec3_sub(eye, glms_vec3_scale(up, 5.0f * delta_time));
                 }
 
