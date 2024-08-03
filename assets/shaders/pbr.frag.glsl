@@ -97,6 +97,46 @@ float heaviside( float v ) {
     else return 0.0;
 }
 
+float DistributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness*roughness;
+    float a2 = a*a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+// ----------------------------------------------------------------------------
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+// ----------------------------------------------------------------------------
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
+}
+// ----------------------------------------------------------------------------
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 void main() {
     vec4 base_colour = texture(global_textures[nonuniformEXT(textures.x)], vTexcoord0) * base_color_factor;
 
@@ -104,6 +144,8 @@ void main() {
     if (useAlphaMask && base_colour.a < alpha_cutoff) {
         base_colour.a = 0.0;
     }
+
+    vec4 albedo = base_colour;
 
     vec3 normal = normalize( vNormal );
     vec3 tangent = normalize( vTangent );
@@ -136,6 +178,7 @@ void main() {
     float metalness = metallic_roughness_occlusion_factor.x;
     float roughness = metallic_roughness_occlusion_factor.y;
 
+    
     if (textures.w != INVALID_TEXTURE_INDEX) {
         vec4 rm = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0);
 
@@ -146,7 +189,44 @@ void main() {
         metalness *= rm.b;
     }
 
-    float alpha = pow(roughness, 2.0);
+    ////////////
+
+    vec3 F0 = vec3(0.04); 
+    F0 = mix(F0, albedo.rgb, metalness);
+
+    vec3 Lo = vec3(0.0);
+
+    float distance = length(light.xyz - vPosition);
+    float attenuation = 1.0 / (distance * distance);
+    vec3 radiance = vec3(light_intensity * attenuation);
+
+    // Cook-Torrance BRDF
+    float NDF = DistributionGGX(N, H, roughness);   
+    float G   = GeometrySmith(N, V, L, roughness);      
+    vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3 numerator    = NDF * G * F; 
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
+    vec3 specular = numerator / denominator;
+
+    // kS is equal to Fresnel
+    vec3 kS = F;
+
+    // for energy conservation, the diffuse and specular light can't
+    // be above 1.0 (unless the surface emits light); to preserve this
+    // relationship the diffuse component (kD) should equal 1.0 - kS.
+    vec3 kD = vec3(1.0) - kS;
+
+    // multiply kD by the inverse metalness such that only non-metals 
+    // have diffuse lighting, or a linear blend if partly metal (pure metals
+    // have no diffuse light).
+    kD *= 1.0 - metalness;
+
+    // scale light by NdotL
+    float NdotL = max(dot(N, L), 0.0);
+
+    // add to outgoing radiance Lo
+    Lo += (kD * albedo.rgb / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
 
     float occlusion = metallic_roughness_occlusion_factor.z;
     if (textures.w != INVALID_TEXTURE_INDEX) {
@@ -154,42 +234,17 @@ void main() {
         // Red channel for occlusion value
         occlusion *= o.r;
     }
+    //base_colour.rgb = decode_srgb( base_colour.rgb );
 
-    base_colour.rgb = decode_srgb( base_colour.rgb );
+    vec3 ambient = vec3(0.03) * albedo.rgb * occlusion;
 
-    // https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#specular-brdf
-    float NdotH = clamp(dot(N, H), 0, 1);
-    float alpha_squared = alpha * alpha;
-    float d_denom = ( NdotH * NdotH ) * ( alpha_squared - 1.0 ) + 1.0;
-    float distribution = ( alpha_squared * heaviside( NdotH ) ) / ( PI * d_denom * d_denom );
+    vec3 color = ambient + Lo;
 
-    float NdotL = clamp(dot(N, L), 0, 1);
-    float NdotV = clamp(dot(N, V), 0, 1);
-    float HdotL = clamp(dot(H, L), 0, 1);
-    float HdotV = clamp(dot(H, V), 0, 1);
 
-    float distance = length(light.xyz - vPosition);
-    float intensity = light_intensity * max(min(1.0 - pow(distance / light_range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+    // HDR tonemapping
+    color = color / (color + vec3(1.0));
+    ////////////
 
-    vec3 material_colour = vec3(0, 0, 0);
-    if (NdotL > 0.0 || NdotV > 0.0)
-    {
-        float visibility = ( heaviside( HdotL ) / ( abs( NdotL ) + sqrt( alpha_squared + ( 1.0 - alpha_squared ) * ( NdotL * NdotL ) ) ) ) * ( heaviside( HdotV ) / ( abs( NdotV ) + sqrt( alpha_squared + ( 1.0 - alpha_squared ) * ( NdotV * NdotV ) ) ) );
 
-        float specular_brdf = intensity * NdotL * visibility * distribution;
-
-        vec3 diffuse_brdf = intensity * NdotL * (1 / PI) * base_colour.rgb;
-
-        // NOTE(marco): f0 in the formula notation refers to the base colour here
-        vec3 conductor_fresnel = specular_brdf * ( base_colour.rgb + ( 1.0 - base_colour.rgb ) * pow( 1.0 - abs( HdotV ), 5 ) );
-
-        // NOTE(marco): f0 in the formula notation refers to the value derived from ior = 1.5
-        float f0 = 0.04; // pow( ( 1 - ior ) / ( 1 + ior ), 2 )
-        float fr = f0 + ( 1 - f0 ) * pow(1 - abs( HdotV ), 5 );
-        vec3 fresnel_mix = mix( diffuse_brdf, vec3( specular_brdf ), fr );
-
-        material_colour = mix( fresnel_mix, conductor_fresnel, metalness );
-    }
-
-    frag_color = vec4( encode_srgb( material_colour ), base_colour.a );
+    frag_color = vec4(color, 1.0);
 }

@@ -196,8 +196,8 @@ namespace Helix
                 upload_request.texture = load_request.texture;
                 upload_request.cpu_buffer = k_invalid_buffer;
             }
-            else {
-                HERROR("Error reading file {}", load_request.path);
+            else {// TODO: use defualt texture if none found
+                HCRITICAL("Error reading file {}", load_request.path);
             }
         }
 

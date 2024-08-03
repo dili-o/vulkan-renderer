@@ -473,6 +473,8 @@ namespace Helix {
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator) {
 
+        sizet cached_scratch_size = scratch_allocator->get_marker();
+
         {
             // Creating the light image
             directory_change("D:/HelixEngine/Engine/assets/textures/lights");
@@ -516,7 +518,6 @@ namespace Helix {
         // Create pipeline state
         PipelineCreation pipeline_creation;
 
-        sizet cached_scratch_size = scratch_allocator->get_marker();
 
         StringBuffer path_buffer;
         path_buffer.init(1024, scratch_allocator);
@@ -589,11 +590,13 @@ namespace Helix {
         Array<i32> node_parents;
         node_parents.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
-        Array<u32> node_stack;
-        node_stack.init(scratch_allocator, 8);
+        //memset(node_parents.data, 1, node_parents.size_in_bytes());
 
         Array<mat4s> node_matrix;
         node_matrix.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+
+        Array<u32> node_stack;
+        node_stack.init(scratch_allocator, 8);
 
         for (u32 node_index = 0; node_index < root_gltf_scene.nodes_count; ++node_index) {
             u32 root_node = root_gltf_scene.nodes[node_index];

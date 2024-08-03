@@ -495,7 +495,7 @@ namespace Helix {
         check(result);
 
         ////////  Create pools
-        static const u32 k_global_pool_elements = 128;
+        static const u32 k_global_pool_elements = 128 + 50;
         VkDescriptorPoolSize pool_sizes[] =
         {
             { VK_DESCRIPTOR_TYPE_SAMPLER, k_global_pool_elements },
@@ -597,13 +597,13 @@ namespace Helix {
         vkCreateQueryPool(vulkan_device, &vqpci, vulkan_allocation_callbacks, &vulkan_timestamp_query_pool);
 
         //// Init pools
-        buffers.init(allocator, 8000, sizeof(Buffer));
+        buffers.init(allocator, 10000, sizeof(Buffer));
         textures.init(allocator, 512, sizeof(Texture));
         render_passes.init(allocator, 256, sizeof(RenderPass));
         descriptor_set_layouts.init(allocator, 128, sizeof(DesciptorSetLayout));
         pipelines.init(allocator, 128, sizeof(Pipeline));
         shaders.init(allocator, 128, sizeof(ShaderState));
-        descriptor_sets.init(allocator, 256, sizeof(DesciptorSet));
+        descriptor_sets.init(allocator, 2000, sizeof(DesciptorSet));
         samplers.init(allocator, 32, sizeof(Sampler));
         //command_buffers.init( allocator, 128, sizeof( CommandBuffer ) );
 

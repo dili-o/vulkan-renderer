@@ -27,7 +27,7 @@ namespace Helix {
 #define HINFO(...) LogService::GetCoreLogger()->info(__VA_ARGS__)
 #define HWARN(...) LogService::GetCoreLogger()->warn(__VA_ARGS__)
 #define HERROR(...) LogService::GetCoreLogger()->error(__VA_ARGS__)
-#define HCRITICAL(...) LogService::GetCoreLogger()->critical(__VA_ARGS__)
+#define HCRITICAL(...) LogService::GetCoreLogger()->critical(__VA_ARGS__); __debugbreak();
     };
 }
 
