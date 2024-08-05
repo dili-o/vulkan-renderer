@@ -522,11 +522,11 @@ namespace Helix {
         StringBuffer path_buffer;
         path_buffer.init(1024, scratch_allocator);
 
-        const char* vert_file = "pbr.vert.glsl";
+        cstring vert_file = "pbr.vert.glsl";
         char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
         FileReadResult vert_code = file_read_text(vert_path, scratch_allocator);
 
-        const char* frag_file = "pbr.frag.glsl";
+        cstring frag_file = "pbr.frag.glsl";
         char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
         FileReadResult frag_code = file_read_text(frag_path, scratch_allocator);
 
@@ -589,8 +589,6 @@ namespace Helix {
 
         Array<i32> node_parents;
         node_parents.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
-
-        //memset(node_parents.data, 1, node_parents.size_in_bytes());
 
         Array<mat4s> node_matrix;
         node_matrix.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);

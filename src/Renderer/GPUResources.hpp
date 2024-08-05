@@ -213,12 +213,12 @@ namespace Helix {
         u32                             device_only = 0;
         void*                           initial_data = nullptr;
 
-        const char*                     name = nullptr;
+        cstring                     name = nullptr;
 
         BufferCreation&                 reset();
         BufferCreation&                 set(VkBufferUsageFlags flags, ResourceUsageType::Enum usage, u32 size);
         BufferCreation&                 set_data(void* data);
-        BufferCreation&                 set_name(const char* name);
+        BufferCreation&                 set_name(cstring name);
         BufferCreation&                 set_persistent(bool value);
         BufferCreation&                 set_device_only(bool value);
 
@@ -238,12 +238,12 @@ namespace Helix {
         VkFormat                        format = VK_FORMAT_UNDEFINED;
         TextureType::Enum               type = TextureType::Texture2D;
 
-        const char*                     name = nullptr;
+        cstring                     name = nullptr;
 
         TextureCreation&                set_size(u16 width, u16 height, u16 depth);
         TextureCreation&                set_flags(u8 mipmaps, u8 flags);
         TextureCreation&                set_format_type(VkFormat format, TextureType::Enum type);
-        TextureCreation&                set_name(const char* name);
+        TextureCreation&                set_name(cstring name);
         TextureCreation&                set_data(void* data);
 
     }; // struct TextureCreation
@@ -260,13 +260,13 @@ namespace Helix {
         VkSamplerAddressMode            address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         VkSamplerAddressMode            address_mode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-        const char*                     name = nullptr;
+        cstring                     name = nullptr;
 
         SamplerCreation&                set_min_mag_mip(VkFilter min, VkFilter mag, VkSamplerMipmapMode mip);
         SamplerCreation&                set_address_mode_u(VkSamplerAddressMode u);
         SamplerCreation&                set_address_mode_uv(VkSamplerAddressMode u, VkSamplerAddressMode v);
         SamplerCreation&                set_address_mode_uvw(VkSamplerAddressMode u, VkSamplerAddressMode v, VkSamplerAddressMode w);
-        SamplerCreation&                set_name(const char* name);
+        SamplerCreation&                set_name(cstring name);
 
     }; // struct SamplerCreation
 
@@ -274,7 +274,7 @@ namespace Helix {
     //
     struct ShaderStage {
 
-        const char* code = nullptr;
+        cstring code = nullptr;
         u32                             code_size = 0;
         VkShaderStageFlagBits           type = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 
@@ -286,15 +286,15 @@ namespace Helix {
 
         ShaderStage                     stages[k_max_shader_stages];
 
-        const char* name = nullptr;
+        cstring name = nullptr;
 
         u32                             stages_count = 0;
         u32                             spv_input = 0;
 
         // Building helpers
         ShaderStateCreation& reset();
-        ShaderStateCreation& set_name(const char* name);
-        ShaderStateCreation& add_stage(const char* code, u32 code_size, VkShaderStageFlagBits type);
+        ShaderStateCreation& set_name(cstring name);
+        ShaderStateCreation& add_stage(cstring code, u32 code_size, VkShaderStageFlagBits type);
         ShaderStateCreation& set_spv_input(bool value);
 
     }; // struct ShaderStateCreation
@@ -433,13 +433,13 @@ namespace Helix {
         RenderPassOperation::Enum       depth_operation = RenderPassOperation::DontCare;
         RenderPassOperation::Enum       stencil_operation = RenderPassOperation::DontCare;
 
-        const char*                     name = nullptr;
+        cstring                     name = nullptr;
 
         RenderPassCreation&             reset();
         RenderPassCreation&             add_render_texture(TextureHandle texture);
         RenderPassCreation&             set_scaling(f32 scale_x, f32 scale_y, u8 resize);
         RenderPassCreation&             set_depth_stencil_texture(TextureHandle texture);
-        RenderPassCreation&             set_name(const char* name);
+        RenderPassCreation&             set_name(cstring name);
         RenderPassCreation&             set_type(RenderPassType::Enum type);
         RenderPassCreation&             set_operations(RenderPassOperation::Enum color, RenderPassOperation::Enum depth, RenderPassOperation::Enum stencil);
 
@@ -461,7 +461,7 @@ namespace Helix {
 
         u32                             num_active_layouts = 0;
 
-        const char*                     name = nullptr;
+        cstring                     name = nullptr;
 
         PipelineCreation&               add_descriptor_set_layout(DescriptorSetLayoutHandle handle);
         RenderPassOutput&               render_pass_output();
@@ -511,7 +511,7 @@ namespace Helix {
         u16                             count = 0;
         u16                             set = 0;
 
-        const char* name = nullptr;
+        cstring name = nullptr;
     }; // struct ResourceBinding
 
 
@@ -683,7 +683,7 @@ namespace Helix {
         BufferHandle                    parent_buffer;
 
         u8*                             mapped_data         = nullptr;
-        const char*                     name                = nullptr;
+        cstring                     name                = nullptr;
 
     }; // struct BufferVulkan
 
@@ -702,7 +702,7 @@ namespace Helix {
         VkSamplerAddressMode            address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         VkSamplerAddressMode            address_mode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-        const char*                     name = nullptr;
+        cstring                     name = nullptr;
 
     }; // struct SamplerVulkan
 
@@ -727,7 +727,7 @@ namespace Helix {
 
         Sampler*                        sampler = nullptr;
 
-        const char* name = nullptr;
+        cstring name = nullptr;
     }; // struct TextureVulkan
 
     //
@@ -736,7 +736,7 @@ namespace Helix {
 
         VkPipelineShaderStageCreateInfo shader_stage_info[k_max_shader_stages];
 
-        const char* name = nullptr;
+        cstring name = nullptr;
 
         u32                             active_shaders = 0;
         bool                            graphics_pipeline = false;
@@ -753,7 +753,7 @@ namespace Helix {
         u16                             count = 0;
         u16                             set = 0;
 
-        const char* name = nullptr;
+        cstring name = nullptr;
     }; // struct ResourceBindingVulkan
 
     //
@@ -836,7 +836,7 @@ namespace Helix {
         u8                              resize = 0;
         u8                              num_render_targets = 0;
 
-        const char* name = nullptr;
+        cstring name = nullptr;
     }; // struct RenderPassVulkan
 
 

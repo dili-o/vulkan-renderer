@@ -30,16 +30,16 @@ namespace Helix {
         void                        init(sizet size, Allocator* allocator);
         void                        shutdown();
 
-        void                        append(const char* string);
+        void                        append(cstring string);
         void                        append(const StringView& text);
         void                        append_m(void* memory, sizet size);       // Memory version of append.
         void                        append(const StringBuffer& other_buffer);
-        void                        append_f(const char* format, ...);        // Formatted version of append.
+        void                        append_f(cstring format, ...);        // Formatted version of append.
 
-        char* append_use(const char* string);
-        char* append_use_f(const char* format, ...);
+        char* append_use(cstring string);
+        char* append_use_f(cstring format, ...);
         char* append_use(const StringView& text);       // Append and returns a pointer to the start. Used for strings mostly.
-        char* append_use_substring(const char* string, u32 start_index, u32 end_index); // Append a substring of the passed string.
+        char* append_use_substring(cstring string, u32 start_index, u32 end_index); // Append a substring of the passed string.
 
         void                        close_current_string();
 

@@ -45,7 +45,7 @@ namespace Helix {
         u32                             color;
         u32                             frame_index;
 
-        const char* name;
+        cstring name;
     }; // struct GPUTimestamp
 
 
@@ -58,7 +58,7 @@ namespace Helix {
         void                            reset();
         u32                             resolve(u32 current_frame, GPUTimestamp* timestamps_to_fill);    // Returns the total queries for this frame.
 
-        u32                             push(u32 current_frame, const char* name);    // Returns the timestamp query index.
+        u32                             push(u32 current_frame, cstring name);    // Returns the timestamp query index.
         u32                             pop(u32 current_frame);
 
         Allocator* allocator = nullptr;
@@ -195,7 +195,7 @@ namespace Helix {
         VkRenderPass                    get_vulkan_render_pass(const RenderPassOutput& output, cstring name);
 
         // Names and markers /////////////////////////////////////////////////
-        void                            set_resource_name(VkObjectType object_type, uint64_t handle, const char* name);
+        void                            set_resource_name(VkObjectType object_type, uint64_t handle, cstring name);
         void                            push_marker(VkCommandBuffer command_buffer, cstring name);
         void                            pop_marker(VkCommandBuffer command_buffer);
 
@@ -203,7 +203,7 @@ namespace Helix {
         void                            set_gpu_timestamps_enable(bool value) { timestamps_enabled = value; }
 
         u32                             get_gpu_timestamps(GPUTimestamp* out_timestamps);
-        void                            push_gpu_timestamp(CommandBuffer* command_buffer, const char* name);
+        void                            push_gpu_timestamp(CommandBuffer* command_buffer, cstring name);
         void                            pop_gpu_timestamp(CommandBuffer* command_buffer);
 
 

@@ -233,7 +233,7 @@ namespace Helix {
 
         Directory new_directory;
 
-        const char* last_directory_separator = strrchr(directory->path, '\\');
+        cstring last_directory_separator = strrchr(directory->path, '\\');
         sizet index = last_directory_separator - directory->path;
 
         if (index > 0) {

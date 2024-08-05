@@ -439,7 +439,7 @@ namespace Helix {
         vkCmdFillBuffer(vk_handle, vk_buffer->vk_handle, VkDeviceSize(offset), size ? VkDeviceSize(size) : VkDeviceSize(vk_buffer->size), data);
     }
 
-    void CommandBuffer::push_marker(const char* name) {
+    void CommandBuffer::push_marker(cstring name) {
 
         device->push_gpu_timestamp(this, name);
 

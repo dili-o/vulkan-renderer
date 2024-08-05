@@ -72,7 +72,7 @@ namespace Helix {
         return *this;
     }
 
-    BufferCreation& BufferCreation::set_name(const char* name_) {
+    BufferCreation& BufferCreation::set_name(cstring name_) {
         name = name_;
 
         return *this;
@@ -111,7 +111,7 @@ namespace Helix {
         return *this;
     }
 
-    TextureCreation& TextureCreation::set_name(const char* name_) {
+    TextureCreation& TextureCreation::set_name(cstring name_) {
         name = name_;
 
         return *this;
@@ -153,7 +153,7 @@ namespace Helix {
         return *this;
     }
 
-    SamplerCreation& SamplerCreation::set_name(const char* name_) {
+    SamplerCreation& SamplerCreation::set_name(cstring name_) {
         name = name_;
 
         return *this;
@@ -167,13 +167,13 @@ namespace Helix {
         return *this;
     }
 
-    ShaderStateCreation& ShaderStateCreation::set_name(const char* name_) {
+    ShaderStateCreation& ShaderStateCreation::set_name(cstring name_) {
         name = name_;
 
         return *this;
     }
 
-    ShaderStateCreation& ShaderStateCreation::add_stage(const char* code, u32 code_size, VkShaderStageFlagBits type) {
+    ShaderStateCreation& ShaderStateCreation::add_stage(cstring code, u32 code_size, VkShaderStageFlagBits type) {
         stages[stages_count].code = code;
         stages[stages_count].code_size = code_size;
         stages[stages_count].type = type;
@@ -341,7 +341,7 @@ namespace Helix {
         return *this;
     }
 
-    RenderPassCreation& RenderPassCreation::set_name(const char* name_) {
+    RenderPassCreation& RenderPassCreation::set_name(cstring name_) {
         name = name_;
 
         return *this;

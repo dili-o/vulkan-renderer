@@ -27,7 +27,7 @@ namespace Helix {
     Helix::FlatHashMap<Helix::ResourceHandle, Helix::ResourceHandle> g_texture_to_descriptor_set;
 
 
-    static const char* g_vertex_shader_code = {
+    static cstring g_vertex_shader_code = {
         "#version 450\n"
         "layout( location = 0 ) in vec2 Position;\n"
         "layout( location = 1 ) in vec2 UV;\n"
@@ -43,7 +43,7 @@ namespace Helix {
         "}\n"
     };
 
-    static const char* g_vertex_shader_code_bindless = {
+    static cstring g_vertex_shader_code_bindless = {
         "#version 450\n"
         "layout( location = 0 ) in vec2 Position;\n"
         "layout( location = 1 ) in vec2 UV;\n"
@@ -61,7 +61,7 @@ namespace Helix {
         "}\n"
     };
 
-    static const char* g_fragment_shader_code = {
+    static cstring g_fragment_shader_code = {
         "#version 450\n"
         "#extension GL_EXT_nonuniform_qualifier : enable\n"
         "layout (location = 0) in vec2 Frag_UV;\n"
@@ -74,7 +74,7 @@ namespace Helix {
         "}\n"
     };
 
-    static const char* g_fragment_shader_code_bindless = {
+    static cstring g_fragment_shader_code_bindless = {
         "#version 450\n"
         "#extension GL_EXT_nonuniform_qualifier : enable\n"
         "layout (location = 0) in vec2 Frag_UV;\n"
@@ -686,7 +686,7 @@ namespace Helix {
     static Helix::StringArray           files;
     static Helix::StringArray           directories;
 
-    bool imgui_file_dialog_open( const char* button_name, const char* path, const char* extension ) {
+    bool imgui_file_dialog_open( cstring button_name, cstring path, cstring extension ) {
 
         bool opened = string_hash_get( file_dialog_open_map, button_name );
         if ( ImGui::Button( button_name ) ) {
@@ -743,7 +743,7 @@ namespace Helix {
 
             for ( size_t d = 0; d < directories.get_string_count(); ++d ) {
 
-                const char* directory_name = directories.get_string( d );
+                cstring directory_name = directories.get_string( d );
                 if ( ImGui::Selectable( directory_name, selected, ImGuiSelectableFlags_AllowDoubleClick ) ) {
 
                     if ( strcmp( directory_name, ".." ) == 0 ) {
@@ -757,7 +757,7 @@ namespace Helix {
             }
 
             for ( size_t f = 0; f < files.get_string_count(); ++f ) {
-                const char* file_name = files.get_string( f );
+                cstring file_name = files.get_string( f );
                 if ( ImGui::Selectable( file_name, selected, ImGuiSelectableFlags_AllowDoubleClick ) ) {
 
                     strcpy( filename, directory.path );
@@ -784,7 +784,7 @@ namespace Helix {
         return filename;
     }
 
-    bool imgui_path_dialog_open( const char* button_name, const char* path ) {
+    bool imgui_path_dialog_open( cstring button_name, cstring path ) {
         bool opened = string_hash_get( file_dialog_open_map, button_name );
         if ( ImGui::Button( button_name ) ) {
             opened = true;
@@ -834,7 +834,7 @@ namespace Helix {
 
             for ( size_t d = 0; d < directories.get_string_count(); ++d ) {
 
-                const char* directory_name = directories.get_string( d );
+                cstring directory_name = directories.get_string( d );
                 if ( ImGui::Selectable( directory_name, selected, ImGuiSelectableFlags_AllowDoubleClick ) ) {
 
                     if ( strcmp( directory_name, ".." ) == 0 ) {
@@ -871,7 +871,7 @@ namespace Helix {
         return selected;
     }
 
-    const char* imgui_path_dialog_get_path() {
+    cstring imgui_path_dialog_get_path() {
         return last_path;
     }
 
@@ -898,7 +898,7 @@ namespace Helix {
             LineOffsets.push_back(0);
         }
 
-        void    AddLog(const char* fmt, ...) IM_FMTARGS(2) {
+        void    AddLog(cstring fmt, ...) IM_FMTARGS(2) {
             int old_size = Buf.size();
             va_list args;
             va_start(args, fmt);
@@ -909,7 +909,7 @@ namespace Helix {
                     LineOffsets.push_back(old_size + 1);
         }
 
-        void    Draw(const char* title, bool* p_open = NULL) {
+        void    Draw(cstring title, bool* p_open = NULL) {
             if (!ImGui::Begin(title, p_open)) {
                 ImGui::End();
                 return;
@@ -940,16 +940,16 @@ namespace Helix {
                 ImGui::LogToClipboard();
 
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-            const char* buf = Buf.begin();
-            const char* buf_end = Buf.end();
+            cstring buf = Buf.begin();
+            cstring buf_end = Buf.end();
             if (Filter.IsActive()) {
                 // In this example we don't use the clipper when Filter is enabled.
                 // This is because we don't have a random access on the result on our filter.
                 // A real application processing logs with ten of thousands of entries may want to store the result of search/filter.
                 // especially if the filtering function is not trivial (e.g. reg-exp).
                 for (int line_no = 0; line_no < LineOffsets.Size; line_no++) {
-                    const char* line_start = buf + LineOffsets[line_no];
-                    const char* line_end = (line_no + 1 < LineOffsets.Size) ? (buf + LineOffsets[line_no + 1] - 1) : buf_end;
+                    cstring line_start = buf + LineOffsets[line_no];
+                    cstring line_end = (line_no + 1 < LineOffsets.Size) ? (buf + LineOffsets[line_no + 1] - 1) : buf_end;
                     if (Filter.PassFilter(line_start, line_end))
                         ImGui::TextUnformatted(line_start, line_end);
                 }
@@ -968,8 +968,8 @@ namespace Helix {
                 clipper.Begin(LineOffsets.Size);
                 while (clipper.Step()) {
                     for (int line_no = clipper.DisplayStart; line_no < clipper.DisplayEnd; line_no++) {
-                        const char* line_start = buf + LineOffsets[line_no];
-                        const char* line_end = (line_no + 1 < LineOffsets.Size) ? (buf + LineOffsets[line_no + 1] - 1) : buf_end;
+                        cstring line_start = buf + LineOffsets[line_no];
+                        cstring line_end = (line_no + 1 < LineOffsets.Size) ? (buf + LineOffsets[line_no + 1] - 1) : buf_end;
                         ImGui::TextUnformatted(line_start, line_end);
                     }
                 }
@@ -988,7 +988,7 @@ namespace Helix {
     static ExampleAppLog        s_imgui_log;
     static bool                 s_imgui_log_open = true;
 
-    static void imgui_print(const char* text) {
+    static void imgui_print(cstring text) {
         s_imgui_log.AddLog("%s", text);
     }
 

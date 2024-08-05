@@ -34,11 +34,11 @@ namespace Helix {
             Red_mask = 1 << 0, Green_mask = 1 << 1, Blue_mask = 1 << 2, Alpha_mask = 1 << 3, All_mask = Red_mask | Green_mask | Blue_mask | Alpha_mask
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Red", "Green", "Blue", "Alpha", "All", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace ColorWriteEnabled
@@ -52,11 +52,11 @@ namespace Helix {
             None_mask = 1 << 0, Front_mask = 1 << 1, Back_mask = 1 << 2, Count_mask = 1 << 3
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "None", "Front", "Back", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace CullMode
@@ -70,11 +70,11 @@ namespace Helix {
             Zero_mask = 1 << 0, All_mask = 1 << 1, Count_mask = 1 << 2
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Zero", "All", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace DepthWriteMask
@@ -88,11 +88,11 @@ namespace Helix {
             Wireframe_mask = 1 << 0, Solid_mask = 1 << 1, Point_mask = 1 << 2, Count_mask = 1 << 3
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Wireframe", "Solid", "Point", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace FillMode
@@ -106,11 +106,11 @@ namespace Helix {
             True_mask = 1 << 0, False_mask = 1 << 1, Count_mask = 1 << 2
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "True", "False", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace FrontClockwise
@@ -124,11 +124,11 @@ namespace Helix {
             Keep_mask = 1 << 0, Zero_mask = 1 << 1, Replace_mask = 1 << 2, IncrSat_mask = 1 << 3, DecrSat_mask = 1 << 4, Invert_mask = 1 << 5, Incr_mask = 1 << 6, Decr_mask = 1 << 7, Count_mask = 1 << 8
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Keep", "Zero", "Replace", "IncrSat", "DecrSat", "Invert", "Incr", "Decr", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace StencilOperation
@@ -142,11 +142,11 @@ namespace Helix {
             Unknown_mask = 1 << 0, Point_mask = 1 << 1, Line_mask = 1 << 2, Triangle_mask = 1 << 3, Patch_mask = 1 << 4, Count_mask = 1 << 5
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Unknown", "Point", "Line", "Triangle", "Patch", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace TopologyType
@@ -160,11 +160,11 @@ namespace Helix {
             Immutable_mask = 1 << 0, Dynamic_mask = 1 << 1, Stream_mask = 1 << 2, Count_mask = 1 << 3
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Immutable", "Dynamic", "Stream", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace ResourceUsageType
@@ -178,11 +178,11 @@ namespace Helix {
             Uint16_mask = 1 << 0, Uint32_mask = 1 << 1, Count_mask = 1 << 2
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Uint16", "Uint32", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace IndexType
@@ -196,11 +196,11 @@ namespace Helix {
             Texture1D_mask = 1 << 0, Texture2D_mask = 1 << 1, Texture3D_mask = 1 << 2, Texture_1D_Array_mask = 1 << 3, Texture_2D_Array_mask = 1 << 4, Texture_Cube_Array_mask = 1 << 5, Count_mask = 1 << 6
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Texture1D", "Texture2D", "Texture3D", "Texture_1D_Array", "Texture_2D_Array", "Texture_Cube_Array", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace TextureType
@@ -210,11 +210,11 @@ namespace Helix {
             Float, Float2, Float3, Float4, Mat4, Byte, Byte4N, UByte, UByte4N, Short2, Short2N, Short4, Short4N, Uint, Uint2, Uint4, Count
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Float", "Float2", "Float3", "Float4", "Mat4", "Byte", "Byte4N", "UByte", "UByte4N", "Short2", "Short2N", "Short4", "Short4N", "Uint", "Uint2", "Uint4", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace VertexComponentFormat
@@ -228,11 +228,11 @@ namespace Helix {
             PerVertex_mask = 1 << 0, PerInstance_mask = 1 << 1, Count_mask = 1 << 2
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "PerVertex", "PerInstance", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace VertexInputRate
@@ -246,11 +246,11 @@ namespace Helix {
             Clear_mask = 1 << 0, Set_mask = 1 << 1, Copy_mask = 1 << 2, CopyInverted_mask = 1 << 3, Noop_mask = 1 << 4, Invert_mask = 1 << 5, And_mask = 1 << 6, Nand_mask = 1 << 7, Or_mask = 1 << 8, Nor_mask = 1 << 9, Xor_mask = 1 << 10, Equiv_mask = 1 << 11, AndReverse_mask = 1 << 12, AndInverted_mask = 1 << 13, OrReverse_mask = 1 << 14, OrInverted_mask = 1 << 15, Count_mask = 1 << 16
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Clear", "Set", "Copy", "CopyInverted", "Noop", "Invert", "And", "Nand", "Or", "Nor", "Xor", "Equiv", "AndReverse", "AndInverted", "OrReverse", "OrInverted", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace LogicOperation
@@ -264,11 +264,11 @@ namespace Helix {
             Graphics_mask = 1 << 0, Compute_mask = 1 << 1, CopyTransfer_mask = 1 << 2, Count_mask = 1 << 3
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Graphics", "Compute", "CopyTransfer", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace QueueType
@@ -278,11 +278,11 @@ namespace Helix {
             BindPipeline, BindResourceTable, BindVertexBuffer, BindIndexBuffer, BindResourceSet, Draw, DrawIndexed, DrawInstanced, DrawIndexedInstanced, Dispatch, CopyResource, SetScissor, SetViewport, Clear, ClearDepth, ClearStencil, BeginPass, EndPass, Count
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "BindPipeline", "BindResourceTable", "BindVertexBuffer", "BindIndexBuffer", "BindResourceSet", "Draw", "DrawIndexed", "DrawInstanced", "DrawIndexedInstanced", "Dispatch", "CopyResource", "SetScissor", "SetViewport", "Clear", "ClearDepth", "ClearStencil", "BeginPass", "EndPass", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
     } // namespace CommandType
@@ -302,11 +302,11 @@ namespace Helix {
             Default_mask = 1 << 0, RenderTarget_mask = 1 << 1, Compute_mask = 1 << 2
         };
 
-        static const char* s_value_names[] = {
+        static cstring s_value_names[] = {
             "Default", "RenderTarget", "Compute", "Count"
         };
 
-        static const char* ToString(Enum e) {
+        static cstring ToString(Enum e) {
             return ((u32)e < Enum::Count ? s_value_names[(int)e] : "unsupported");
         }
 

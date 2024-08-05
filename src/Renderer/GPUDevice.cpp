@@ -61,7 +61,7 @@ namespace Helix {
 
 //#define VULKAN_SYNCHRONIZATION_VALIDATION
 
-    static const char* s_requested_extensions[] = {
+    static cstring s_requested_extensions[] = {
         VK_KHR_SURFACE_EXTENSION_NAME,
         // Platform specific extension
     #ifdef VK_USE_PLATFORM_WIN32_KHR
@@ -92,7 +92,7 @@ namespace Helix {
     #endif // VULKAN_DEBUG_REPORT
     };
 
-    static const char* s_requested_layers[] = {
+    static cstring s_requested_layers[] = {
     #if defined (VULKAN_DEBUG_REPORT)
         "VK_LAYER_KHRONOS_validation",
         //"VK_LAYER_LUNARG_core_validation",
@@ -107,7 +107,7 @@ namespace Helix {
 #ifdef VULKAN_DEBUG_REPORT
 
     // Old debug callback.
-    //static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback( VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, u64 object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData ) {
+    //static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback( VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, u64 object, size_t location, int32_t messageCode, cstring pLayerPrefix, cstring pMessage, void* pUserData ) {
     //    (void)flags; (void)object; (void)location; (void)messageCode; (void)pUserData; (void)pLayerPrefix; // Unused arguments
     //    rprint( "[vulkan] ObjectType: %i\nMessage: %s\n\n", objectType, pMessage );
     //    return VK_FALSE;
@@ -376,7 +376,7 @@ namespace Helix {
         vulkan_transfer_queue_family = transfer_queue_index;
 
         u32 device_extension_count = 1;
-        const char* device_extensions[] = { "VK_KHR_swapchain" };
+        cstring device_extensions[] = { "VK_KHR_swapchain" };
         const float queue_priority[] = { 1.0f };
         VkDeviceQueueCreateInfo queue_info[2] = {};
 
@@ -1171,7 +1171,7 @@ namespace Helix {
             break;
         }
 
-        const char* temp_filename = resource_name_buffer.get_text(0);// "temp.shader";
+        cstring temp_filename = resource_name_buffer.get_text(0);// "temp.shader";
 
         // Write current shader to file.
         FILE* temp_shader_file = fopen(temp_filename, "w");
@@ -2502,7 +2502,7 @@ namespace Helix {
         shaders.release_resource(shader);
     }
 
-    void GpuDevice::set_resource_name(VkObjectType type, u64 handle, const char* name) {
+    void GpuDevice::set_resource_name(VkObjectType type, u64 handle, cstring name) {
 
         if (!debug_utils_extension_present) {
             return;
@@ -3327,7 +3327,7 @@ namespace Helix {
 
     }
 
-    void GpuDevice::push_gpu_timestamp(CommandBuffer* command_buffer, const char* name) {
+    void GpuDevice::push_gpu_timestamp(CommandBuffer* command_buffer, cstring name) {
         if (!timestamps_enabled)
             return;
 
@@ -3511,7 +3511,7 @@ namespace Helix {
         return current_query;
     }
 
-    u32 GPUTimestampManager::push(u32 current_frame, const char* name) {
+    u32 GPUTimestampManager::push(u32 current_frame, cstring name) {
         u32 query_index = (current_frame * queries_per_frame) + current_query;
 
         GPUTimestamp& timestamp = timestamps[query_index];

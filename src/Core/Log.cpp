@@ -21,7 +21,7 @@ namespace Helix{
 		return s_CoreLogger;
 	}
 
-	void ReportAssertionFailure(const char* expression, const char* message, const char* file, i32 line) {
+	void ReportAssertionFailure(cstring expression, cstring message, cstring file, i32 line) {
 		HCRITICAL("Assertion Failure: {}, message: {}, in file: {}, line: {}", expression, message, file, line);
 	}
 }

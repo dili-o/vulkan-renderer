@@ -47,7 +47,7 @@ namespace Helix {
 
         void                            fill_buffer(BufferHandle buffer, u32 offset, u32 size, u32 data);
 
-        void                            push_marker(const char* name);
+        void                            push_marker(cstring name);
         void                            pop_marker();
 
         // Non-drawing methods

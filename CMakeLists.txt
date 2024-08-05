@@ -13,7 +13,7 @@ file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp"
     "vendor/tlsf.c"
 )
 
-add_executable (HelixEngine ${SOURCE_LIST} )
+add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp")
 
 find_package(Vulkan REQUIRED)
 

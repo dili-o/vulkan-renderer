@@ -145,7 +145,7 @@ void main() {
         base_colour.a = 0.0;
     }
 
-    vec4 albedo = base_colour;
+    vec4 albedo = vec4(decode_srgb( base_colour.rgb ), base_colour.a);
 
     vec3 normal = normalize( vNormal );
     vec3 tangent = normalize( vTangent );
@@ -153,9 +153,9 @@ void main() {
 
     if (gl_FrontFacing == false)
     {
-        tangent *= -1.0;
-        bitangent *= -1.0;
-        normal *= -1.0;
+        //tangent *= -1.0;
+        //bitangent *= -1.0;
+        //normal *= -1.0;
     }
 
     if (textures.z != INVALID_TEXTURE_INDEX) {
@@ -188,8 +188,6 @@ void main() {
         // Blue channel contains metalness
         metalness *= rm.b;
     }
-
-    ////////////
 
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo.rgb, metalness);
@@ -240,11 +238,8 @@ void main() {
 
     vec3 color = ambient + Lo;
 
-
     // HDR tonemapping
     color = color / (color + vec3(1.0));
-    ////////////
-
 
     frag_color = vec4(color, 1.0);
 }

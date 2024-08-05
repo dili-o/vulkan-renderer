@@ -215,7 +215,7 @@ namespace Helix {
         ImGui::Separator();
         ImGui::Checkbox("Pause", &paused);
 
-        static const char* items[] = { "200ms", "100ms", "66ms", "33ms", "16ms", "8ms", "4ms" };
+        static cstring items[] = { "200ms", "100ms", "66ms", "33ms", "16ms", "8ms", "4ms" };
         static const float max_durations[] = { 200.f, 100.f, 66.f, 33.f, 16.f, 8.f, 4.f };
 
         static int max_duration_index = 4;

@@ -7,7 +7,7 @@
 
 #ifdef HASSERTIONS_ENABLED
 namespace Helix {
-    void ReportAssertionFailure(const char* expression, const char* message, const char* file, i32 line);
+    void ReportAssertionFailure(cstring expression, cstring message, cstring file, i32 line);
 
 #define HASSERT(expr)                                                \
     {                                                                \

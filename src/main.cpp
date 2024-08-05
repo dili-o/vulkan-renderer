@@ -201,7 +201,7 @@ int main(int argc, char** argv)
 
     float model_scale = 1.0f;
     float light_range = 20.0f;
-    float light_intensity = 80.0f;
+    float light_intensity = 1000.f;
 
     while (!window.requested_exit) {
         ZoneScoped;
@@ -228,7 +228,7 @@ int main(int argc, char** argv)
         // This MUST be AFTER os messages!
         imgui->new_frame();
 
-        //ImGui::ShowDemoWindow();
+        ImGui::ShowDemoWindow();
 
         const i64 current_tick = Time::now();
         f32 delta_time = (f32)Time::delta_seconds(begin_frame_tick, current_tick);

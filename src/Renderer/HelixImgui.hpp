@@ -55,11 +55,11 @@ namespace Helix {
 
     // File Dialog /////////////////////////////////////////////////////////
 
-    /*bool                                imgui_file_dialog_open( const char* button_name, const char* path, const char* extension );
-    const char*                         imgui_file_dialog_get_filename();
+    /*bool                                imgui_file_dialog_open( cstring button_name, cstring path, cstring extension );
+    cstring                         imgui_file_dialog_get_filename();
 
-    bool                                imgui_path_dialog_open( const char* button_name, const char* path );
-    const char*                         imgui_path_dialog_get_path();*/
+    bool                                imgui_path_dialog_open( cstring button_name, cstring path );
+    cstring                         imgui_path_dialog_get_path();*/
 
     // Application Log /////////////////////////////////////////////////////
 

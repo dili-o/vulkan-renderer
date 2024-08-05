@@ -67,11 +67,11 @@ namespace Helix {
         buffer_size = current_size = 0;
     }
 
-    void StringBuffer::append(const char* string) {
+    void StringBuffer::append(cstring string) {
         append_f("%s", string);
     }
 
-    void StringBuffer::append_f(const char* format, ...) {
+    void StringBuffer::append_f(cstring format, ...) {
         if (current_size >= buffer_size) {
             HASSERT_OVERFLOW();
             HERROR("Buffer full! Please allocate more size.");
@@ -141,11 +141,11 @@ namespace Helix {
     }
 
 
-    char* StringBuffer::append_use(const char* string) {
+    char* StringBuffer::append_use(cstring string) {
         return append_use_f("%s", string);
     }
 
-    char* StringBuffer::append_use_f(const char* format, ...) {
+    char* StringBuffer::append_use_f(cstring format, ...) {
         u32 cached_offset = this->current_size;
 
         // TODO: safer version!
@@ -187,7 +187,7 @@ namespace Helix {
         return this->data + cached_offset;
     }
 
-    char* StringBuffer::append_use_substring(const char* string, u32 start_index, u32 end_index) {
+    char* StringBuffer::append_use_substring(cstring string, u32 start_index, u32 end_index) {
         u32 size = end_index - start_index;
         if (current_size + size >= buffer_size) {
             HASSERT_OVERFLOW();
