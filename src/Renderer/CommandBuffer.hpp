@@ -18,11 +18,11 @@ namespace Helix {
         DescriptorSetHandle             create_descriptor_set(const DescriptorSetCreation& creation);
 
         void                            begin();
-        void                            begin_secondary(RenderPass* current_render_pass);
+        void                            begin_secondary(RenderPass* current_render_pass, Framebuffer* current_framebuffer);
         void                            end();
         void                            end_current_render_pass();
 
-        void                            bind_pass(RenderPassHandle handle, bool use_secondary);
+        void                            bind_pass(RenderPassHandle handle_, FramebufferHandle framebuffer_, bool use_secondary);
         void                            bind_pipeline(PipelineHandle handle);
         void                            bind_vertex_buffer(BufferHandle handle, u32 binding, u32 offset);
         void                            bind_index_buffer(BufferHandle handle, u32 offset, VkIndexType index_type);
@@ -65,6 +65,7 @@ namespace Helix {
         GpuDevice* device;
 
         RenderPass*                     current_render_pass;
+        Framebuffer*                    current_framebuffer;
         Pipeline*                       current_pipeline;
         VkClearValue                    clears[2];          // 0 = color, 1 = depth stencil
         bool                            is_recording;

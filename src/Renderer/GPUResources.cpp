@@ -275,24 +275,28 @@ namespace Helix {
         num_color_formats = 0;
         for (u32 i = 0; i < k_max_image_outputs; ++i) {
             color_formats[i] = VK_FORMAT_UNDEFINED;
+            color_final_layouts[i] = VK_IMAGE_LAYOUT_UNDEFINED;
+            color_operations[i] = RenderPassOperation::DontCare;
         }
         depth_stencil_format = VK_FORMAT_UNDEFINED;
-        color_operation = depth_operation = stencil_operation = RenderPassOperation::DontCare;
+        depth_operation = stencil_operation = RenderPassOperation::DontCare;
         return *this;
     }
 
-    RenderPassOutput& RenderPassOutput::color_format(VkFormat format) {
-        color_formats[num_color_formats++] = format;
+    RenderPassOutput& RenderPassOutput::color(VkFormat format, VkImageLayout final_layout, RenderPassOperation::Enum load_op) {
+        color_formats[num_color_formats] = format;
+        color_operations[num_color_formats] = load_op;
+        color_final_layouts[num_color_formats++] = final_layout;
         return *this;
     }
 
-    RenderPassOutput& RenderPassOutput::depth_format(VkFormat format) {
+    RenderPassOutput& RenderPassOutput::depth_stencil(VkFormat format, VkImageLayout final_layout) {
         depth_stencil_format = format;
+        depth_stencil_final_layout = final_layout;
         return *this;
     }
 
-    RenderPassOutput& RenderPassOutput::set_operations(RenderPassOperation::Enum color_, RenderPassOperation::Enum depth_, RenderPassOperation::Enum stencil_) {
-        color_operation = color_;
+    RenderPassOutput& RenderPassOutput::set_depth_stencil_operations(RenderPassOperation::Enum depth_, RenderPassOperation::Enum stencil_) {
         depth_operation = depth_;
         stencil_operation = stencil_;
 
@@ -312,31 +316,26 @@ namespace Helix {
     // RenderPassCreation //////////////////////////////////////
     RenderPassCreation& RenderPassCreation::reset() {
         num_render_targets = 0;
-        depth_stencil_texture = k_invalid_texture;
-        resize = 0;
-        scale_x = 1.f;
-        scale_y = 1.f;
-        color_operation = depth_operation = stencil_operation = RenderPassOperation::DontCare;
+        depth_stencil_format = VK_FORMAT_UNDEFINED;
+        for (u32 i = 0; i < k_max_image_outputs; ++i) {
+            color_operations[i] = RenderPassOperation::DontCare;
+        }
+        depth_operation = stencil_operation = RenderPassOperation::DontCare;
 
         return *this;
     }
 
-    RenderPassCreation& RenderPassCreation::add_render_texture(TextureHandle texture) {
-        output_textures[num_render_targets++] = texture;
+    RenderPassCreation& RenderPassCreation::add_attachment(VkFormat format, VkImageLayout layout, RenderPassOperation::Enum load_op) {
+        color_formats[num_render_targets] = format;
+        color_operations[num_render_targets] = load_op;
+        color_final_layouts[num_render_targets++] = layout;
 
         return *this;
     }
 
-    RenderPassCreation& RenderPassCreation::set_scaling(f32 scale_x_, f32 scale_y_, u8 resize_) {
-        scale_x = scale_x_;
-        scale_y = scale_y_;
-        resize = resize_;
-
-        return *this;
-    }
-
-    RenderPassCreation& RenderPassCreation::set_depth_stencil_texture(TextureHandle texture) {
-        depth_stencil_texture = texture;
+    RenderPassCreation& RenderPassCreation::set_depth_stencil(VkFormat format, VkImageLayout layout) {
+        depth_stencil_format = format;
+        depth_stencil_final_layout = layout;
 
         return *this;
     }
@@ -347,16 +346,52 @@ namespace Helix {
         return *this;
     }
 
-    RenderPassCreation& RenderPassCreation::set_type(RenderPassType::Enum type_) {
-        type = type_;
+    RenderPassCreation& RenderPassCreation::set_depth_stencil_operations(RenderPassOperation::Enum depth_, RenderPassOperation::Enum stencil_) {
+        depth_operation = depth_;
+        stencil_operation = stencil_;
 
         return *this;
     }
 
-    RenderPassCreation& RenderPassCreation::set_operations(RenderPassOperation::Enum color_, RenderPassOperation::Enum depth_, RenderPassOperation::Enum stencil_) {
-        color_operation = color_;
-        depth_operation = depth_;
-        stencil_operation = stencil_;
+    // FramebufferCreation //////////////////////////////////////
+    FramebufferCreation& FramebufferCreation::reset()
+    {
+        num_render_targets = 0;
+        name = nullptr;
+        depth_stencil_texture.index = k_invalid_index;
+
+        resize = 0;
+        scale_x = 1.f;
+        scale_y = 1.f;
+
+        return *this;
+    }
+
+    FramebufferCreation& FramebufferCreation::add_render_texture(TextureHandle texture)
+    {
+        output_textures[num_render_targets++] = texture;
+
+        return *this;
+    }
+
+    FramebufferCreation& FramebufferCreation::set_depth_stencil_texture(TextureHandle texture)
+    {
+        depth_stencil_texture = texture;
+
+        return *this;
+    }
+
+    FramebufferCreation& FramebufferCreation::set_scaling(f32 scale_x_, f32 scale_y_, u8 resize_) {
+        scale_x = scale_x_;
+        scale_y = scale_y_;
+        resize = resize_;
+
+        return *this;
+    }
+
+    FramebufferCreation& FramebufferCreation::set_name(const char* name_)
+    {
+        name = name_;
 
         return *this;
     }

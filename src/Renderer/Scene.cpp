@@ -218,7 +218,7 @@ namespace Helix {
 
         gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
         gpu_commands->clear_depth_stencil(1.0f, 0);
-        gpu_commands->bind_pass(gpu->get_swapchain_pass(), false);
+        gpu_commands->bind_pass(gpu->get_swapchain_pass(), gpu->get_current_framebuffer(), false);
         gpu_commands->set_scissor(nullptr);
         gpu_commands->set_viewport(nullptr);
 

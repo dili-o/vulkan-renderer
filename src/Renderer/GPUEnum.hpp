@@ -336,7 +336,7 @@ namespace Helix {
     namespace ResourceDeletionType {
 
         enum Enum {
-            Buffer, Texture, Pipeline, Sampler, DescriptorSetLayout, DescriptorSet, RenderPass, ShaderState, Count
+            Buffer, Texture, Pipeline, Sampler, DescriptorSetLayout, DescriptorSet, RenderPass, Framebuffer, ShaderState, Count
         };
     } // namespace ResourceDeletionType
 

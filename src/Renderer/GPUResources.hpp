@@ -60,6 +60,10 @@ namespace Helix {
         ResourceHandle                  index;
     }; // struct RenderPassHandle
 
+    struct FramebufferHandle {
+        ResourceHandle                  index;
+    }; // struct Pipeline
+
     // Invalid handles
     static BufferHandle                 k_invalid_buffer{ k_invalid_index };
     static TextureHandle                k_invalid_texture{ k_invalid_index };
@@ -69,7 +73,7 @@ namespace Helix {
     static DescriptorSetHandle          k_invalid_set{ k_invalid_index };
     static PipelineHandle               k_invalid_pipeline{ k_invalid_index };
     static RenderPassHandle             k_invalid_pass{ k_invalid_index };
-
+    static FramebufferHandle            k_invalid_framebuffer{ k_invalid_index };
 
 
     // Consts /////////////////////////////////////////////////////////////////
@@ -401,17 +405,21 @@ namespace Helix {
     struct RenderPassOutput {
 
         VkFormat                        color_formats[k_max_image_outputs];
-        VkFormat                        depth_stencil_format;
+        VkImageLayout                   color_final_layouts[k_max_image_outputs];
+        RenderPassOperation::Enum       color_operations[k_max_image_outputs];
+
         u32                             num_color_formats;
 
-        RenderPassOperation::Enum       color_operation = RenderPassOperation::DontCare;
+        VkFormat                        depth_stencil_format;
+        VkImageLayout                   depth_stencil_final_layout;
+
         RenderPassOperation::Enum       depth_operation = RenderPassOperation::DontCare;
         RenderPassOperation::Enum       stencil_operation = RenderPassOperation::DontCare;
 
         RenderPassOutput&               reset();
-        RenderPassOutput&               color_format(VkFormat format);
-        RenderPassOutput&               depth_format(VkFormat format);
-        RenderPassOutput&               set_operations(RenderPassOperation::Enum color, RenderPassOperation::Enum depth, RenderPassOperation::Enum stencil);
+        RenderPassOutput&               color(VkFormat format, VkImageLayout final_layout, RenderPassOperation::Enum load_op);
+        RenderPassOutput&               depth_stencil(VkFormat format, VkImageLayout final_layout);
+        RenderPassOutput&               set_depth_stencil_operations(RenderPassOperation::Enum depth, RenderPassOperation::Enum stencil);
 
     }; // struct RenderPassOutput
 
@@ -420,31 +428,53 @@ namespace Helix {
     struct RenderPassCreation {
 
         u16                             num_render_targets = 0;
-        RenderPassType::Enum            type = RenderPassType::Geometry;
+
+        VkFormat                        color_formats[k_max_image_outputs];
+        VkImageLayout                   color_final_layouts[k_max_image_outputs];
+        RenderPassOperation::Enum       color_operations[k_max_image_outputs];
+
+        VkFormat                        depth_stencil_format = VK_FORMAT_UNDEFINED;
+        VkImageLayout                   depth_stencil_final_layout;
+
+        RenderPassOperation::Enum       depth_operation = RenderPassOperation::DontCare;
+        RenderPassOperation::Enum       stencil_operation = RenderPassOperation::DontCare;
+
+        const char*                     name = nullptr;
+
+        RenderPassCreation&             reset();
+        RenderPassCreation&             add_attachment(VkFormat format, VkImageLayout layout, RenderPassOperation::Enum load_op);
+        RenderPassCreation&             set_depth_stencil(VkFormat format, VkImageLayout layout);
+        RenderPassCreation&             set_name(const char* name);
+        RenderPassCreation&             set_depth_stencil_operations(RenderPassOperation::Enum depth, RenderPassOperation::Enum stencil);
+
+    }; // struct RenderPassCreation
+    //
+    // 
+    struct FramebufferCreation {
+
+        RenderPassHandle                render_pass;
+
+        u16                             num_render_targets = 0;
 
         TextureHandle                   output_textures[k_max_image_outputs];
-        TextureHandle                   depth_stencil_texture;
+        TextureHandle                   depth_stencil_texture = { k_invalid_index };
+
+        u16                             width = 0;
+        u16                             height = 0;
 
         f32                             scale_x = 1.f;
         f32                             scale_y = 1.f;
         u8                              resize = 1;
 
-        RenderPassOperation::Enum       color_operation = RenderPassOperation::DontCare;
-        RenderPassOperation::Enum       depth_operation = RenderPassOperation::DontCare;
-        RenderPassOperation::Enum       stencil_operation = RenderPassOperation::DontCare;
+        const char*                     name = nullptr;
 
-        cstring                     name = nullptr;
-
-        RenderPassCreation&             reset();
-        RenderPassCreation&             add_render_texture(TextureHandle texture);
-        RenderPassCreation&             set_scaling(f32 scale_x, f32 scale_y, u8 resize);
-        RenderPassCreation&             set_depth_stencil_texture(TextureHandle texture);
-        RenderPassCreation&             set_name(cstring name);
-        RenderPassCreation&             set_type(RenderPassType::Enum type);
-        RenderPassCreation&             set_operations(RenderPassOperation::Enum color, RenderPassOperation::Enum depth, RenderPassOperation::Enum stencil);
+        FramebufferCreation&            reset();
+        FramebufferCreation&            add_render_texture(TextureHandle texture);
+        FramebufferCreation&            set_depth_stencil_texture(TextureHandle texture);
+        FramebufferCreation&            set_scaling(f32 scale_x, f32 scale_y, u8 resize);
+        FramebufferCreation&            set_name(const char* name);
 
     }; // struct RenderPassCreation
-
     //
     // TODO: Consider removing num_active_layouts because it is now auto generated
     struct PipelineCreation {
@@ -816,29 +846,43 @@ namespace Helix {
     struct RenderPass {
 
         VkRenderPass                    vk_handle;
-        VkFramebuffer                   vk_frame_buffer;
 
         RenderPassOutput                output;
 
-        TextureHandle                   output_textures[k_max_image_outputs];
-        TextureHandle                   output_depth;
+        //RenderPassType::Enum            type;
 
-        RenderPassType::Enum            type;
-
-        f32                             scale_x = 1.f;
-        f32                             scale_y = 1.f;
-        u16                             width = 0;
-        u16                             height = 0;
         u16                             dispatch_x = 0;
         u16                             dispatch_y = 0;
         u16                             dispatch_z = 0;
 
-        u8                              resize = 0;
+        //u8                              resize = 0;
         u8                              num_render_targets = 0;
 
-        cstring name = nullptr;
+        cstring                         name = nullptr;
     }; // struct RenderPassVulkan
 
+    struct Framebuffer {
+
+        // NOTE(marco): this will be a null handle if dynamic rendering is available
+        VkFramebuffer                   vk_handle;
+
+        // NOTE(marco): cache render pass handle
+        RenderPassHandle                render_pass;
+
+        u16                             width   = 0;
+        u16                             height  = 0;
+
+        f32                             scale_x = 1.f;
+        f32                             scale_y = 1.f;
+
+        TextureHandle                   color_attachments[k_max_image_outputs];
+        TextureHandle                   depth_stencil_attachment;
+        u32                             num_color_attachments;
+
+        u8                              resize  = 0;
+
+        const char* name = nullptr;
+    }; // struct Framebuffer
 
     // Enum translations. Use tables or switches depending on the case. ///////
     static cstring to_compiler_extension(VkShaderStageFlagBits value) {

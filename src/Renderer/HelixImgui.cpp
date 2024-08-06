@@ -301,7 +301,7 @@ namespace Helix {
         commands.push_marker("ImGUI");
 
         // todo: key
-        commands.bind_pass(gpu->get_swapchain_pass(), use_secondary);
+        commands.bind_pass(gpu->get_swapchain_pass(), gpu->get_current_framebuffer(), use_secondary);
         commands.bind_pipeline(g_imgui_pipeline);
         commands.bind_vertex_buffer(g_vb, 0, 0);
         commands.bind_index_buffer(g_ib, 0, VK_INDEX_TYPE_UINT16);

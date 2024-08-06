@@ -120,6 +120,7 @@ namespace Helix {
         DescriptorSetLayoutHandle       create_descriptor_set_layout(const DescriptorSetLayoutCreation& creation);
         DescriptorSetHandle             create_descriptor_set(const DescriptorSetCreation& creation);
         RenderPassHandle                create_render_pass(const RenderPassCreation& creation);
+        FramebufferHandle               create_framebuffer(const FramebufferCreation& creation);
         ShaderStateHandle               create_shader_state(const ShaderStateCreation& creation);
 
         void                            destroy_buffer(BufferHandle buffer);
@@ -129,6 +130,7 @@ namespace Helix {
         void                            destroy_descriptor_set_layout(DescriptorSetLayoutHandle layout);
         void                            destroy_descriptor_set(DescriptorSetHandle set);
         void                            destroy_render_pass(RenderPassHandle render_pass);
+        void                            destroy_framebuffer(FramebufferHandle framebuffer);
         void                            destroy_shader_state(ShaderStateHandle shader);
 
         // Query Description /////////////////////////////////////////////////
@@ -143,7 +145,8 @@ namespace Helix {
         const RenderPassOutput&         get_render_pass_output(RenderPassHandle render_pass) const;
 
         // Update/Reload resources ///////////////////////////////////////////
-        void                            resize_output_textures(RenderPassHandle render_pass, u32 width, u32 height);
+        void                            resize_output_textures(FramebufferHandle framebuffer, u32 width, u32 height);
+        void                            resize_texture(TextureHandle texture, u32 width, u32 height);
 
         void                            update_descriptor_set(DescriptorSetHandle set);
 
@@ -187,10 +190,11 @@ namespace Helix {
 
         BufferHandle                    get_fullscreen_vertex_buffer() const;           // Returns a vertex buffer usable for fullscreen shaders that uses no vertices.
         RenderPassHandle                get_swapchain_pass() const;                     // Returns what is considered the final pass that writes to the swapchain.
+        FramebufferHandle               get_current_framebuffer() const;                // Returns the framebuffer for the active swapchain image
 
         TextureHandle                   get_dummy_texture() const;
         BufferHandle                    get_dummy_constant_buffer() const;
-        const RenderPassOutput&         get_swapchain_output() const { return swapchain_output; }
+        const RenderPassOutput&         get_swapchain_output() const { return swapchain_pass_output; }
 
         VkRenderPass                    get_vulkan_render_pass(const RenderPassOutput& output, cstring name);
 
@@ -215,6 +219,7 @@ namespace Helix {
         void                            destroy_descriptor_set_layout_instant(ResourceHandle layout);
         void                            destroy_descriptor_set_instant(ResourceHandle set);
         void                            destroy_render_pass_instant(ResourceHandle render_pass);
+        void                            destroy_framebuffer_instant(ResourceHandle framebuffer);
         void                            destroy_shader_state_instant(ResourceHandle shader);
 
         void                            update_descriptor_set_instant(const DescriptorSetUpdate& update);
@@ -229,19 +234,20 @@ namespace Helix {
         ResourcePool                    descriptor_set_layouts;
         ResourcePool                    descriptor_sets;
         ResourcePool                    render_passes;
+        ResourcePool                    framebuffers;
         ResourcePool                    command_buffers;
         ResourcePool                    shaders;
 
         // Primitive resources
         BufferHandle                    fullscreen_vertex_buffer;
-        RenderPassHandle                swapchain_pass;
+        RenderPassHandle                swapchain_render_pass{ k_invalid_index };
         SamplerHandle                   default_sampler;
         // Dummy resources
         // TODO: Remove the word "Dummy"
         TextureHandle                   default_texture;
         BufferHandle                    default_constant_buffer;
 
-        RenderPassOutput                swapchain_output;
+        RenderPassOutput                swapchain_pass_output;
 
         StringBuffer                    string_buffer;
 
@@ -294,17 +300,13 @@ namespace Helix {
         VkDescriptorSet                 vulkan_bindless_descriptor_set;         // Global bindless descriptor set.
 
         // Swapchain
-        VkImage                         vulkan_swapchain_images[k_max_swapchain_images];
-        VkImageView                     vulkan_swapchain_image_views[k_max_swapchain_images];
-        VkFramebuffer                   vulkan_swapchain_framebuffers[k_max_swapchain_images];
+        FramebufferHandle               vulkan_swapchain_framebuffers[k_max_swapchain_images]{ k_invalid_index, k_invalid_index, k_invalid_index };
 
         VkQueryPool                     vulkan_timestamp_query_pool;
         // Per frame synchronization
         VkSemaphore                     vulkan_render_complete_semaphore[k_max_swapchain_images];
         VkSemaphore                     vulkan_image_acquired_semaphore[k_max_swapchain_images];
         VkFence                         vulkan_command_buffer_executed_fence[k_max_swapchain_images];
-
-        TextureHandle                   depth_texture;
 
         static const uint32_t           k_max_frames = 3;
 
@@ -362,7 +364,8 @@ namespace Helix {
         RenderPass*                     access_render_pass(RenderPassHandle render_pass);
         const RenderPass*               access_render_pass(RenderPassHandle render_pass) const;
 
-
+        Framebuffer*                    access_framebuffer(FramebufferHandle framebuffer);
+        const Framebuffer*              access_framebuffer(FramebufferHandle framebuffer) const;
     }; // struct Device
 
 

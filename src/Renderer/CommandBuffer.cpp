@@ -13,6 +13,7 @@ namespace Helix {
         }
         is_recording = false;
         current_render_pass = nullptr;
+        current_framebuffer = nullptr;
         current_pipeline = nullptr;
         //current_command = 0;
 
@@ -140,12 +141,12 @@ namespace Helix {
         }
     }
 
-    void CommandBuffer::begin_secondary(RenderPass* current_render_pass_) {
+    void CommandBuffer::begin_secondary(RenderPass* current_render_pass_, Framebuffer* current_framebuffer_) {
         if (!is_recording) {
             VkCommandBufferInheritanceInfo inheritance{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO };
             inheritance.renderPass = current_render_pass_->vk_handle;
             inheritance.subpass = 0;
-            inheritance.framebuffer = current_render_pass_->vk_frame_buffer;
+            inheritance.framebuffer = current_framebuffer_->vk_handle;
 
             VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
             beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
@@ -179,7 +180,7 @@ namespace Helix {
         }
     }
 
-    void CommandBuffer::bind_pass(RenderPassHandle handle_, bool use_secondary) {
+    void CommandBuffer::bind_pass(RenderPassHandle handle_, FramebufferHandle framebuffer_, bool use_secondary) {
 
         //if ( !is_recording )
         {
@@ -188,27 +189,44 @@ namespace Helix {
             RenderPass* render_pass = device->access_render_pass(handle_);
 
             // Begin/End render pass are valid only for graphics render passes.
-            if (current_render_pass && (current_render_pass->type != RenderPassType::Compute) && (render_pass != current_render_pass)) {
+            if (current_render_pass && (render_pass != current_render_pass)) {
                 vkCmdEndRenderPass(vk_handle);
             }
 
-            if (render_pass != current_render_pass && (render_pass->type != RenderPassType::Compute)) {
+            Framebuffer* framebuffer = device->access_framebuffer(framebuffer_);
+
+            if (render_pass != current_render_pass) {
                 VkRenderPassBeginInfo render_pass_begin{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-                render_pass_begin.framebuffer = render_pass->type == RenderPassType::Swapchain ? device->vulkan_swapchain_framebuffers[device->vulkan_image_index] : render_pass->vk_frame_buffer;
+                render_pass_begin.framebuffer = framebuffer->vk_handle;
                 render_pass_begin.renderPass = render_pass->vk_handle;
 
                 render_pass_begin.renderArea.offset = { 0, 0 };
-                render_pass_begin.renderArea.extent = { render_pass->width, render_pass->height };
+                render_pass_begin.renderArea.extent = { framebuffer->width, framebuffer->height };
 
-                // TODO: this breaks.
-                render_pass_begin.clearValueCount = 2;// render_pass->output.color_operation ? 2 : 0;
-                render_pass_begin.pClearValues = clears;
+                VkClearValue clear_values[k_max_image_outputs + 1];
+
+                u32 clear_values_count = 0;
+                for (u32 o = 0; o < render_pass->output.num_color_formats; ++o) {
+                    if (render_pass->output.color_operations[o] == RenderPassOperation::Enum::Clear) {
+                        clear_values[clear_values_count++] = clears[0];
+                    }
+                }
+
+                if (render_pass->output.depth_stencil_format != VK_FORMAT_UNDEFINED) {
+                    if (render_pass->output.depth_operation == RenderPassOperation::Enum::Clear) {
+                        clear_values[clear_values_count++] = clears[1];
+                    }
+                }
+
+                render_pass_begin.clearValueCount = clear_values_count;
+                render_pass_begin.pClearValues = clear_values;
 
                 vkCmdBeginRenderPass(vk_handle, &render_pass_begin, use_secondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
             }
 
             // Cache render pass
             current_render_pass = render_pass;
+            current_framebuffer = framebuffer;
         }
     }
 
@@ -339,10 +357,10 @@ namespace Helix {
             vk_viewport.x = 0.f;
 
             if (current_render_pass) {
-                vk_viewport.width = current_render_pass->width * 1.f;
+                vk_viewport.width = current_framebuffer->width * 1.f;
                 // Invert Y with negative height and proper offset - Vulkan has unique Clipping Y.
-                vk_viewport.y = current_render_pass->height * 1.f;
-                vk_viewport.height = -current_render_pass->height * 1.f;
+                vk_viewport.y = current_framebuffer->height * 1.f;
+                vk_viewport.height = -current_framebuffer->height * 1.f;
             }
             else {
                 vk_viewport.width = device->swapchain_width * 1.f;
