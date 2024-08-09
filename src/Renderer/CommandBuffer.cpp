@@ -93,7 +93,7 @@ namespace Helix {
         VkDescriptorSetAllocateInfo alloc_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
         alloc_info.descriptorPool = vk_descriptor_pool;
         alloc_info.descriptorSetCount = 1;
-        alloc_info.pSetLayouts = &descriptor_set_layout->vk_descriptor_set_layout;
+        alloc_info.pSetLayouts = &descriptor_set_layout->vk_handle;
 
         VkResult result = vkAllocateDescriptorSets(device->vulkan_device, &alloc_info, &descriptor_set->vk_descriptor_set);
         HASSERT(result == VK_SUCCESS);

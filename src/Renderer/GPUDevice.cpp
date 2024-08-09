@@ -1360,9 +1360,8 @@ namespace Helix {
         // Create VkPipelineLayout
         for (u32 l = 0; l < num_active_layouts; ++l) {
             pipeline->descriptor_set_layout_handles[l] = create_descriptor_set_layout(shader_state_data->parse_result->sets[l]);
-            pipeline->descriptor_set_layouts[l] = access_descriptor_set_layout(pipeline->descriptor_set_layout_handles[l]);
 
-            vk_layouts[l] = pipeline->descriptor_set_layouts[l]->vk_descriptor_set_layout;
+            vk_layouts[l] = access_descriptor_set_layout(pipeline->descriptor_set_layout_handles[l])->vk_handle;
         }
 
         // TODO: improve.
@@ -1752,7 +1751,7 @@ namespace Helix {
         layout_info.bindingCount = used_bindings;// creation.num_bindings;
         layout_info.pBindings = descriptor_set_layout->vk_binding;
 
-        vkCreateDescriptorSetLayout(vulkan_device, &layout_info, vulkan_allocation_callbacks, &descriptor_set_layout->vk_descriptor_set_layout);
+        vkCreateDescriptorSetLayout(vulkan_device, &layout_info, vulkan_allocation_callbacks, &descriptor_set_layout->vk_handle);
 
         return handle;
     }
@@ -1907,7 +1906,7 @@ namespace Helix {
         VkDescriptorSetAllocateInfo alloc_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
         alloc_info.descriptorPool = vulkan_descriptor_pool;
         alloc_info.descriptorSetCount = 1;
-        alloc_info.pSetLayouts = &descriptor_set_layout->vk_descriptor_set_layout;
+        alloc_info.pSetLayouts = &descriptor_set_layout->vk_handle;
 
         check(vkAllocateDescriptorSets(vulkan_device, &alloc_info, &descriptor_set->vk_descriptor_set));
         // Cache data
@@ -2315,7 +2314,7 @@ namespace Helix {
         DesciptorSetLayout* v_descriptor_set_layout = (DesciptorSetLayout*)descriptor_set_layouts.access_resource(descriptor_set_layout);
 
         if (v_descriptor_set_layout) {
-            vkDestroyDescriptorSetLayout(vulkan_device, v_descriptor_set_layout->vk_descriptor_set_layout, vulkan_allocation_callbacks);
+            vkDestroyDescriptorSetLayout(vulkan_device, v_descriptor_set_layout->vk_handle, vulkan_allocation_callbacks);
 
             // This contains also vk_binding allocation.
             hfree(v_descriptor_set_layout->bindings, allocator);
@@ -2660,7 +2659,7 @@ namespace Helix {
         VkDescriptorSetAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
         allocInfo.descriptorPool = vulkan_descriptor_pool;
         allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &descriptor_set->layout->vk_descriptor_set_layout;
+        allocInfo.pSetLayouts = &descriptor_set->layout->vk_handle;
         vkAllocateDescriptorSets(vulkan_device, &allocInfo, &descriptor_set->vk_descriptor_set);
 
         u32 num_resources = descriptor_set_layout->num_bindings;

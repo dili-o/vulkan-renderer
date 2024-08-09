@@ -790,7 +790,7 @@ namespace Helix {
     //
     struct DesciptorSetLayout {
 
-        VkDescriptorSetLayout           vk_descriptor_set_layout;
+        VkDescriptorSetLayout           vk_handle;
 
         VkDescriptorSetLayoutBinding* vk_binding = nullptr;
         DescriptorBinding* bindings = nullptr;
@@ -827,7 +827,6 @@ namespace Helix {
 
         ShaderStateHandle               shader_state;
 
-        const DesciptorSetLayout*       descriptor_set_layouts[k_max_descriptor_set_layouts];
         DescriptorSetLayoutHandle       descriptor_set_layout_handles[k_max_descriptor_set_layouts];
         u32                             num_active_layouts = 0;
 

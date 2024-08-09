@@ -518,7 +518,6 @@ namespace Helix {
         // Create pipeline state
         PipelineCreation pipeline_creation;
 
-
         StringBuffer path_buffer;
         path_buffer.init(1024, scratch_allocator);
 

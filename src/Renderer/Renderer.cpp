@@ -397,7 +397,7 @@ namespace Helix {
         return material->program->passes[0].pipeline;
     }
 
-    DescriptorSetHandle Renderer::create_descriptor_set(CommandBuffer* command_buffer, Material* material, DescriptorSetCreation& ds_creation) {
+    /*DescriptorSetHandle Renderer::create_descriptor_set(CommandBuffer* command_buffer, Material* material, DescriptorSetCreation& ds_creation) {
         HASSERT(material != nullptr);
 
         DescriptorSetLayoutHandle set_layout = material->program->passes[0].descriptor_set_layout;
@@ -405,7 +405,7 @@ namespace Helix {
         ds_creation.set_layout(set_layout);
 
         return command_buffer->create_descriptor_set(ds_creation);
-    }
+    }*/
 
     void Renderer::destroy_buffer(BufferResource* buffer) {
         if (!buffer) {
