@@ -9,6 +9,11 @@
 
 namespace Helix {
 
+    struct Allocator;
+    struct CommandBuffer;
+    struct FrameGraph;
+    struct GpuDevice;
+
     typedef u32                             FrameGraphHandle;
 
 
@@ -64,6 +69,7 @@ namespace Helix {
 		i32 ref_count						= 0;
 		cstring name						= nullptr;
 	};
+
 
     struct FrameGraphNode {
         RenderPassHandle                    render_pass;

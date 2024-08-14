@@ -622,8 +622,37 @@ namespace Helix {
         // Init render pass cache
         render_pass_cache.init(allocator, 16);
 
+        // Fullscreen image and pass
+        TextureCreation fullscreen_texture_creation{};
+        fullscreen_texture_creation
+            .set_data(nullptr)
+            .set_format_type(vulkan_surface_format.format, TextureType::Texture2D)
+            .set_flags(1, TextureFlags::RenderTarget_mask).set_size((u16)swapchain_width, (u16)swapchain_height, 1).set_name("Fullscreen_Texture");
+        fullscreen_texture_handle = create_texture(fullscreen_texture_creation);
+
         //////// Create swapchain
         create_swapchain();
+
+        RenderPassCreation fullscreen_pass_creation = {};
+        fullscreen_pass_creation.set_name("Fullscreen");
+        fullscreen_pass_creation.add_attachment(fullscreen_texture_creation.format, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, RenderPassOperation::Clear);
+        fullscreen_pass_creation.set_depth_stencil(VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        fullscreen_pass_creation.set_depth_stencil_operations(RenderPassOperation::Clear, RenderPassOperation::Clear);
+
+        fullscreen_render_pass = create_render_pass(fullscreen_pass_creation);
+
+        FramebufferCreation fullscreen_framebuffer_creation;
+        fullscreen_framebuffer_creation
+            .reset()
+            .add_render_texture(fullscreen_texture_handle)
+            .set_depth_stencil_texture({ 2 }) // TODO: Hard coded the first depth image created
+            .set_scaling(1.0f, 1.0f, 0)
+            .set_name("Fullscreen");
+        // TODO: Implement the other setter functions for FramebufferCreation.
+        fullscreen_framebuffer_creation.render_pass = fullscreen_render_pass;
+        fullscreen_framebuffer_creation.width = swapchain_width;
+        fullscreen_framebuffer_creation.height = swapchain_height;
+        fullscreen_framebuffer = create_framebuffer(fullscreen_framebuffer_creation);
 
         //
         // Init primitive resources
@@ -637,6 +666,7 @@ namespace Helix {
         BufferCreation fullscreen_vb_creation = { VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, ResourceUsageType::Immutable, 0, 0, 0, nullptr, "Fullscreen_vb" };
         fullscreen_vertex_buffer = create_buffer(fullscreen_vb_creation);
 
+        
 
         // Init Default resources
         TextureCreation default_texture_creation{ };
@@ -699,6 +729,8 @@ namespace Helix {
         destroy_buffer(dynamic_buffer);
         destroy_render_pass(swapchain_render_pass);
         destroy_texture(default_texture);
+        destroy_framebuffer(fullscreen_framebuffer);
+        destroy_render_pass(fullscreen_render_pass);
         destroy_buffer(default_constant_buffer);
         destroy_sampler(default_sampler);
 
@@ -788,7 +820,6 @@ namespace Helix {
         resource_deletion_queue.shutdown();
         descriptor_set_updates.shutdown();
 
-        //command_buffers.shutdown();
         pipelines.shutdown();
         buffers.shutdown();
         shaders.shutdown();
@@ -1353,7 +1384,6 @@ namespace Helix {
         pipeline->shader_state = shader_state;
 
         VkDescriptorSetLayout vk_layouts[k_max_descriptor_set_layouts];
-
 
         // [TAG: PIPELINE GENERATION]
         u32 num_active_layouts = shader_state_data->parse_result->set_count;
@@ -2281,9 +2311,9 @@ namespace Helix {
 
     void GpuDevice::destroy_texture_instant(ResourceHandle texture) {
         Texture* v_texture = (Texture*)textures.access_resource(texture);
-
+        
         if (v_texture) {
-            //rprint( "Destroying image view %x %u\n", v_texture->vk_image_view, v_texture->handle.index );
+            HDEBUG("Texture name: {}", v_texture->name);
             vkDestroyImageView(vulkan_device, v_texture->vk_image_view, vulkan_allocation_callbacks);
             vmaDestroyImage(vma_allocator, v_texture->vk_image, v_texture->vma_allocation);
         }
@@ -2353,7 +2383,8 @@ namespace Helix {
             }
 
             if (v_framebuffer->depth_stencil_attachment.index != k_invalid_index) {
-                destroy_texture_instant(v_framebuffer->depth_stencil_attachment.index);
+                // TODO: Fix issue with destroying that same resource
+                //destroy_texture_instant(v_framebuffer->depth_stencil_attachment.index);
             }
 
             vkDestroyFramebuffer(vulkan_device, v_framebuffer->vk_handle, vulkan_allocation_callbacks);
@@ -2613,6 +2644,12 @@ namespace Helix {
         // Create swapchain
         create_swapchain();
 
+        Framebuffer* vk_framebuffer = access_framebuffer(fullscreen_framebuffer);
+        vk_framebuffer->resize = true;
+        resize_output_textures(fullscreen_framebuffer, swapchain_width, swapchain_height);
+
+        
+
         vkDeviceWaitIdle(vulkan_device);
     }
 
@@ -2699,7 +2736,11 @@ namespace Helix {
             }
 
             if (vk_framebuffer->depth_stencil_attachment.index != k_invalid_index) {
-                resize_texture(vk_framebuffer->depth_stencil_attachment, new_width, new_height);
+                // TODO: This neeeds to be fixed asap
+                Framebuffer* swapchain_framebuffer = access_framebuffer(vulkan_swapchain_framebuffers[0]);
+
+                vk_framebuffer->depth_stencil_attachment = swapchain_framebuffer->depth_stencil_attachment;
+                //resize_texture(vk_framebuffer->depth_stencil_attachment, new_width, new_height);
             }
 
             // Again: create temporary resource to use the standard deferred deletion mechanism.

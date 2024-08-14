@@ -113,6 +113,7 @@ namespace Helix {
         ImGuiIO& io = ImGui::GetIO();
         io.BackendRendererName = "Helix_ImGui";
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
         using namespace Helix;
 
         // Load font texture atlas //////////////////////////////////////////////////

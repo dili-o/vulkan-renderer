@@ -240,6 +240,9 @@ namespace Helix {
 
         // Primitive resources
         BufferHandle                    fullscreen_vertex_buffer;
+        TextureHandle                   fullscreen_texture_handle;
+        RenderPassHandle                fullscreen_render_pass{ k_invalid_index };
+        FramebufferHandle               fullscreen_framebuffer{ k_invalid_index };
         RenderPassHandle                swapchain_render_pass{ k_invalid_index };
         SamplerHandle                   default_sampler;
         // Dummy resources
@@ -247,7 +250,8 @@ namespace Helix {
         TextureHandle                   default_texture;
         BufferHandle                    default_constant_buffer;
 
-        RenderPassOutput                swapchain_pass_output;
+        RenderPassOutput                fullscreen_pass_output;//
+        RenderPassOutput                swapchain_pass_output; // TODO: Right now these are not used becuase RenderPassOutputs are generated.
 
         StringBuffer                    string_buffer;
 

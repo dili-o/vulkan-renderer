@@ -139,10 +139,6 @@ namespace Helix {
                 for (u32 j = 0; j < per_frame_active[frame_index]; ++j) {
                     const GPUTimestamp& timestamp = frame_timestamps[j];
 
-                    /*if ( timestamp.depth != 1 ) {
-                        continue;
-                    }*/
-
                     rect_height = (f32)timestamp.elapsed_ms / max_duration * widget_height;
                     draw_list->AddRectFilled({ frame_x, cursor_pos.y + widget_height - rect_height },
                         { frame_x + rect_width, cursor_pos.y + widget_height }, timestamp.color);
@@ -186,10 +182,6 @@ namespace Helix {
                 for (u32 j = 0; j < per_frame_active[selected_frame]; ++j) {
                     const GPUTimestamp& timestamp = frame_timestamps[j];
 
-                    /*if ( timestamp.depth != 1 ) {
-                        continue;
-                    }*/
-
                     draw_list->AddRectFilled({ x, y },
                         { x + 8, y + 8 }, timestamp.color);
 
@@ -209,7 +201,9 @@ namespace Helix {
         ImGui::SetNextItemWidth(100.f);
         ImGui::LabelText("", "Min %3.4fms", min_time);
         ImGui::SameLine();
-        ImGui::LabelText("", "FPS %i", (u32)(1000.f / (average_time)));
+        ImGui::SetNextItemWidth(100.f);
+        ImGui::LabelText("", "Avg %3.4fms", average_time);
+        ImGui::SameLine();
 
 
         ImGui::Separator();

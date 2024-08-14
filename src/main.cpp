@@ -203,21 +203,22 @@ int main(int argc, char** argv)
     float light_range = 20.0f;
     float light_intensity = 1000.f;
 
+    int frameCount = 0;
+    double lastTime = 0.0;
+
+    float aspect_ratio = gpu.swapchain_width * 1.0f / gpu.swapchain_height;
+
     while (!window.requested_exit) {
         ZoneScoped;
-
         // New frame
         if (!window.minimized) {
             gpu.new_frame();
-
             static bool checksz = true;
             if (async_loader.file_load_requests.size == 0 && checksz) {
                 checksz = false;
                 HINFO("Finished uploading textures in {} seconds", Time::from_seconds(absolute_begin_frame_tick));
             }
         }
-        //input->new_frame();
-
         window.handle_os_messages();
         input_handler.new_frame();
 
@@ -228,24 +229,31 @@ int main(int argc, char** argv)
         // This MUST be AFTER os messages!
         imgui->new_frame();
 
-        ImGui::ShowDemoWindow();
+        //ImGui::ShowDemoWindow();
 
         const i64 current_tick = Time::now();
         f32 delta_time = (f32)Time::delta_seconds(begin_frame_tick, current_tick);
         begin_frame_tick = current_tick;
 
         input_handler.update(delta_time);
-        //window.center_mouse()
 
         {
             ZoneScopedN("ImGui Recording");
 
-            if (ImGui::Begin("Raptor ImGui")) {
+            ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+            if (ImGui::Begin("Scene")) {
                 ImGui::InputFloat("Model scale", &model_scale, 0.001f);
                 ImGui::SliderFloat3("Light position", light_position.raw, -30.f, 30.f);
                 ImGui::InputFloat3("Camera position", eye.raw);
                 ImGui::InputFloat("Light range", &light_range);
                 ImGui::InputFloat("Light intensity", &light_intensity);
+            }
+            ImGui::End();
+
+            if (ImGui::Begin("Viewport")) {
+                ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+                ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle, { viewportPanelSize.x, viewportPanelSize.y });
+                aspect_ratio = viewportPanelSize.x * 1.0f / viewportPanelSize.y;
             }
             ImGui::End();
 
@@ -264,13 +272,12 @@ int main(int argc, char** argv)
         }
 
         {
-            // Update rotating cube gpu data
             MapBufferParameters cb_map = { scene->scene_buffer, 0, 0 };
             float* cb_data = (float*)gpu.map_buffer(cb_map);
             MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
             float* light_cb_data = (float*)gpu.map_buffer(light_cb_map);
             if (cb_data) {
-                if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_LEFT) && !ImGui::GetIO().WantCaptureMouse) {
+                if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
                     pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
                     yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * 0.3f;
 
@@ -310,7 +317,7 @@ int main(int argc, char** argv)
                 }
 
                 mat4s view = glms_lookat(eye, glms_vec3_add(eye, look), vec3s{ 0.0f, 1.0f, 0.0f });
-                mat4s projection = glms_perspective(glm_rad(60.0f), gpu.swapchain_width * 1.0f / gpu.swapchain_height, 0.01f, 1000.0f);
+                mat4s projection = glms_perspective(glm_rad(60.0f), aspect_ratio, 0.01f, 1000.0f);
 
                 // Calculate view projection matrix
                 mat4s view_projection = glms_mat4_mul(projection, view);
@@ -354,11 +361,19 @@ int main(int argc, char** argv)
         if (!window.minimized) {
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
 
-            
             gpu.present();
         }
         else {
             ImGui::Render();
+        }
+        f64 current_time = Time::from_seconds(absolute_begin_frame_tick);
+        frameCount++;
+        if (current_time - lastTime >= 1.0) {
+            renderer.fps = (f64)frameCount / (current_time - lastTime);
+
+            // Reset for the next second
+            lastTime = current_time;
+            frameCount = 0;
         }
         FrameMark;
     }

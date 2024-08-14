@@ -72,8 +72,6 @@ namespace Helix {
     //
     struct Program : public Helix::Resource {
 
-        u32                             get_num_passes() const;
-
         Array<ProgramPass>              passes;
 
         u32                             pool_index;
@@ -102,7 +100,7 @@ namespace Helix {
     //
     struct Material : public Helix::Resource {
 
-        Program* program;
+        Program*                        program;
 
         u32                             render_index;
 
@@ -195,7 +193,9 @@ namespace Helix {
         void                        add_texture_to_update(Helix::TextureHandle texture);
         void                        add_texture_update_commands(u32 thread_id);
 
-        std::mutex                  texture_update_mutex;
+        f64                         fps = 0;
+
+        std::mutex                          texture_update_mutex;
 
         ResourcePoolTyped<TextureResource>  textures;
         ResourcePoolTyped<BufferResource>   buffers;

@@ -713,7 +713,7 @@ namespace Helix {
         BufferHandle                    parent_buffer;
 
         u8*                             mapped_data         = nullptr;
-        cstring                     name                = nullptr;
+        cstring                         name                = nullptr;
 
     }; // struct BufferVulkan
 

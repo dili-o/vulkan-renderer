@@ -34,7 +34,8 @@ namespace Helix {
         DrawFlags_AlphaMask = 1 << 0,
     }; // enum DrawFlags
 
-    struct MeshDraw {
+    struct MeshDraw{
+
         Material*       material;
 
         BufferHandle    index_buffer;
@@ -125,18 +126,17 @@ namespace Helix {
 
     struct glTFDrawTask : public enki::ITaskSet {
 
-        GpuDevice* gpu = nullptr;
-        Renderer* renderer = nullptr;
-        ImGuiService* imgui = nullptr;
-        GPUProfiler* gpu_profiler = nullptr;
-        glTFScene* scene = nullptr;
-        u32                             thread_id = 0;
+        GpuDevice*              gpu = nullptr;
+        Renderer*               renderer = nullptr;
+        ImGuiService*           imgui = nullptr;
+        GPUProfiler*            gpu_profiler = nullptr;
+        glTFScene*              scene = nullptr;
+        u32                     thread_id = 0;
 
         void init(GpuDevice* gpu_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_);
 
         void ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
 
     }; // struct DrawTask
-
 } // namespace Helix
 

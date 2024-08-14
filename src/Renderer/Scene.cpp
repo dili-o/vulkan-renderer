@@ -218,9 +218,14 @@ namespace Helix {
 
         gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
         gpu_commands->clear_depth_stencil(1.0f, 0);
-        gpu_commands->bind_pass(gpu->get_swapchain_pass(), gpu->get_current_framebuffer(), false);
+        gpu_commands->bind_pass(gpu->fullscreen_render_pass, gpu->fullscreen_framebuffer, false);
+        
         gpu_commands->set_scissor(nullptr);
-        gpu_commands->set_viewport(nullptr);
+        Viewport viewport{};
+        viewport.rect = { 0,0,gpu->swapchain_width, gpu->swapchain_height };
+        viewport.max_depth = 1.0f;
+        viewport.min_depth = 0.0f;
+        gpu_commands->set_viewport(&viewport);
 
         Material* last_material = nullptr;
         // TODO(marco): loop by material so that we can deal with multiple passes
@@ -754,5 +759,4 @@ namespace Helix {
         // Avoid using the same command buffer
         renderer->add_texture_update_commands((draw_task.thread_id + 1) % task_scheduler->GetNumTaskThreads());
     }
-    
 }// namespace Helix

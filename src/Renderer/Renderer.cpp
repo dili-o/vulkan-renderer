@@ -167,6 +167,7 @@ namespace Helix {
         }
 
         ImGui::Text("GPU Memory Total: %lluMB", total_memory_used / (1024 * 1024));
+        ImGui::Text("FPS: %i", (u32)fps);
     }
 
     void Renderer::imgui_resources_draw()
