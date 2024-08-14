@@ -210,6 +210,13 @@ int main(int argc, char** argv)
 
     while (!window.requested_exit) {
         ZoneScoped;
+        window.handle_os_messages();
+        input_handler.new_frame();
+
+        const i64 current_tick = Time::now();
+
+        
+
         // New frame
         if (!window.minimized) {
             gpu.new_frame();
@@ -218,164 +225,153 @@ int main(int argc, char** argv)
                 checksz = false;
                 HINFO("Finished uploading textures in {} seconds", Time::from_seconds(absolute_begin_frame_tick));
             }
-        }
-        window.handle_os_messages();
-        input_handler.new_frame();
-
-        if (window.resized) {
-            gpu.resize(window.width, window.height);
-            window.resized = false;
-        }
-        // This MUST be AFTER os messages!
-        imgui->new_frame();
-
-        //ImGui::ShowDemoWindow();
-
-        const i64 current_tick = Time::now();
-        f32 delta_time = (f32)Time::delta_seconds(begin_frame_tick, current_tick);
-        begin_frame_tick = current_tick;
-
-        input_handler.update(delta_time);
-
-        {
-            ZoneScopedN("ImGui Recording");
-
-            ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
-            if (ImGui::Begin("Scene")) {
-                ImGui::InputFloat("Model scale", &model_scale, 0.001f);
-                ImGui::SliderFloat3("Light position", light_position.raw, -30.f, 30.f);
-                ImGui::InputFloat3("Camera position", eye.raw);
-                ImGui::InputFloat("Light range", &light_range);
-                ImGui::InputFloat("Light intensity", &light_intensity);
+            if (window.resized) {
+                gpu.resize(window.width, window.height);
+                window.resized = false;
             }
-            ImGui::End();
+            // This MUST be AFTER os messages!
+            imgui->new_frame();
 
-            if (ImGui::Begin("Viewport")) {
-                ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-                ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle, { viewportPanelSize.x, viewportPanelSize.y });
-                aspect_ratio = viewportPanelSize.x * 1.0f / viewportPanelSize.y;
+            f32 delta_time = (f32)Time::delta_seconds(begin_frame_tick, current_tick);
+            begin_frame_tick = current_tick;
+
+            input_handler.update(delta_time);
+
+            {
+                ZoneScopedN("ImGui Recording");
+
+                ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+                if (ImGui::Begin("Scene")) {
+                    ImGui::InputFloat("Model scale", &model_scale, 0.001f);
+                    ImGui::SliderFloat3("Light position", light_position.raw, -30.f, 30.f);
+                    ImGui::InputFloat3("Camera position", eye.raw);
+                    ImGui::InputFloat("Light range", &light_range);
+                    ImGui::InputFloat("Light intensity", &light_intensity);
+                }
+                ImGui::End();
+
+                if (ImGui::Begin("Viewport")) {
+                    ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+                    ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle, { viewportPanelSize.x, viewportPanelSize.y });
+                    aspect_ratio = viewportPanelSize.x * 1.0f / viewportPanelSize.y;
+                }
+                ImGui::End();
+
+                if (ImGui::Begin("GPU")) {
+                    renderer.imgui_draw();
+
+                    ImGui::Separator();
+                    gpu_profiler.imgui_draw();
+
+                }
+                ImGui::End();
+
+                renderer.imgui_resources_draw();
+
+                //MemoryService::instance()->imgui_draw();
             }
-            ImGui::End();
 
-            if (ImGui::Begin("GPU")) {
-                renderer.imgui_draw();
+            {
+                MapBufferParameters cb_map = { scene->scene_buffer, 0, 0 };
+                float* cb_data = (float*)gpu.map_buffer(cb_map);
+                MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
+                float* light_cb_data = (float*)gpu.map_buffer(light_cb_map);
+                if (cb_data) {
+                    if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
+                        pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
+                        yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * 0.3f;
 
-                ImGui::Separator();
-                gpu_profiler.imgui_draw();
+                        pitch = clamp(pitch, -60.0f, 60.0f);
 
-            }
-            ImGui::End();
+                        if (yaw > 360.0f) {
+                            yaw -= 360.0f;
+                        }
 
-            renderer.imgui_resources_draw();
+                        mat3s rxm = glms_mat4_pick3(glms_rotate_make(glm_rad(-pitch), vec3s{ 1.0f, 0.0f, 0.0f }));
+                        mat3s rym = glms_mat4_pick3(glms_rotate_make(glm_rad(-yaw), vec3s{ 0.0f, 1.0f, 0.0f }));
 
-            //MemoryService::instance()->imgui_draw();
-        }
+                        look = glms_mat3_mulv(rxm, vec3s{ 0.0f, 0.0f, -1.0f });
+                        look = glms_mat3_mulv(rym, look);
 
-        {
-            MapBufferParameters cb_map = { scene->scene_buffer, 0, 0 };
-            float* cb_data = (float*)gpu.map_buffer(cb_map);
-            MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
-            float* light_cb_data = (float*)gpu.map_buffer(light_cb_map);
-            if (cb_data) {
-                if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
-                    pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
-                    yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * 0.3f;
-
-                    pitch = clamp(pitch, -60.0f, 60.0f);
-
-                    if (yaw > 360.0f) {
-                        yaw -= 360.0f;
+                        right = glms_cross(look, vec3s{ 0.0f, 1.0f, 0.0f });
                     }
 
-                    mat3s rxm = glms_mat4_pick3(glms_rotate_make(glm_rad(-pitch), vec3s{ 1.0f, 0.0f, 0.0f }));
-                    mat3s rym = glms_mat4_pick3(glms_rotate_make(glm_rad(-yaw), vec3s{ 0.0f, 1.0f, 0.0f }));
+                    if (input_handler.is_key_down(Keys::KEY_W)) {
+                        eye = glms_vec3_add(eye, glms_vec3_scale(look, 5.0f * delta_time));
+                    }
+                    else if (input_handler.is_key_down(Keys::KEY_S)) {
+                        eye = glms_vec3_sub(eye, glms_vec3_scale(look, 5.0f * delta_time));
+                    }
 
-                    look = glms_mat3_mulv(rxm, vec3s{ 0.0f, 0.0f, -1.0f });
-                    look = glms_mat3_mulv(rym, look);
+                    if (input_handler.is_key_down(Keys::KEY_D)) {
+                        eye = glms_vec3_add(eye, glms_vec3_scale(right, 5.0f * delta_time));
+                    }
+                    else if (input_handler.is_key_down(Keys::KEY_A)) {
+                        eye = glms_vec3_sub(eye, glms_vec3_scale(right, 5.0f * delta_time));
+                    }
+                    if (input_handler.is_key_down(Keys::KEY_E)) {
+                        eye = glms_vec3_add(eye, glms_vec3_scale(up, 5.0f * delta_time));
+                    }
+                    else if (input_handler.is_key_down(Keys::KEY_Q)) {
+                        eye = glms_vec3_sub(eye, glms_vec3_scale(up, 5.0f * delta_time));
+                    }
 
-                    right = glms_cross(look, vec3s{ 0.0f, 1.0f, 0.0f });
+                    mat4s view = glms_lookat(eye, glms_vec3_add(eye, look), vec3s{ 0.0f, 1.0f, 0.0f });
+                    mat4s projection = glms_perspective(glm_rad(60.0f), aspect_ratio, 0.01f, 1000.0f);
+
+                    // Calculate view projection matrix
+                    mat4s view_projection = glms_mat4_mul(projection, view);
+
+                    // Rotate cube:
+                    rx += 1.0f * delta_time;
+                    ry += 2.0f * delta_time;
+
+                    mat4s rxm = glms_rotate_make(rx, vec3s{ 1.0f, 0.0f, 0.0f });
+                    mat4s rym = glms_rotate_make(glm_rad(45.0f), vec3s{ 0.0f, 1.0f, 0.0f });
+
+                    mat4s sm = glms_scale_make(vec3s{ model_scale, model_scale, model_scale });
+
+                    UniformData uniform_data{ };
+                    uniform_data.view_projection = view_projection;
+                    uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
+                    uniform_data.light_intensity = light_intensity;
+                    uniform_data.light_range = light_range;
+                    uniform_data.light_position = vec4s{ light_position.x, light_position.y, light_position.z, 1.0f };
+
+                    memcpy(cb_data, &uniform_data, sizeof(UniformData));
+
+                    gpu.unmap_buffer(cb_map);
+
+                    LightUniform light_uniform_data{ };
+                    light_uniform_data.view_projection = view_projection;
+                    light_uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
+                    light_uniform_data.texture_index = scene->light_texture.handle.index;
+
+                    mat4s model = glms_mat4_identity();
+                    model = glms_translate(model, light_position);
+                    light_uniform_data.model = model;
+
+                    memcpy(light_cb_data, &light_uniform_data, sizeof(LightUniform));
+
+                    gpu.unmap_buffer(light_cb_map);
                 }
-
-                if (input_handler.is_key_down(Keys::KEY_W)) {
-                    eye = glms_vec3_add(eye, glms_vec3_scale(look, 5.0f * delta_time));
-                }
-                else if (input_handler.is_key_down(Keys::KEY_S)) {
-                    eye = glms_vec3_sub(eye, glms_vec3_scale(look, 5.0f * delta_time));
-                }
-
-                if (input_handler.is_key_down(Keys::KEY_D)) {
-                    eye = glms_vec3_add(eye, glms_vec3_scale(right, 5.0f * delta_time));
-                }
-                else if (input_handler.is_key_down(Keys::KEY_A)) {
-                    eye = glms_vec3_sub(eye, glms_vec3_scale(right, 5.0f * delta_time));
-                }
-                if (input_handler.is_key_down(Keys::KEY_E)) {
-                    eye = glms_vec3_add(eye, glms_vec3_scale(up, 5.0f * delta_time));
-                }
-                else if (input_handler.is_key_down(Keys::KEY_Q)) {
-                    eye = glms_vec3_sub(eye, glms_vec3_scale(up, 5.0f * delta_time));
-                }
-
-                mat4s view = glms_lookat(eye, glms_vec3_add(eye, look), vec3s{ 0.0f, 1.0f, 0.0f });
-                mat4s projection = glms_perspective(glm_rad(60.0f), aspect_ratio, 0.01f, 1000.0f);
-
-                // Calculate view projection matrix
-                mat4s view_projection = glms_mat4_mul(projection, view);
-
-                // Rotate cube:
-                rx += 1.0f * delta_time;
-                ry += 2.0f * delta_time;
-
-                mat4s rxm = glms_rotate_make(rx, vec3s{ 1.0f, 0.0f, 0.0f });
-                mat4s rym = glms_rotate_make(glm_rad(45.0f), vec3s{ 0.0f, 1.0f, 0.0f });
-
-                mat4s sm = glms_scale_make(vec3s{ model_scale, model_scale, model_scale });
-
-                UniformData uniform_data{ };
-                uniform_data.view_projection = view_projection;
-                uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
-                uniform_data.light_intensity = light_intensity;
-                uniform_data.light_range = light_range;
-                uniform_data.light_position = vec4s{ light_position.x, light_position.y, light_position.z, 1.0f };
-
-                memcpy(cb_data, &uniform_data, sizeof(UniformData));
-
-                gpu.unmap_buffer(cb_map);
-
-                LightUniform light_uniform_data{ };
-                light_uniform_data.view_projection = view_projection;
-                light_uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
-                light_uniform_data.texture_index = scene->light_texture.handle.index;
-                
-                mat4s model = glms_mat4_identity();
-                model = glms_translate(model, light_position);
-                light_uniform_data.model = model;
-                
-                memcpy(light_cb_data, &light_uniform_data, sizeof(LightUniform));
-                
-                gpu.unmap_buffer(light_cb_map);
+                scene->upload_materials(model_scale);
             }
-            scene->upload_materials(model_scale);
-        }
-        // TODO: push constants.
-        if (!window.minimized) {
+
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
 
             gpu.present();
-        }
-        else {
-            ImGui::Render();
-        }
-        f64 current_time = Time::from_seconds(absolute_begin_frame_tick);
-        frameCount++;
-        if (current_time - lastTime >= 1.0) {
-            renderer.fps = (f64)frameCount / (current_time - lastTime);
 
-            // Reset for the next second
-            lastTime = current_time;
-            frameCount = 0;
+            f64 current_time = Time::from_seconds(absolute_begin_frame_tick);
+            frameCount++;
+            if (current_time - lastTime >= 1.0) {
+                renderer.fps = (f64)frameCount / (current_time - lastTime);
+
+                // Reset for the next second
+                lastTime = current_time;
+                frameCount = 0;
+            }
         }
-        FrameMark;
     }
 
     run_pinned_task.execute = false;

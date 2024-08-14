@@ -90,17 +90,6 @@ namespace Helix {
                 {
                     // Resize only if even numbers are used?
                     // NOTE: This goes in an infinite loop when maximising a window that has an odd width/height.
-                    /*if ( ( event.window.data1 % 2 == 1 ) || ( event.window.data2 % 2 == 1 ) ) {
-                        u32 new_width = ( u32 )( event.window.data1 % 2 == 0 ? event.window.data1 : event.window.data1 - 1 );
-                        u32 new_height = ( u32 )( event.window.data2 % 2 == 0 ? event.window.data2 : event.window.data2 - 1 );
-
-                        if ( new_width != width || new_height != height ) {
-                            SDL_SetWindowSize( window, new_width, new_height );
-
-                            rprint( "Forcing resize to a multiple of 2, %ux%u from %ux%u\n", new_width, new_height, event.window.data1, event.window.data2 );
-                        }
-                    }*/
-                    //else 
                     {
                         u32 new_width = (u32)(event.window.data1);
                         u32 new_height = (u32)(event.window.data2);
