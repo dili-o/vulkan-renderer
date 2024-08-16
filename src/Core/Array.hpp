@@ -171,7 +171,8 @@ namespace Helix {
             new_capacity = 4;
         }
 
-        T* new_data = (T*)allocator->allocate(new_capacity * sizeof(T), alignof(T));
+        //T* new_data = (T*)allocator->allocate(new_capacity * sizeof(T), alignof(T));
+        T* new_data = (T*)hallocaa(new_capacity * sizeof(T), allocator, alignof(T));
         if (capacity) {
             memory_copy(new_data, data, capacity * sizeof(T));
 

@@ -203,8 +203,8 @@ int main(int argc, char** argv)
     float light_range = 20.0f;
     float light_intensity = 1000.f;
 
-    int frameCount = 0;
-    double lastTime = 0.0;
+    int frame_count = 0;
+    double last_time = 0.0;
 
     float aspect_ratio = gpu.swapchain_width * 1.0f / gpu.swapchain_height;
 
@@ -262,9 +262,10 @@ int main(int argc, char** argv)
 
                     ImGui::Separator();
                     gpu_profiler.imgui_draw();
-
                 }
                 ImGui::End();
+
+                scene->imgui_draw_hierarchy();
 
                 renderer.imgui_resources_draw();
 
@@ -357,19 +358,18 @@ int main(int argc, char** argv)
                 }
                 scene->upload_materials(model_scale);
             }
-
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
 
             gpu.present();
 
             f64 current_time = Time::from_seconds(absolute_begin_frame_tick);
-            frameCount++;
-            if (current_time - lastTime >= 1.0) {
-                renderer.fps = (f64)frameCount / (current_time - lastTime);
+            frame_count++;
+            if (current_time - last_time >= 1.0) {
+                renderer.fps = (f64)frame_count / (current_time - last_time);
 
                 // Reset for the next second
-                lastTime = current_time;
-                frameCount = 0;
+                last_time = current_time;
+                frame_count = 0;
             }
         }
     }

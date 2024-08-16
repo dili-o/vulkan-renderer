@@ -16,7 +16,8 @@ namespace Helix {
 
         // Group allocate ( resource size + u32 )
         sizet allocation_size = pool_size * (resource_size + sizeof(u32));
-        memory = (u8*)allocator->allocate(allocation_size, 1);
+        //memory = (u8*)allocator->allocate(allocation_size, 1);
+        memory = hallocam(allocation_size, allocator);
         memset(memory, 0, allocation_size);
 
         // Allocate and add free indices

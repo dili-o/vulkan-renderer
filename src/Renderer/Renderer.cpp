@@ -184,6 +184,8 @@ namespace Helix {
                             ImGui::Text("Width: %d", texture->desc.width);
                             ImGui::Text("Height: %d", texture->desc.height);
                             ImGui::Text("Format: %s", string_VkFormat(texture->desc.format));
+                            ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+                            ImGui::Image((ImTextureID)&texture->handle, { viewportPanelSize.x, viewportPanelSize.x });
                             ImGui::TreePop();
                         }
                         resource_cache.textures.iterator_advance(it);

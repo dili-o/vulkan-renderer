@@ -8,6 +8,7 @@
 #include "Core/File.hpp"
 #include <vendor/tracy/tracy/Tracy.hpp>
 #include <cglm/struct/quat.h>
+#include <imgui/imgui.h>
 
 namespace Helix {
     struct Transform {
@@ -272,6 +273,8 @@ namespace Helix {
 
         i64 end_loading_file = Time::now();
 
+        node_pool.init(resident_allocator);
+
         // Load all textures
         images.init(resident_allocator, gltf_scene.images_count);
 
@@ -466,6 +469,11 @@ namespace Helix {
     void glTFScene::unload(Renderer* renderer) {
         GpuDevice& gpu = *renderer->gpu;
 
+        for (u32 i = 0; i < node_pool.root_nodes.size; i++)
+            destroy_node(node_pool.root_nodes[i]);
+
+
+        node_pool.shutdown();
         // Free scene buffers
         samplers.shutdown();
         images.shutdown();
@@ -476,9 +484,9 @@ namespace Helix {
         gltf_free(gltf_scene);
     }
 
-    void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator) {
+    void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
 
-        sizet cached_scratch_size = scratch_allocator->get_marker();
+        sizet cached_scratch_size = stack_allocator->get_marker();
 
         {
             // Creating the light image
@@ -493,9 +501,9 @@ namespace Helix {
 
             pipeline_creation.name = "Light";
 
-            FileReadResult vs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.vert.glsl", scratch_allocator);
-            FileReadResult fs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.frag.glsl", scratch_allocator);
-            FileReadResult gs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.geom.glsl", scratch_allocator);
+            FileReadResult vs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.vert.glsl", stack_allocator);
+            FileReadResult fs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.frag.glsl", stack_allocator);
+            FileReadResult gs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.geom.glsl", stack_allocator);
 
             pipeline_creation.vertex_input.reset();
             pipeline_creation.render_pass = renderer->gpu->get_swapchain_output();
@@ -518,21 +526,26 @@ namespace Helix {
             DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(light_program->passes[0].pipeline, 0);
             ds_creation.buffer(light_cb, 0).set_layout(layout);
             light_ds = renderer->gpu->create_descriptor_set(ds_creation);
+            
+            NodeHandle light_node_handle = node_pool.obtain_node(NodeType_LightNode);
+            node_pool.root_nodes.push(light_node_handle);
 
+            LightNode* lightNode = (LightNode*)node_pool.access_node(light_node_handle);
+            lightNode->name = "Point Light";
         }
         // Create pipeline state
         PipelineCreation pipeline_creation;
 
         StringBuffer path_buffer;
-        path_buffer.init(1024, scratch_allocator);
+        path_buffer.init(1024, stack_allocator);
 
         cstring vert_file = "pbr.vert.glsl";
         char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
-        FileReadResult vert_code = file_read_text(vert_path, scratch_allocator);
+        FileReadResult vert_code = file_read_text(vert_path, stack_allocator);
 
         cstring frag_file = "pbr.frag.glsl";
         char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
-        FileReadResult frag_code = file_read_text(frag_path, scratch_allocator);
+        FileReadResult frag_code = file_read_text(frag_path, stack_allocator);
 
         // Vertex input
         // TODO(marco): could these be inferred from SPIR-V?
@@ -587,23 +600,38 @@ namespace Helix {
         material_creation.set_name("material_cull_transparent").set_program(program_cull).set_render_index(3);
         Material* material_cull_transparent = renderer->create_material(material_creation);
 
-        scratch_allocator->free_marker(cached_scratch_size);
+        stack_allocator->free_marker(cached_scratch_size);
 
         glTF::Scene& root_gltf_scene = gltf_scene.scenes[gltf_scene.scene];
 
+
         Array<i32> node_parents;
-        node_parents.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+        node_parents.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         Array<mat4s> node_matrix;
-        node_matrix.init(scratch_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+        node_matrix.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         Array<u32> node_stack;
-        node_stack.init(scratch_allocator, 8);
+        node_stack.init(stack_allocator, 8);
 
+        // Create the node resources
+        Array<NodeHandle> node_handles;
+        node_handles.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+
+        for (u32 node_index = 0; node_index < gltf_scene.nodes_count; ++node_index) {
+            glTF::Node& node = gltf_scene.nodes[node_index];
+            if (node.mesh == glTF::INVALID_INT_VALUE)
+                node_handles[node_index] = node_pool.obtain_node(NodeType_Node);
+            else
+                node_handles[node_index] = node_pool.obtain_node(NodeType_MeshNode);
+        }
+
+        // Root Nodes
         for (u32 node_index = 0; node_index < root_gltf_scene.nodes_count; ++node_index) {
             u32 root_node = root_gltf_scene.nodes[node_index];
             node_parents[root_node] = -1;
             node_stack.push(root_node);
+            node_pool.root_nodes.push(node_handles[root_node]);
         }
 
         while (node_stack.size) {
@@ -646,15 +674,35 @@ namespace Helix {
 
             node_matrix[node_index] = local_matrix;
 
+            if (node.mesh == glTF::INVALID_INT_VALUE) {
+                Node* base_node = (Node*)node_pool.base_nodes.access_resource(node_handles[node_index].index);
+                base_node->name = node.name.data ? node.name.data : "Node";
+                base_node->local_transform = local_matrix;
+                base_node->world_transform = local_matrix;
+                base_node->children.init(node_pool.allocator, node.children_count, node.children_count);
+
+                for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
+                    u32 child_node_index = node.children[child_index];
+                    node_parents[child_node_index] = node_index;
+                    node_stack.push(child_node_index);
+                    base_node->children[child_index] = node_handles[child_node_index];
+                }
+
+                continue;
+            }
+            
+            MeshNode* mesh_node = (MeshNode*)node_pool.mesh_nodes.access_resource(node_handles[node_index].index);
+            mesh_node->name = node.name.data ? node.name.data : "Node";
+            mesh_node->local_transform = local_matrix;
+            //base_node->world_transform = local_matrix;
+            mesh_node->children.init(node_pool.allocator, node.children_count, node.children_count);
             for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
                 u32 child_node_index = node.children[child_index];
                 node_parents[child_node_index] = node_index;
                 node_stack.push(child_node_index);
+                mesh_node->children[child_index] = node_handles[child_node_index];
             }
 
-            if (node.mesh == glTF::INVALID_INT_VALUE) {
-                continue;
-            }
 
             glTF::Mesh& mesh = gltf_scene.meshes[node.mesh];
 
@@ -680,6 +728,7 @@ namespace Helix {
                 mesh_draw.model = final_matrix;
 
                 glTF::MeshPrimitive& mesh_primitive = mesh.primitives[primitive_index];
+
 
                 const i32 position_accessor_index = gltf_get_attribute_accessor_index(mesh_primitive.attributes, mesh_primitive.attribute_count, "POSITION");
                 const i32 tangent_accessor_index = gltf_get_attribute_accessor_index(mesh_primitive.attributes, mesh_primitive.attribute_count, "TANGENT");
@@ -729,6 +778,15 @@ namespace Helix {
                     }
                 }
 
+                // TODO Make this a primitive struct. Not a MeshNode
+                NodeHandle mesh_handle = node_pool.obtain_node(NodeType_MeshNode);
+                MeshNode* mesh_node_primitive = (MeshNode*)node_pool.access_node(mesh_handle);
+                mesh_node_primitive->children.size = 0;
+                mesh_node_primitive->name = "Mesh_Primitive";
+                mesh_node_primitive->parent = node_handles[node_index];
+
+                mesh_node->children.push(mesh_handle);
+
                 mesh_draws.push(mesh_draw);
             }
         }
@@ -758,5 +816,109 @@ namespace Helix {
         task_scheduler->WaitforTask(&draw_task);
         // Avoid using the same command buffer
         renderer->add_texture_update_commands((draw_task.thread_id + 1) % task_scheduler->GetNumTaskThreads());
+    }
+
+    void glTFScene::destroy_node(NodeHandle handle) {
+        Node* node = (Node*)node_pool.access_node(handle);
+        for (u32 i = 0; i < node->children.size; i++) {
+            destroy_node(node->children[i]);
+        }
+        node->children.shutdown();
+        switch (handle.type)
+        {
+        case NodeType_Node:
+            node_pool.base_nodes.release_resource(handle.index);
+            break;
+        case NodeType_MeshNode:
+            node_pool.mesh_nodes.release_resource(handle.index);
+            break;
+        case NodeType_LightNode:
+            node_pool.light_nodes.release_resource(handle.index);
+            break;
+        default:
+            HERROR("Invalid NodeType");
+            break;
+        }
+    }
+
+    void glTFScene::imgui_draw_node(NodeHandle node_handle) {
+        Node* node = (Node*)node_pool.access_node(node_handle);
+
+
+
+        if (node->name == nullptr)
+            return;
+        // Make a tree node for nodes with children
+        if (node->children.size) {
+            if (ImGui::TreeNode(node->name)) {
+                for (u32 i = 0; i < node->children.size; i++) {
+                    imgui_draw_node(node->children[i]);
+                }
+                ImGui::TreePop();
+            }
+        }
+        else {
+            ImGui::Text("\t %s",node->name);
+        }
+        
+    }
+
+    void glTFScene::imgui_draw_hierarchy(){
+        if (ImGui::Begin("Scene Hierarchy")) {
+            for (u32 i = 0; i < node_pool.root_nodes.size; i++) {
+                imgui_draw_node(node_pool.root_nodes[i]);
+            }
+            ImGui::End();
+        }
+    }
+
+    // Nodes //////////////////////////////////////////
+
+    void NodePool::init(Allocator* allocator_){
+        allocator = allocator_;
+
+        mesh_nodes.init(allocator_, 300, sizeof(MeshNode));
+        base_nodes.init(allocator_, 50, sizeof(Node));
+        light_nodes.init(allocator_, 5, sizeof(LightNode));
+
+        root_nodes.init(allocator_, 15, 0);
+    }
+
+    void NodePool::shutdown(){
+        mesh_nodes.shutdown();
+        base_nodes.shutdown();
+        light_nodes.shutdown();
+        root_nodes.shutdown();
+    }
+
+    void* NodePool::access_node(NodeHandle handle){
+
+        switch (handle.type)
+        {
+        case NodeType_Node:
+            return base_nodes.access_resource(handle.index);
+        case NodeType_MeshNode:
+            return mesh_nodes.access_resource(handle.index);
+        case NodeType_LightNode:
+            return light_nodes.access_resource(handle.index);
+        default:
+            HERROR("Invalid NodeType");
+            return nullptr;
+        }
+    }
+
+    NodeHandle NodePool::obtain_node(NodeType type){
+        switch (type)
+        {
+        case NodeType_Node:
+            return { base_nodes.obtain_resource(), NodeType_Node };
+        case NodeType_MeshNode:
+            return { mesh_nodes.obtain_resource(), NodeType_MeshNode };
+        case NodeType_LightNode:
+            return { light_nodes.obtain_resource(), NodeType_LightNode };
+        default:
+            HERROR("Invalid NodeType");
+            return NodeHandle();
+        }
     }
 }// namespace Helix

@@ -34,6 +34,16 @@ namespace Helix {
         DrawFlags_AlphaMask = 1 << 0,
     }; // enum DrawFlags
 
+    struct PBRMaterial {
+        u16             diffuse_texture_index;
+        u16             roughness_texture_index;
+        u16             normal_texture_index;
+        u16             occlusion_texture_index;
+
+        vec4s           base_color_factor;
+        vec4s           metallic_roughness_occlusion_factor;
+    };
+
     struct MeshDraw{
 
         Material*       material;
@@ -63,6 +73,7 @@ namespace Helix {
 
         vec4s           base_color_factor;
         vec4s           metallic_roughness_occlusion_factor;
+
         vec3s           scale;
 
         mat4s           model;
@@ -85,6 +96,54 @@ namespace Helix {
         u32         flags;
     }; // struct MeshData
 
+
+    // Nodes //////////////////////////////////////
+    enum NodeType {
+        NodeType_Node,
+        NodeType_MeshNode,
+        NodeType_LightNode
+    };
+
+    struct NodeHandle {
+        u32                     index = k_invalid_index;
+        NodeType                type =  NodeType_Node;
+    };
+
+    struct Node {
+        NodeHandle              parent;
+        Array<NodeHandle>       children;
+        mat4s                   local_transform;
+        mat4s                   world_transform;
+
+        cstring                 name = nullptr;
+    };
+
+    struct MeshNode : public Node {
+        u32                     mesh_draw_index; // Index into the MeshDraw array
+    };
+
+    struct LightNode : public Node {
+        // Doesn't hold any data for now;
+    };
+
+    struct NodePool {
+
+        void                    init(Allocator* allocator);
+        void                    shutdown();
+
+        void*                   access_node(NodeHandle handle);
+        NodeHandle              obtain_node(NodeType type);
+
+        Allocator*              allocator;
+
+        Array<NodeHandle>       root_nodes;
+
+        ResourcePool            base_nodes;
+        ResourcePool            mesh_nodes;
+        ResourcePool            light_nodes;
+    };
+
+    ///////////////////////////////////////////////
     struct Scene {
 
         virtual void            load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) { };
@@ -107,6 +166,11 @@ namespace Helix {
         void                    upload_materials(float model_scale);
         void                    submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler);
 
+        void                    destroy_node(NodeHandle handle);
+
+        void                    imgui_draw_node(NodeHandle node_handle);
+        void                    imgui_draw_hierarchy();
+
         Array<MeshDraw>         mesh_draws;
 
         // All graphics resources used by the scene
@@ -115,6 +179,8 @@ namespace Helix {
         Array<BufferResource>   buffers;
 
         glTF::glTF              gltf_scene; // Source gltf scene
+
+        NodePool                node_pool;
 
         Renderer*               renderer;
 
@@ -138,5 +204,8 @@ namespace Helix {
         void ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
 
     }; // struct DrawTask
+
+
+
 } // namespace Helix
 
