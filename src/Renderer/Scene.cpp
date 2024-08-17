@@ -397,6 +397,12 @@ namespace Helix {
             glTF::Buffer& buffer = gltf_scene.buffers[buffer_index];
 
             FileReadResult buffer_data = file_read_binary(buffer.uri.data, resident_allocator);
+            if (buffer_data.data == nullptr) {
+                HWARN("No .bin found in the glTF model");
+                buffer_data.data = (char*)halloca(buffer.byte_length, resident_allocator);
+                memory_copy(buffer_data.data, buffer.uri.data, buffer.byte_length);
+                buffer_data.size = buffer.byte_length;
+            }
             buffers_data.push(buffer_data.data);
         }
 
@@ -684,6 +690,7 @@ namespace Helix {
                 for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
                     u32 child_node_index = node.children[child_index];
                     node_parents[child_node_index] = node_index;
+
                     node_stack.push(child_node_index);
                     base_node->children[child_index] = node_handles[child_node_index];
                 }
@@ -850,7 +857,10 @@ namespace Helix {
             return;
         // Make a tree node for nodes with children
         if (node->children.size) {
-            if (ImGui::TreeNode(node->name)) {
+            ImGuiTreeNodeFlags tree_node_flags = 0;
+
+            tree_node_flags |= ImGuiTreeNodeFlags_OpenOnDoubleClick;
+            if (ImGui::TreeNodeEx(node->name, tree_node_flags)) {
                 for (u32 i = 0; i < node->children.size; i++) {
                     imgui_draw_node(node->children[i]);
                 }
@@ -858,7 +868,7 @@ namespace Helix {
             }
         }
         else {
-            ImGui::Text("\t %s",node->name);
+            ImGui::Text("   %s", node->name);
         }
         
     }
