@@ -241,14 +241,15 @@ int main(int argc, char** argv)
                 ZoneScopedN("ImGui Recording");
 
                 ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
-                if (ImGui::Begin("Scene")) {
+              /*  if (ImGui::Begin("Scene")) {
                     ImGui::InputFloat("Model scale", &model_scale, 0.001f);
                     ImGui::SliderFloat3("Light position", light_position.raw, -30.f, 30.f);
                     ImGui::InputFloat3("Camera position", eye.raw);
                     ImGui::InputFloat("Light range", &light_range);
                     ImGui::InputFloat("Light intensity", &light_intensity);
                 }
-                ImGui::End();
+                ImGui::End();*/
+                scene->imgui_draw_node_property(scene->current_node);
 
                 if (ImGui::Begin("Viewport")) {
                     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();

@@ -107,6 +107,16 @@ namespace Helix {
     struct NodeHandle {
         u32                     index = k_invalid_index;
         NodeType                type =  NodeType_Node;
+
+        // Equality operator
+        bool operator==(const NodeHandle& other) const {
+            return index == other.index && type == other.type;
+        }
+
+        // Inequality operator
+        bool operator!=(const NodeHandle& other) const {
+            return !(*this == other);
+        }
     };
 
     struct Node {
@@ -171,6 +181,8 @@ namespace Helix {
         void                    imgui_draw_node(NodeHandle node_handle);
         void                    imgui_draw_hierarchy();
 
+        void                    imgui_draw_node_property(NodeHandle node_handle);
+
         Array<MeshDraw>         mesh_draws;
 
         // All graphics resources used by the scene
@@ -181,6 +193,8 @@ namespace Helix {
         glTF::glTF              gltf_scene; // Source gltf scene
 
         NodePool                node_pool;
+
+        NodeHandle              current_node{ };
 
         Renderer*               renderer;
 

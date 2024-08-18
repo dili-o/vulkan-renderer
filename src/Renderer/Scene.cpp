@@ -197,6 +197,24 @@ namespace Helix {
         gpu_commands->draw_indexed(TopologyType::Triangle, mesh_draw.primitive_count, 1, 0, 0, 0);
     }
 
+    cstring node_type_to_cstring(NodeType type) {
+        switch (type)
+        {
+        case Helix::NodeType_Node:
+            return "Node";
+            break;
+        case Helix::NodeType_MeshNode:
+            return "Mesh Node";
+            break;
+        case Helix::NodeType_LightNode:
+            return "Light Node";
+            break;
+        default:
+            HCRITICAL("Invalid node type");
+            break;
+        }
+    }
+
     // glTFDrawTask //////////////////////////////////
 
     void glTFDrawTask::init(GpuDevice* gpu_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_) {
@@ -848,29 +866,43 @@ namespace Helix {
         }
     }
 
+    void glTFScene::imgui_draw_node_property(NodeHandle node_handle){
+        if (ImGui::Begin("Node Properties")) {
+            if (node_handle.index == k_invalid_index) {
+                ImGui::Text("No node selected");
+            }
+            else {
+                Node* node = (Node*)node_pool.access_node(node_handle);
+                ImGui::Text("Name: %s", node->name);
+                ImGui::Text("Type: %s", node_type_to_cstring(node_handle.type));
+            }
+        }
+        ImGui::End();
+    }
+
     void glTFScene::imgui_draw_node(NodeHandle node_handle) {
         Node* node = (Node*)node_pool.access_node(node_handle);
-
-
 
         if (node->name == nullptr)
             return;
         // Make a tree node for nodes with children
-        if (node->children.size) {
-            ImGuiTreeNodeFlags tree_node_flags = 0;
+        ImGuiTreeNodeFlags tree_node_flags = 0;
+        tree_node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+        if (!node->children.size) {
+            tree_node_flags |= ImGuiTreeNodeFlags_Leaf;
+        }
+        if (ImGui::TreeNodeEx(node->name, tree_node_flags)) {
 
-            tree_node_flags |= ImGuiTreeNodeFlags_OpenOnDoubleClick;
-            if (ImGui::TreeNodeEx(node->name, tree_node_flags)) {
-                for (u32 i = 0; i < node->children.size; i++) {
-                    imgui_draw_node(node->children[i]);
-                }
-                ImGui::TreePop();
+            if (current_node != node_handle && ImGui::IsItemClicked()) {
+                current_node.index = node_handle.index;
+                current_node.type = node_handle.type;
             }
+
+            for (u32 i = 0; i < node->children.size; i++) {
+                imgui_draw_node(node->children[i]);
+            }
+            ImGui::TreePop();
         }
-        else {
-            ImGui::Text("   %s", node->name);
-        }
-        
     }
 
     void glTFScene::imgui_draw_hierarchy(){
