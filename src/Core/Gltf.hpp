@@ -10,8 +10,8 @@
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/SciFiHelmet/glTF/SciFiHelmet.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/sci-fi_chair/scene.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/abandoned_warehouse/scene.gltf";
-//static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/buster_drone/scene.gltf";
-static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/venus/scene.gltf";
+static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/buster_drone/scene.gltf";
+//static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/venus/scene.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/microphone_gxl_066_bafhcteks/scene.gltf";
 
 #define InjectDefault3DModel() \

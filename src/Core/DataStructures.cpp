@@ -16,7 +16,6 @@ namespace Helix {
 
         // Group allocate ( resource size + u32 )
         sizet allocation_size = pool_size * (resource_size + sizeof(u32));
-        //memory = (u8*)allocator->allocate(allocation_size, 1);
         memory = hallocam(allocation_size, allocator);
         memset(memory, 0, allocation_size);
 
@@ -46,11 +45,35 @@ namespace Helix {
         allocator->deallocate(memory);
     }
 
+    void ResourcePool::grow(){
+        u32 new_pool_size = pool_size * 2;
+
+        sizet allocation_size = new_pool_size * (resource_size + sizeof(u32));
+
+        u8* new_memory = hallocam(allocation_size, allocator);
+        memset(new_memory, 0, allocation_size);
+
+        memory_copy(new_memory, memory, pool_size * resource_size);
+
+        u32* new_free_indicies = (u32*)(new_memory + new_pool_size * resource_size);
+        memory_copy(new_free_indicies, free_indices, used_indices);
+
+        for (u32 i = used_indices; i < new_pool_size; i++) {
+            new_free_indicies[i] = i;
+        }
+
+        allocator->deallocate(memory);
+
+        pool_size = new_pool_size;
+        memory = new_memory;
+        free_indices = new_free_indicies;
+    }
+
     void ResourcePool::free_all_resources() {
         free_indices_head = 0;
         used_indices = 0;
 
-        for (uint32_t i = 0; i < pool_size; ++i) {
+        for (u32 i = 0; i < pool_size; ++i) {
             free_indices[i] = i;
         }
     }
@@ -63,8 +86,11 @@ namespace Helix {
             return free_index;
         }
         // Error: no more resources left!
-        HASSERT_MSG(false, "No more resources left!");
-        return k_invalid_index;
+        //HASSERT_MSG(false, "No more resources left!");
+        HWARN("No more resources left, creating a larger pool");
+        grow();
+        return obtain_resource();
+        //return k_invalid_index;
     }
 
     void ResourcePool::release_resource(u32 index) {

@@ -11,6 +11,7 @@ namespace Helix {
 
         void                            init(Allocator* allocator, u32 pool_size, u32 resource_size);
         void                            shutdown();
+        void                            grow();
 
         u32                             obtain_resource();      // Returns an index to the resource
         void                            release_resource(u32 index);
