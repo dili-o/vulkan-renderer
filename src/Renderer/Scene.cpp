@@ -1,30 +1,15 @@
 #include "Scene.hpp"
 
 #include <vendor/imgui/stb_image.h>
-#include <vendor/cglm/struct/affine.h>
 
 #include "Core/Gltf.hpp"
 #include "Core/Time.hpp"
 #include "Core/File.hpp"
 #include <vendor/tracy/tracy/Tracy.hpp>
-#include <cglm/struct/quat.h>
 #include <imgui/imgui.h>
 
 namespace Helix {
-    struct Transform {
-
-        vec3s                   scale;
-        versors                 rotation;
-        vec3s                   translation;
-
-        //void                    reset();
-        mat4s                   calculate_matrix() const {
-            const mat4s translation_matrix = glms_translate_make(translation);
-            const mat4s scale_matrix = glms_scale_make(scale);
-            const mat4s local_matrix = glms_mat4_mul(glms_mat4_mul(translation_matrix, glms_quat_mat4(rotation)), scale_matrix);
-            return local_matrix;
-        }
-    }; // struct Transform
+    
 
     // Helper functions //////////////////////////////////////////////////
 
@@ -554,8 +539,10 @@ namespace Helix {
             NodeHandle light_node_handle = node_pool.obtain_node(NodeType_LightNode);
             node_pool.root_nodes.push(light_node_handle);
 
-            LightNode* lightNode = (LightNode*)node_pool.access_node(light_node_handle);
-            lightNode->name = "Point Light";
+            LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
+            light_node->name = "Point Light";
+            light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
+            light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
         }
         // Create pipeline state
         PipelineCreation pipeline_creation;
@@ -664,6 +651,10 @@ namespace Helix {
             glTF::Node& node = gltf_scene.nodes[node_index];
 
             mat4s local_matrix{ };
+            Transform transform{ };
+            transform.translation = { 0 };
+            transform.scale = { 0 };
+            transform.rotation = { 0 };
 
             if (node.matrix_count) {
                 memcpy(&local_matrix, node.matrix, sizeof(mat4s));
@@ -688,7 +679,7 @@ namespace Helix {
                     node_rotation = glms_quat_init(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]);
                 }
 
-                Transform transform;
+                
                 transform.translation = node_translation;
                 transform.scale = node_scale;
                 transform.rotation = node_rotation;
@@ -701,8 +692,8 @@ namespace Helix {
             if (node.mesh == glTF::INVALID_INT_VALUE) {
                 Node* base_node = (Node*)node_pool.base_nodes.access_resource(node_handles[node_index].index);
                 base_node->name = node.name.data ? node.name.data : "Node";
-                base_node->local_transform = local_matrix;
-                base_node->world_transform = local_matrix;
+                base_node->local_transform = transform;
+                base_node->world_transform = transform;
                 base_node->children.init(node_pool.allocator, node.children_count, node.children_count);
 
                 for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
@@ -718,7 +709,7 @@ namespace Helix {
             
             MeshNode* mesh_node = (MeshNode*)node_pool.mesh_nodes.access_resource(node_handles[node_index].index);
             mesh_node->name = node.name.data ? node.name.data : "Node";
-            mesh_node->local_transform = local_matrix;
+            mesh_node->local_transform = transform;
             //base_node->world_transform = local_matrix;
             mesh_node->children.init(node_pool.allocator, node.children_count, node.children_count);
             for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
@@ -875,6 +866,25 @@ namespace Helix {
                 Node* node = (Node*)node_pool.access_node(node_handle);
                 ImGui::Text("Name: %s", node->name);
                 ImGui::Text("Type: %s", node_type_to_cstring(node_handle.type));
+
+                Transform old_transform = node->local_transform;
+                bool modified = false;
+
+                ImGui::Text("Local Transform");
+                modified |= ImGui::InputFloat3("position##local", node->local_transform.translation.raw);
+                modified |= ImGui::InputFloat3("scale##local", node->local_transform.scale.raw);
+                ImGui::InputFloat3("rotation##local", node->local_transform.rotation.raw);
+
+                ImGui::Text("World Transform");
+                ImGui::InputFloat3("position##world", node->world_transform.translation.raw);
+                ImGui::InputFloat3("scale##world", node->world_transform.scale.raw);
+                ImGui::InputFloat3("rotation##world", node->world_transform.rotation.raw);
+
+                if (modified) {
+                    old_transform.translation = glms_vec3_sub(node->local_transform.translation, old_transform.translation);
+                    old_transform.scale = glms_vec3_div(node->local_transform.scale, old_transform.scale);
+                    node->update_transform(old_transform);
+                }
             }
         }
         ImGui::End();

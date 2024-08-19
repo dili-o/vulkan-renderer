@@ -194,7 +194,6 @@ int main(int argc, char** argv)
     vec3s look = vec3s{ 0.0f, 0.0, -1.0f };
     vec3s right = vec3s{ 1.0f, 0.0, 0.0f };
     vec3s up = vec3s{ 0.0f, 1.0f, 0.0f };
-    vec3s light_position = vec3s{ 0.0f, 5.0f, 0.0f };
 
     f32 yaw = 0.0f;
     f32 pitch = 0.0f;
@@ -214,7 +213,6 @@ int main(int argc, char** argv)
         input_handler.new_frame();
 
         const i64 current_tick = Time::now();
-
         
 
         // New frame
@@ -249,7 +247,6 @@ int main(int argc, char** argv)
                     ImGui::InputFloat("Light intensity", &light_intensity);
                 }
                 ImGui::End();*/
-                scene->imgui_draw_node_property(scene->current_node);
 
                 if (ImGui::Begin("Viewport")) {
                     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
@@ -269,6 +266,8 @@ int main(int argc, char** argv)
                 scene->imgui_draw_hierarchy();
 
                 renderer.imgui_resources_draw();
+
+                scene->imgui_draw_node_property(scene->current_node);
 
                 //MemoryService::instance()->imgui_draw();
             }
@@ -338,7 +337,10 @@ int main(int argc, char** argv)
                     uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
                     uniform_data.light_intensity = light_intensity;
                     uniform_data.light_range = light_range;
-                    uniform_data.light_position = vec4s{ light_position.x, light_position.y, light_position.z, 1.0f };
+
+                    LightNode* light_node = (LightNode*)scene->node_pool.access_node(scene->node_pool.root_nodes[0]);
+
+                    uniform_data.light_position = vec4s{ light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f };
 
                     memcpy(cb_data, &uniform_data, sizeof(UniformData));
 
@@ -350,7 +352,7 @@ int main(int argc, char** argv)
                     light_uniform_data.texture_index = scene->light_texture.handle.index;
 
                     mat4s model = glms_mat4_identity();
-                    model = glms_translate(model, light_position);
+                    model = glms_translate(model, light_node->world_transform.translation);
                     light_uniform_data.model = model;
 
                     memcpy(light_cb_data, &light_uniform_data, sizeof(LightUniform));

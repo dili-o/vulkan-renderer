@@ -8,11 +8,26 @@
 #include "Renderer/Renderer.hpp"
 #include "Renderer/HelixImgui.hpp"
 #include "Renderer/GPUProfiler.hpp"
+#include <cglm/struct/affine.h>
+#include <cglm/struct/quat.h>
 
 namespace Helix {
     static const u16 INVALID_TEXTURE_INDEX = ~0u;
 
+    struct Transform {
 
+        vec3s                   scale;
+        versors                 rotation;
+        vec3s                   translation;
+
+        //void                    reset();
+        mat4s                   calculate_matrix() const {
+            const mat4s translation_matrix = glms_translate_make(translation);
+            const mat4s scale_matrix = glms_scale_make(scale);
+            const mat4s local_matrix = glms_mat4_mul(glms_mat4_mul(translation_matrix, glms_quat_mat4(rotation)), scale_matrix);
+            return local_matrix;
+        }
+    }; // struct Transform
 
     struct LightUniform {
         mat4s       model;
@@ -119,13 +134,22 @@ namespace Helix {
         }
     };
 
+
     struct Node {
         NodeHandle              parent;
         Array<NodeHandle>       children;
-        mat4s                   local_transform;
-        mat4s                   world_transform;
+        Transform               local_transform;
+        Transform               world_transform;
 
         cstring                 name = nullptr;
+
+        // TODO: Factor in parent's transform
+        void                    update_transform(Transform& transform) {
+
+            world_transform.translation = glms_vec3_add(world_transform.translation, transform.translation);
+            world_transform.scale = glms_vec3_mul(world_transform.scale, transform.scale);
+            //world_transform.rotation.z += local_transform.rotation.y;
+        }
     };
 
     struct MeshNode : public Node {
