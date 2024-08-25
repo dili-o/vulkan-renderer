@@ -242,13 +242,16 @@ namespace Helix {
         VkFormat                        format = VK_FORMAT_UNDEFINED;
         TextureType::Enum               type = TextureType::Texture2D;
 
-        cstring                     name = nullptr;
+        TextureHandle                   alias = k_invalid_texture;
+
+        cstring                         name = nullptr;
 
         TextureCreation&                set_size(u16 width, u16 height, u16 depth);
         TextureCreation&                set_flags(u8 mipmaps, u8 flags);
         TextureCreation&                set_format_type(VkFormat format, TextureType::Enum type);
         TextureCreation&                set_name(cstring name);
         TextureCreation&                set_data(void* data);
+        TextureCreation&                set_alias(TextureHandle alias);
 
     }; // struct TextureCreation
 
@@ -1100,5 +1103,6 @@ namespace Helix {
         u32 buffer_size, u32 source_family, u32 destination_family,
         QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type);
 
+    VkFormat util_string_to_vk_format(cstring format);
 } // namespace Helix
 

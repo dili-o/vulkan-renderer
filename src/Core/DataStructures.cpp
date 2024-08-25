@@ -86,7 +86,6 @@ namespace Helix {
             return free_index;
         }
         // Error: no more resources left!
-        //HASSERT_MSG(false, "No more resources left!");
         HWARN("No more resources left, creating a larger pool");
         grow();
         return obtain_resource();

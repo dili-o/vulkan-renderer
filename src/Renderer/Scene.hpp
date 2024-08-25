@@ -27,6 +27,18 @@ namespace Helix {
             const mat4s local_matrix = glms_mat4_mul(glms_mat4_mul(translation_matrix, glms_quat_mat4(rotation)), scale_matrix);
             return local_matrix;
         }
+
+        void               calculate_transform(mat4s& model) {
+            translation.x = model.m30;;
+            translation.y = model.m31;;
+            translation.z = model.m32;;
+
+            scale.x = sqrtf(model.m00 * model.m00 + model.m10 * model.m10 + model.m20 * model.m20);
+            scale.y = sqrtf(model.m01 * model.m01 + model.m11 * model.m11 + model.m21 * model.m21);
+            scale.z = sqrtf(model.m02 * model.m02 + model.m12 * model.m12 + model.m22 * model.m22);
+            // TODO: Rotation
+
+        }
     }; // struct Transform
 
     struct LightUniform {

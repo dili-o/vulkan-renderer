@@ -4,13 +4,13 @@
 #include "Core/Platform.hpp"
 #include "Core/String.hpp"
 
-//static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Sponza/glTF/Sponza.gltf";
+static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Sponza/glTF/Sponza.gltf";
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Bistro/Bistro.gltf";
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Cube/glTF/Cube.gltf";
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/SciFiHelmet/glTF/SciFiHelmet.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/sci-fi_chair/scene.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/abandoned_warehouse/scene.gltf";
-static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/buster_drone/scene.gltf";
+//static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/buster_drone/scene.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/venus/scene.gltf";
 //static cstring kDefault3DModel = "D:/HelixEngine/Engine/assets/models/gltf/microphone_gxl_066_bafhcteks/scene.gltf";
 
@@ -115,17 +115,17 @@ namespace Helix {
             u32                         children_count;
             i32* children;
             u32                         matrix_count;
-            f32* matrix;
+            f32*                        matrix;
             i32                         mesh;
             u32                         rotation_count;
-            f32* rotation;
+            f32*                        rotation;
             u32                         scale_count;
-            f32* scale;
+            f32*                        scale;
             i32                         skin;
             u32                         translation_count;
-            f32* translation;
+            f32*                        translation;
             u32                         weights_count;
-            f32* weights;
+            f32*                        weights;
             StringBuffer                name;
         };
 

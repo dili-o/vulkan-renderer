@@ -950,8 +950,21 @@ namespace Helix {
         VmaAllocationCreateInfo memory_info{};
         memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        check(vmaCreateImage(gpu.vma_allocator, &image_info, &memory_info,
-            &texture->vk_image, &texture->vma_allocation, nullptr));
+        if (creation.alias.index == k_invalid_texture.index) {
+            check(vmaCreateImage(gpu.vma_allocator, &image_info, &memory_info,
+                &texture->vk_image, &texture->vma_allocation, nullptr));
+
+#if defined (_DEBUG)
+            vmaSetAllocationName(gpu.vma_allocator, texture->vma_allocation, creation.name);
+#endif // _DEBUG
+        }
+        else {
+            Texture* alias_texture = gpu.access_texture(creation.alias);
+            HASSERT(alias_texture != nullptr);
+
+            texture->vma_allocation = 0;
+            check(vmaCreateAliasingImage(gpu.vma_allocator, alias_texture->vma_allocation, &image_info, &texture->vk_image));
+        }
 
         gpu.set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)texture->vk_image, creation.name);
 
@@ -2507,7 +2520,13 @@ namespace Helix {
 
 
         for (u32 iv = 0; iv < vulkan_swapchain_image_count; iv++) {
-            TextureCreation depth_texture_creation = { nullptr, swapchain_width, swapchain_height, 1, 1, 0, VK_FORMAT_D32_SFLOAT, TextureType::Texture2D, "DepthImage_Texture" };
+            TextureCreation depth_texture_creation;
+            depth_texture_creation
+                .set_data(nullptr)
+                .set_size(swapchain_width, swapchain_height, 1)
+                .set_flags(1, 0)
+                .set_format_type(VK_FORMAT_D32_SFLOAT, TextureType::Texture2D)
+                .set_name("DepthImage_Texture");
             FramebufferCreation creation;
             creation
                 .reset()

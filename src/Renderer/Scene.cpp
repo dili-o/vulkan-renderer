@@ -543,6 +543,7 @@ namespace Helix {
             light_node->name = "Point Light";
             light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
             light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
+            light_node->world_transform.translation.y = 1.0f;
         }
         // Create pipeline state
         PipelineCreation pipeline_creation;
@@ -651,13 +652,14 @@ namespace Helix {
             glTF::Node& node = gltf_scene.nodes[node_index];
 
             mat4s local_matrix{ };
-            Transform transform{ };
-            transform.translation = { 0 };
-            transform.scale = { 0 };
-            transform.rotation = { 0 };
+            Transform local_transform{ };
+            local_transform.translation = { 0 };
+            local_transform.scale = { 0 };
+            local_transform.rotation = { 0 };
 
             if (node.matrix_count) {
                 memcpy(&local_matrix, node.matrix, sizeof(mat4s));
+                local_transform.calculate_transform(local_matrix);
             }
             else {
                 vec3s node_scale{ 1.0f, 1.0f, 1.0f };
@@ -680,11 +682,11 @@ namespace Helix {
                 }
 
                 
-                transform.translation = node_translation;
-                transform.scale = node_scale;
-                transform.rotation = node_rotation;
+                local_transform.translation = node_translation;
+                local_transform.scale = node_scale;
+                local_transform.rotation = node_rotation;
 
-                local_matrix = transform.calculate_matrix();
+                local_matrix = local_transform.calculate_matrix();
             }
 
             node_matrix[node_index] = local_matrix;
@@ -692,9 +694,16 @@ namespace Helix {
             if (node.mesh == glTF::INVALID_INT_VALUE) {
                 Node* base_node = (Node*)node_pool.base_nodes.access_resource(node_handles[node_index].index);
                 base_node->name = node.name.data ? node.name.data : "Node";
-                base_node->local_transform = transform;
-                base_node->world_transform = transform;
+                base_node->local_transform = local_transform;
                 base_node->children.init(node_pool.allocator, node.children_count, node.children_count);
+
+                mat4s final_matrix = local_matrix;
+                i32 node_parent = node_parents[node_index];
+                while (node_parent != -1) {
+                    final_matrix = glms_mat4_mul(node_matrix[node_parent], final_matrix);
+                    node_parent = node_parents[node_parent];
+                }
+                base_node->world_transform.calculate_transform(final_matrix);
 
                 for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
                     u32 child_node_index = node.children[child_index];
@@ -709,8 +718,7 @@ namespace Helix {
             
             MeshNode* mesh_node = (MeshNode*)node_pool.mesh_nodes.access_resource(node_handles[node_index].index);
             mesh_node->name = node.name.data ? node.name.data : "Node";
-            mesh_node->local_transform = transform;
-            //base_node->world_transform = local_matrix;
+            mesh_node->local_transform = local_transform;
             mesh_node->children.init(node_pool.allocator, node.children_count, node.children_count);
             for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
                 u32 child_node_index = node.children[child_index];
@@ -718,7 +726,6 @@ namespace Helix {
                 node_stack.push(child_node_index);
                 mesh_node->children[child_index] = node_handles[child_node_index];
             }
-
 
             glTF::Mesh& mesh = gltf_scene.meshes[node.mesh];
 
@@ -728,6 +735,7 @@ namespace Helix {
                 final_matrix = glms_mat4_mul(node_matrix[node_parent], final_matrix);
                 node_parent = node_parents[node_parent];
             }
+            mesh_node->world_transform.calculate_transform(final_matrix);
 
             vec3s node_scale{ 1.0f, 1.0f, 1.0f };
             if (node.scale_count != 0) {
@@ -800,7 +808,8 @@ namespace Helix {
                 mesh_node_primitive->children.size = 0;
                 mesh_node_primitive->name = "Mesh_Primitive";
                 mesh_node_primitive->parent = node_handles[node_index];
-
+                mesh_node_primitive->world_transform.calculate_transform(final_matrix);
+                // TODO: Extract the position from the position buffer.
                 mesh_node->children.push(mesh_handle);
 
                 mesh_draws.push(mesh_draw);
