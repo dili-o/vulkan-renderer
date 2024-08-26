@@ -7,8 +7,6 @@
 #include "Renderer/GPUDevice.hpp"
 #include "Renderer/GPUResources.hpp"
 
-#include "vendor/cglm/types-struct.h"
-
 #include <atomic>
 
 namespace enki { class TaskScheduler; }

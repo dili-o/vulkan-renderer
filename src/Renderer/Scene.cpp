@@ -162,11 +162,11 @@ namespace Helix {
         mesh_data.alpha_cutoff = mesh_draw.alpha_cutoff;
         mesh_data.flags = mesh_draw.flags;
 
-        // NOTE: for left-handed systems (as defined in cglm) need to invert positive and negative Z.
-        mat4s scale_mat = glms_scale_make({ -global_scale, global_scale, global_scale });
+        // NOTE: for left-handed systems (as defined in glm) need to invert positive and negative Z.
+        glm::mat4 scale_mat = glm::scale(glm::mat4(1.0f), glm::vec3(-global_scale, global_scale, global_scale));
         //mesh_data.m = model;
-        mesh_data.m = glms_mat4_mul(mesh_draw.model, scale_mat);
-        mesh_data.inverseM = glms_mat4_inv(glms_mat4_transpose(mesh_data.m));
+        mesh_data.m = mesh_draw.model * scale_mat;
+        mesh_data.inverseM = glm::inverse(glm::transpose(mesh_data.m));
     }
 
     static void draw_mesh(Renderer& renderer, CommandBuffer* gpu_commands, MeshDraw& mesh_draw) {
@@ -620,7 +620,7 @@ namespace Helix {
         Array<i32> node_parents;
         node_parents.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
-        Array<mat4s> node_matrix;
+        Array<glm::mat4> node_matrix;
         node_matrix.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         Array<u32> node_stack;
@@ -651,34 +651,34 @@ namespace Helix {
             node_stack.pop();
             glTF::Node& node = gltf_scene.nodes[node_index];
 
-            mat4s local_matrix{ };
+            glm::mat4 local_matrix{ };
             Transform local_transform{ };
-            local_transform.translation = { 0 };
-            local_transform.scale = { 0 };
-            local_transform.rotation = { 0 };
+            local_transform.translation = glm::vec3(0.0f);
+            local_transform.scale = glm::vec3(1.0f);
+            local_transform.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 
             if (node.matrix_count) {
-                memcpy(&local_matrix, node.matrix, sizeof(mat4s));
+                memcpy(&local_matrix, node.matrix, sizeof(glm::mat4));
                 local_transform.calculate_transform(local_matrix);
             }
             else {
-                vec3s node_scale{ 1.0f, 1.0f, 1.0f };
+                glm::vec3 node_scale(1.0f, 1.0f, 1.0f);
                 if (node.scale_count != 0) {
                     HASSERT(node.scale_count == 3);
-                    node_scale = vec3s{ node.scale[0], node.scale[1], node.scale[2] };
+                    node_scale = glm::vec3(node.scale[0], node.scale[1], node.scale[2]);
                 }
 
-                vec3s node_translation{ 0.f, 0.f, 0.f };
+                glm::vec3 node_translation(0.f, 0.f, 0.f);
                 if (node.translation_count) {
                     HASSERT(node.translation_count == 3);
-                    node_translation = vec3s{ node.translation[0], node.translation[1], node.translation[2] };
+                    node_translation = glm::vec3(node.translation[0], node.translation[1], node.translation[2]);
                 }
 
                 // Rotation is written as a plain quaternion
-                versors node_rotation = glms_quat_identity();
+                glm::quat node_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
                 if (node.rotation_count) {
                     HASSERT(node.rotation_count == 4);
-                    node_rotation = glms_quat_init(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]);
+                    node_rotation = glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
                 }
 
                 
@@ -697,10 +697,10 @@ namespace Helix {
                 base_node->local_transform = local_transform;
                 base_node->children.init(node_pool.allocator, node.children_count, node.children_count);
 
-                mat4s final_matrix = local_matrix;
+                glm::mat4 final_matrix = local_matrix;
                 i32 node_parent = node_parents[node_index];
                 while (node_parent != -1) {
-                    final_matrix = glms_mat4_mul(node_matrix[node_parent], final_matrix);
+                    final_matrix = node_matrix[node_parent] * final_matrix;
                     node_parent = node_parents[node_parent];
                 }
                 base_node->world_transform.calculate_transform(final_matrix);
@@ -729,18 +729,18 @@ namespace Helix {
 
             glTF::Mesh& mesh = gltf_scene.meshes[node.mesh];
 
-            mat4s final_matrix = local_matrix;
+            glm::mat4 final_matrix = local_matrix;
             i32 node_parent = node_parents[node_index];
             while (node_parent != -1) {
-                final_matrix = glms_mat4_mul(node_matrix[node_parent], final_matrix);
+                final_matrix = node_matrix[node_parent] * final_matrix;
                 node_parent = node_parents[node_parent];
             }
             mesh_node->world_transform.calculate_transform(final_matrix);
 
-            vec3s node_scale{ 1.0f, 1.0f, 1.0f };
+            glm::vec3 node_scale{ 1.0f, 1.0f, 1.0f };
             if (node.scale_count != 0) {
                 HASSERT(node.scale_count == 3);
-                node_scale = vec3s{ node.scale[0], node.scale[1], node.scale[2] };
+                node_scale = glm::vec3{ node.scale[0], node.scale[1], node.scale[2] };
             }
 
             // Gltf primitives are conceptually submeshes.
@@ -880,18 +880,18 @@ namespace Helix {
                 bool modified = false;
 
                 ImGui::Text("Local Transform");
-                modified |= ImGui::InputFloat3("position##local", node->local_transform.translation.raw);
-                modified |= ImGui::InputFloat3("scale##local", node->local_transform.scale.raw);
-                ImGui::InputFloat3("rotation##local", node->local_transform.rotation.raw);
+                modified |= ImGui::InputFloat3("position##local", (float*)&node->local_transform.translation);
+                modified |= ImGui::InputFloat3("scale##local", (float*)&node->local_transform.scale);
+                ImGui::InputFloat3("rotation##local", (float*)&node->local_transform.rotation);
 
                 ImGui::Text("World Transform");
-                ImGui::InputFloat3("position##world", node->world_transform.translation.raw);
-                ImGui::InputFloat3("scale##world", node->world_transform.scale.raw);
-                ImGui::InputFloat3("rotation##world", node->world_transform.rotation.raw);
+                ImGui::InputFloat3("position##world", (float*)&node->world_transform.translation);
+                ImGui::InputFloat3("scale##world", (float*)&node->world_transform.scale);
+                ImGui::InputFloat3("rotation##world", (float*)&node->world_transform.rotation);
 
                 if (modified) {
-                    old_transform.translation = glms_vec3_sub(node->local_transform.translation, old_transform.translation);
-                    old_transform.scale = glms_vec3_div(node->local_transform.scale, old_transform.scale);
+                    old_transform.translation = node->local_transform.translation - old_transform.translation;
+                    old_transform.scale = node->local_transform.scale / old_transform.scale;
                     node->update_transform(old_transform);
                 }
             }

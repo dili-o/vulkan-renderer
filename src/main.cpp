@@ -3,11 +3,13 @@
 #include "Application/Input.hpp"
 #include "Application/Keys.hpp"
 
-#include "vendor/cglm/struct/mat3.h"
-#include "vendor/cglm/struct/mat4.h"
-#include "vendor/cglm/struct/quat.h"
-#include "vendor/cglm/struct/cam.h"
-#include "vendor/cglm/struct/affine.h"
+
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
+#include <vendor/glm/glm/glm.hpp>
+#include <vendor/glm/glm/gtc/matrix_transform.hpp>
+#include <vendor/glm/glm/gtx/hash.hpp>
+
 
 
 #include "vendor/imgui/imgui.h"
@@ -190,10 +192,10 @@ int main(int argc, char** argv)
     i64 begin_frame_tick = Time::now();
     i64 absolute_begin_frame_tick = begin_frame_tick;
 
-    vec3s eye = vec3s{ 0.0f, 2.5f, 2.0f };
-    vec3s look = vec3s{ 0.0f, 0.0, -1.0f };
-    vec3s right = vec3s{ 1.0f, 0.0, 0.0f };
-    vec3s up = vec3s{ 0.0f, 1.0f, 0.0f };
+    glm::vec3 eye = { 0.0f, 2.5f, 2.0f };
+    glm::vec3 look = { 0.0f, 0.0, -1.0f };
+    glm::vec3 right = { 1.0f, 0.0, 0.0f };
+    glm::vec3 up = { 0.0f, 1.0f, 0.0f };
 
     f32 yaw = 0.0f;
     f32 pitch = 0.0f;
@@ -288,59 +290,59 @@ int main(int argc, char** argv)
                             yaw -= 360.0f;
                         }
 
-                        mat3s rxm = glms_mat4_pick3(glms_rotate_make(glm_rad(-pitch), vec3s{ 1.0f, 0.0f, 0.0f }));
-                        mat3s rym = glms_mat4_pick3(glms_rotate_make(glm_rad(-yaw), vec3s{ 0.0f, 1.0f, 0.0f }));
+                        glm::mat3 rxm = glm::mat3(glm::rotate(glm::mat4(1.0f), glm::radians(-pitch), { 1.0f, 0.0f, 0.0f }));
+                        glm::mat3 rym = glm::mat3(glm::rotate(glm::mat4(1.0f), glm::radians(-yaw), { 0.0f, 1.0f, 0.0f }));
 
-                        look = glms_mat3_mulv(rxm, vec3s{ 0.0f, 0.0f, -1.0f });
-                        look = glms_mat3_mulv(rym, look);
+                        look = rxm * glm::vec3( 0.0f, 0.0f, -1.0f );
+                        look = rym * look;
 
-                        right = glms_cross(look, vec3s{ 0.0f, 1.0f, 0.0f });
+                        right = glm::cross(look, glm::vec3( 0.0f, 1.0f, 0.0f ));
                     }
 
                     if (input_handler.is_key_down(Keys::KEY_W)) {
-                        eye = glms_vec3_add(eye, glms_vec3_scale(look, 5.0f * delta_time));
+                        eye += look * (5.0f * delta_time);
                     }
                     else if (input_handler.is_key_down(Keys::KEY_S)) {
-                        eye = glms_vec3_sub(eye, glms_vec3_scale(look, 5.0f * delta_time));
+                        eye -= look * (5.0f * delta_time);
                     }
 
                     if (input_handler.is_key_down(Keys::KEY_D)) {
-                        eye = glms_vec3_add(eye, glms_vec3_scale(right, 5.0f * delta_time));
+                        eye += right * (5.0f * delta_time);
                     }
                     else if (input_handler.is_key_down(Keys::KEY_A)) {
-                        eye = glms_vec3_sub(eye, glms_vec3_scale(right, 5.0f * delta_time));
+                        eye -= right * (5.0f * delta_time);
                     }
                     if (input_handler.is_key_down(Keys::KEY_E)) {
-                        eye = glms_vec3_add(eye, glms_vec3_scale(up, 5.0f * delta_time));
+                        eye += up * (5.0f * delta_time);
                     }
                     else if (input_handler.is_key_down(Keys::KEY_Q)) {
-                        eye = glms_vec3_sub(eye, glms_vec3_scale(up, 5.0f * delta_time));
+                        eye -= up * (5.0f * delta_time);
                     }
 
-                    mat4s view = glms_lookat(eye, glms_vec3_add(eye, look), vec3s{ 0.0f, 1.0f, 0.0f });
-                    mat4s projection = glms_perspective(glm_rad(60.0f), aspect_ratio, 0.01f, 1000.0f);
+                    glm::mat4 view = glm::lookAt(eye, (eye + look), glm::vec3( 0.0f, 1.0f, 0.0f ));
+                    glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspect_ratio, 0.01f, 1000.0f);
 
                     // Calculate view projection matrix
-                    mat4s view_projection = glms_mat4_mul(projection, view);
+                    glm::mat4 view_projection = projection * view;
 
                     // Rotate cube:
                     rx += 1.0f * delta_time;
                     ry += 2.0f * delta_time;
 
-                    mat4s rxm = glms_rotate_make(rx, vec3s{ 1.0f, 0.0f, 0.0f });
-                    mat4s rym = glms_rotate_make(glm_rad(45.0f), vec3s{ 0.0f, 1.0f, 0.0f });
+                    glm::mat4 rxm = glm::rotate(glm::mat4(1.0f), rx, glm::vec3(1.0f, 0.0f, 0.0f));
+                    glm::mat4 rym = glm::rotate(glm::mat4(1.0f), glm::radians(45.0f), glm::vec3( 0.0f, 1.0f, 0.0f ));
 
-                    mat4s sm = glms_scale_make(vec3s{ model_scale, model_scale, model_scale });
+                    glm::mat4 sm = glm::scale(glm::mat4(1.0f), glm::vec3( model_scale));
 
                     UniformData uniform_data{ };
                     uniform_data.view_projection = view_projection;
-                    uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
+                    uniform_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
                     uniform_data.light_intensity = light_intensity;
                     uniform_data.light_range = light_range;
 
                     LightNode* light_node = (LightNode*)scene->node_pool.access_node(scene->node_pool.root_nodes[0]);
 
-                    uniform_data.light_position = vec4s{ light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f };
+                    uniform_data.light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
 
                     memcpy(cb_data, &uniform_data, sizeof(UniformData));
 
@@ -348,11 +350,11 @@ int main(int argc, char** argv)
 
                     LightUniform light_uniform_data{ };
                     light_uniform_data.view_projection = view_projection;
-                    light_uniform_data.camera_position = vec4s{ eye.x, eye.y, eye.z, 1.0f };
+                    light_uniform_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
                     light_uniform_data.texture_index = scene->light_texture.handle.index;
 
-                    mat4s model = glms_mat4_identity();
-                    model = glms_translate(model, light_node->world_transform.translation);
+                    glm::mat4 model = glm::mat4(1.0f);
+                    model = glm::translate(model, light_node->world_transform.translation);
                     light_uniform_data.model = model;
 
                     memcpy(light_cb_data, &light_uniform_data, sizeof(LightUniform));

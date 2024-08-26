@@ -8,52 +8,53 @@
 #include "Renderer/Renderer.hpp"
 #include "Renderer/HelixImgui.hpp"
 #include "Renderer/GPUProfiler.hpp"
-#include <cglm/struct/affine.h>
-#include <cglm/struct/quat.h>
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
+#include <vendor/glm/glm/glm.hpp>
+#include <vendor/glm/glm/gtc/quaternion.hpp>
+#include <vendor/glm/glm/gtx/quaternion.hpp>
 
 namespace Helix {
     static const u16 INVALID_TEXTURE_INDEX = ~0u;
 
     struct Transform {
 
-        vec3s                   scale;
-        versors                 rotation;
-        vec3s                   translation;
+        glm::vec3                   scale;
+        glm::quat                   rotation;
+        glm::vec3                   translation;
 
         //void                    reset();
-        mat4s                   calculate_matrix() const {
-            const mat4s translation_matrix = glms_translate_make(translation);
-            const mat4s scale_matrix = glms_scale_make(scale);
-            const mat4s local_matrix = glms_mat4_mul(glms_mat4_mul(translation_matrix, glms_quat_mat4(rotation)), scale_matrix);
+        glm::mat4                   calculate_matrix() const {
+            const glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), translation);
+            const glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0f), scale);
+            const glm::mat4 local_matrix = (translation_matrix * glm::toMat4(rotation) * scale_matrix);
             return local_matrix;
         }
 
-        void               calculate_transform(mat4s& model) {
-            translation.x = model.m30;;
-            translation.y = model.m31;;
-            translation.z = model.m32;;
+        void               calculate_transform(glm::mat4& model) {
+            translation = glm::vec3(model[3]);
 
-            scale.x = sqrtf(model.m00 * model.m00 + model.m10 * model.m10 + model.m20 * model.m20);
-            scale.y = sqrtf(model.m01 * model.m01 + model.m11 * model.m11 + model.m21 * model.m21);
-            scale.z = sqrtf(model.m02 * model.m02 + model.m12 * model.m12 + model.m22 * model.m22);
+            scale.x = glm::length(glm::vec3(model[0]));
+            scale.y = glm::length(glm::vec3(model[1]));
+            scale.z = glm::length(glm::vec3(model[2]));
             // TODO: Rotation
 
         }
     }; // struct Transform
 
     struct LightUniform {
-        mat4s       model;
-        mat4s       view_projection;
-        vec4s       camera_position;
-        u32         texture_index;
+        glm::mat4       model;
+        glm::mat4       view_projection;
+        glm::vec4       camera_position;
+        u32             texture_index;
     };
 
     struct UniformData {
-        mat4s       view_projection;
-        vec4s       camera_position;
-        vec4s       light_position;
-        float       light_range;
-        float       light_intensity;
+        glm::mat4       view_projection;
+        glm::vec4       camera_position;
+        glm::vec4       light_position;
+        f32             light_range;
+        f32             light_intensity;
 
     }; // struct UniformData
 
@@ -67,8 +68,8 @@ namespace Helix {
         u16             normal_texture_index;
         u16             occlusion_texture_index;
 
-        vec4s           base_color_factor;
-        vec4s           metallic_roughness_occlusion_factor;
+        glm::vec4       base_color_factor;
+        glm::vec4       metallic_roughness_occlusion_factor;
     };
 
     struct MeshDraw{
@@ -98,12 +99,12 @@ namespace Helix {
         u16             normal_texture_index;
         u16             occlusion_texture_index;
 
-        vec4s           base_color_factor;
-        vec4s           metallic_roughness_occlusion_factor;
+        glm::vec4           base_color_factor;
+        glm::vec4           metallic_roughness_occlusion_factor;
 
-        vec3s           scale;
+        glm::vec3           scale;
 
-        mat4s           model;
+        glm::mat4           model;
 
         f32             alpha_cutoff;
         u32             flags;
@@ -112,12 +113,12 @@ namespace Helix {
     }; // struct MeshDraw
 
     struct MeshData {
-        mat4s       m;
-        mat4s       inverseM;
+        glm::mat4   m;
+        glm::mat4   inverseM;
 
         u32         textures[4]; // diffuse, roughness, normal, occlusion
-        vec4s       base_color_factor;
-        vec4s       metallic_roughness_occlusion_factor; // metallic, roughness, occlusion
+        glm::vec4   base_color_factor;
+        glm::vec4   metallic_roughness_occlusion_factor; // metallic, roughness, occlusion
         float       alpha_cutoff;
         float       padding_[3];
         u32         flags;
@@ -155,11 +156,12 @@ namespace Helix {
 
         cstring                 name = nullptr;
 
-        // TODO: Factor in parent's transform
+        // TODO: update children
         void                    update_transform(Transform& transform) {
 
-            world_transform.translation = glms_vec3_add(world_transform.translation, transform.translation);
-            world_transform.scale = glms_vec3_mul(world_transform.scale, transform.scale);
+            world_transform.translation += transform.translation;
+            world_transform.scale *= transform.scale;
+            // TODO: Rotation
             //world_transform.rotation.z += local_transform.rotation.y;
         }
     };
