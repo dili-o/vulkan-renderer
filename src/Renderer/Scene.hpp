@@ -19,9 +19,9 @@ namespace Helix {
 
     struct Transform {
 
-        glm::vec3                   scale;
-        glm::quat                   rotation;
-        glm::vec3                   translation;
+        glm::vec3                   scale = glm::vec3(1.0f);
+        glm::quat                   rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        glm::vec3                   translation = glm::vec3(0.0f);
 
         //void                    reset();
         glm::mat4                   calculate_matrix() const {
@@ -31,14 +31,17 @@ namespace Helix {
             return local_matrix;
         }
 
-        void               calculate_transform(glm::mat4& model) {
+        void               set_transform(glm::mat4& model) {
             translation = glm::vec3(model[3]);
 
             scale.x = glm::length(glm::vec3(model[0]));
             scale.y = glm::length(glm::vec3(model[1]));
             scale.z = glm::length(glm::vec3(model[2]));
-            // TODO: Rotation
 
+            glm::mat3 rotation_matrix = glm::mat3(model);
+
+            // Convert the rotation matrix to a quaternion
+            rotation = glm::quat_cast(rotation_matrix);
         }
     }; // struct Transform
 
@@ -147,22 +150,52 @@ namespace Helix {
         }
     };
 
+    struct NodePool {
+
+        void                    init(Allocator* allocator);
+        void                    shutdown();
+
+        void*                   access_node(NodeHandle handle);
+        NodeHandle              obtain_node(NodeType type);
+
+        Allocator* allocator;
+
+        NodeHandle              root_node;
+
+        ResourcePool            base_nodes;
+        ResourcePool            mesh_nodes;
+        ResourcePool            light_nodes;
+    };
 
     struct Node {
-        NodeHandle              parent;
+        NodeHandle              handle = { k_invalid_index, NodeType_Node };
+        NodeHandle              parent = { k_invalid_index, NodeType_Node };
         Array<NodeHandle>       children;
-        Transform               local_transform;
-        Transform               world_transform;
+        Transform               local_transform{ };
+        Transform               world_transform{ };
+
+        bool                    transform_changed = false;
 
         cstring                 name = nullptr;
 
-        // TODO: update children
-        void                    update_transform(Transform& transform) {
+        void                    update_transform(NodePool& node_pool) {
 
-            world_transform.translation += transform.translation;
-            world_transform.scale *= transform.scale;
-            // TODO: Rotation
-            //world_transform.rotation.z += local_transform.rotation.y;
+            if (parent.index != k_invalid_index) {
+                Node* parent_node = (Node*)node_pool.access_node(parent);
+                world_transform.set_transform(parent_node->world_transform.calculate_matrix() * local_transform.calculate_matrix());
+            }
+            else {
+                world_transform.set_transform(local_transform.calculate_matrix());
+            }
+
+            for (u32 i = 0; i < children.size; i++) {
+                Node* child_node = (Node*)node_pool.access_node(children[i]);
+                child_node->update_transform(node_pool);
+            }
+        }
+        void                    add_child(Node* node) {
+            node->parent = handle;
+            children.push(node->handle);
         }
     };
 
@@ -174,22 +207,7 @@ namespace Helix {
         // Doesn't hold any data for now;
     };
 
-    struct NodePool {
-
-        void                    init(Allocator* allocator);
-        void                    shutdown();
-
-        void*                   access_node(NodeHandle handle);
-        NodeHandle              obtain_node(NodeType type);
-
-        Allocator*              allocator;
-
-        Array<NodeHandle>       root_nodes;
-
-        ResourcePool            base_nodes;
-        ResourcePool            mesh_nodes;
-        ResourcePool            light_nodes;
-    };
+    
 
     ///////////////////////////////////////////////
     struct Scene {
@@ -231,6 +249,8 @@ namespace Helix {
         glTF::glTF              gltf_scene; // Source gltf scene
 
         NodePool                node_pool;
+
+        Node*                   root_node;
 
         NodeHandle              current_node{ };
 

@@ -340,7 +340,8 @@ int main(int argc, char** argv)
                     uniform_data.light_intensity = light_intensity;
                     uniform_data.light_range = light_range;
 
-                    LightNode* light_node = (LightNode*)scene->node_pool.access_node(scene->node_pool.root_nodes[0]);
+                    // TODO: Fix Hard coded the light node handle
+                    LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType_LightNode});
 
                     uniform_data.light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
 
