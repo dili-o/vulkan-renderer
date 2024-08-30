@@ -25,23 +25,28 @@ namespace Helix {
 
         //void                    reset();
         glm::mat4                   calculate_matrix() const {
-            const glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), translation);
-            const glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0f), scale);
-            const glm::mat4 local_matrix = (translation_matrix * glm::toMat4(rotation) * scale_matrix);
+            glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), translation);
+            glm::mat4 rotation_matrix = glm::toMat4(rotation);
+            glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0f), scale);
+
+            glm::mat4 local_matrix = translation_matrix * rotation_matrix * scale_matrix;
             return local_matrix;
         }
 
         void               set_transform(glm::mat4& model) {
             translation = glm::vec3(model[3]);
 
+            glm::mat3 rotation_matrix = glm::mat3(
+                glm::normalize(glm::vec3(model[0])),
+                glm::normalize(glm::vec3(model[1])),
+                glm::normalize(glm::vec3(model[2]))
+            );
+            // Convert the rotation matrix to a quaternion
+            rotation = glm::quat_cast(rotation_matrix);
+
             scale.x = glm::length(glm::vec3(model[0]));
             scale.y = glm::length(glm::vec3(model[1]));
             scale.z = glm::length(glm::vec3(model[2]));
-
-            glm::mat3 rotation_matrix = glm::mat3(model);
-
-            // Convert the rotation matrix to a quaternion
-            rotation = glm::quat_cast(rotation_matrix);
         }
     }; // struct Transform
 
@@ -75,9 +80,9 @@ namespace Helix {
         glm::vec4       metallic_roughness_occlusion_factor;
     };
 
-    struct MeshDraw{
+    struct MeshDraw {
 
-        Material*       material;
+        Material* material;
 
         BufferHandle    index_buffer;
         BufferHandle    position_buffer;
@@ -137,7 +142,7 @@ namespace Helix {
 
     struct NodeHandle {
         u32                     index = k_invalid_index;
-        NodeType                type =  NodeType_Node;
+        NodeType                type = NodeType_Node;
 
         // Equality operator
         bool operator==(const NodeHandle& other) const {
@@ -150,13 +155,16 @@ namespace Helix {
         }
     };
 
+    struct Node;
+
     struct NodePool {
 
         void                    init(Allocator* allocator);
         void                    shutdown();
 
-        void*                   access_node(NodeHandle handle);
         NodeHandle              obtain_node(NodeType type);
+        void*                   access_node(NodeHandle handle);
+        Node*                   get_root_node();
 
         Allocator* allocator;
 
@@ -174,40 +182,34 @@ namespace Helix {
         Transform               local_transform{ };
         Transform               world_transform{ };
 
-        bool                    transform_changed = false;
-
         cstring                 name = nullptr;
 
-        void                    update_transform(NodePool& node_pool) {
+        void                    (*updateFunc)(Node*, NodePool* node_pool);
 
-            if (parent.index != k_invalid_index) {
-                Node* parent_node = (Node*)node_pool.access_node(parent);
-                world_transform.set_transform(parent_node->world_transform.calculate_matrix() * local_transform.calculate_matrix());
+        void            update_transform(NodePool* node_pool) {
+            if (!updateFunc) {
+                HWARN("Node does not have update function");
+                return;
             }
-            else {
-                world_transform.set_transform(local_transform.calculate_matrix());
-            }
+            updateFunc(this, node_pool);
 
-            for (u32 i = 0; i < children.size; i++) {
-                Node* child_node = (Node*)node_pool.access_node(children[i]);
-                child_node->update_transform(node_pool);
-            }
+
         }
         void                    add_child(Node* node) {
             node->parent = handle;
-            children.push(node->handle);
+            children.push(node->handle);// TODO: Fix array issue!!!!!!!!!!!!
         }
     };
 
     struct MeshNode : public Node {
-        u32                     mesh_draw_index; // Index into the MeshDraw array
+        MeshDraw* mesh_draw_index; // Index into the MeshDraw array
     };
 
     struct LightNode : public Node {
         // Doesn't hold any data for now;
     };
 
-    
+
 
     ///////////////////////////////////////////////
     struct Scene {
@@ -250,11 +252,11 @@ namespace Helix {
 
         NodePool                node_pool;
 
-        Node*                   root_node;
+        //Node* root_node;
 
         NodeHandle              current_node{ };
 
-        Renderer*               renderer;
+        Renderer* renderer;
 
         BufferHandle            scene_buffer;
         Helix::BufferHandle     light_cb;
@@ -264,11 +266,11 @@ namespace Helix {
 
     struct glTFDrawTask : public enki::ITaskSet {
 
-        GpuDevice*              gpu = nullptr;
-        Renderer*               renderer = nullptr;
-        ImGuiService*           imgui = nullptr;
-        GPUProfiler*            gpu_profiler = nullptr;
-        glTFScene*              scene = nullptr;
+        GpuDevice* gpu = nullptr;
+        Renderer* renderer = nullptr;
+        ImGuiService* imgui = nullptr;
+        GPUProfiler* gpu_profiler = nullptr;
+        glTFScene* scene = nullptr;
         u32                     thread_id = 0;
 
         void init(GpuDevice* gpu_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_);

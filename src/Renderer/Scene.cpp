@@ -9,15 +9,39 @@
 #include <imgui/imgui.h>
 
 namespace Helix {
-    
+
+    // Node
+    static void update_transform(Node* node, NodePool* node_pool) {
+
+        if (node->parent.index != k_invalid_index) {
+            Node* parent_node = (Node*)node_pool->access_node(node->parent);
+            glm::mat4 combined_matrix = parent_node->world_transform.calculate_matrix() * node->local_transform.calculate_matrix();
+            node->world_transform.set_transform(combined_matrix);
+        }
+        else {
+            node->world_transform.set_transform(node->local_transform.calculate_matrix());
+        }
+
+        for (u32 i = 0; i < node->children.size; i++) {
+            Node* child_node = (Node*)node_pool->access_node(node->children[i]);
+            child_node->update_transform(node_pool);
+        }
+    }
+
+    static void update_mesh_transform(Node* node, NodePool* node_pool) {
+        update_transform(node, node_pool);
+
+        MeshNode* mesh_node = static_cast<MeshNode*>(node);
+        mesh_node->mesh_draw_index->model = node->world_transform.calculate_matrix();
+    }
 
     // Helper functions //////////////////////////////////////////////////
 
     // Light
     Helix::PipelineHandle                  light_pipeline;
-   
+
     Helix::DescriptorSetHandle             light_ds;
-    
+
 
     void get_mesh_vertex_buffer(glTFScene& scene, i32 accessor_index, BufferHandle& out_buffer_handle, u32& out_buffer_offset) {
 
@@ -223,7 +247,7 @@ namespace Helix {
         gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
         gpu_commands->clear_depth_stencil(1.0f, 0);
         gpu_commands->bind_pass(gpu->fullscreen_render_pass, gpu->fullscreen_framebuffer, false);
-        
+
         gpu_commands->set_scissor(nullptr);
         Viewport viewport{};
         viewport.rect = { 0,0,gpu->swapchain_width, gpu->swapchain_height };
@@ -278,12 +302,6 @@ namespace Helix {
 
         node_pool.init(resident_allocator);
 
-        root_node = (Node*)node_pool.access_node(node_pool.root_node);
-        root_node->children.init(resident_allocator, 1);
-        root_node->parent = { k_invalid_index, NodeType_Node };
-        root_node->name = "Root_Node";
-        root_node->world_transform = Transform{};
-        root_node->local_transform = Transform{};
 
         // Load all textures
         images.init(resident_allocator, gltf_scene.images_count);
@@ -457,7 +475,10 @@ namespace Helix {
         temp_allocator->free_marker(temp_allocator_initial_marker);
 
         // Init runtime meshes
-        mesh_draws.init(resident_allocator, gltf_scene.meshes_count);
+        // TODO: Right now mesh node has a reference to the data in mesh_draws, This data changes because
+        //       its in an array.
+        //       Figure out how to make it so when mesh_draws "grows" this does not affect MeshNode.
+        mesh_draws.init(resident_allocator, 200);
 
         i64 end_loading = Time::now();
 
@@ -531,7 +552,7 @@ namespace Helix {
 
             Program* light_program = renderer->create_program({ pipeline_creation });
             light_pipeline = light_program->passes[0].pipeline;
-            
+
             BufferCreation buffer_creation;
             buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
             light_cb = renderer->gpu->create_buffer(buffer_creation);
@@ -540,7 +561,7 @@ namespace Helix {
             DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(light_program->passes[0].pipeline, 0);
             ds_creation.buffer(light_cb, 0).set_layout(layout);
             light_ds = renderer->gpu->create_descriptor_set(ds_creation);
-            
+
             NodeHandle light_node_handle = node_pool.obtain_node(NodeType_LightNode);
 
             LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
@@ -549,7 +570,7 @@ namespace Helix {
             light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
             light_node->world_transform.translation.y = 1.0f;
 
-            root_node->add_child(light_node);
+            node_pool.get_root_node()->add_child(light_node);
         }
         // Create pipeline state
         PipelineCreation pipeline_creation;
@@ -638,10 +659,7 @@ namespace Helix {
 
         for (u32 node_index = 0; node_index < gltf_scene.nodes_count; ++node_index) {
             glTF::Node& node = gltf_scene.nodes[node_index];
-            if (node.mesh == glTF::INVALID_INT_VALUE)
-                node_handles[node_index] = node_pool.obtain_node(NodeType_Node);
-            else
-                node_handles[node_index] = node_pool.obtain_node(NodeType_MeshNode);
+            node_handles[node_index] = node_pool.obtain_node(NodeType_Node);
         }
 
         // Root Nodes
@@ -650,7 +668,7 @@ namespace Helix {
             node_parents[root_node_index] = -1;
             node_stack.push(root_node_index);
             Node* node = (Node*)node_pool.access_node(node_handles[root_node_index]);
-            root_node->add_child(node);
+            node_pool.get_root_node()->add_child(node);
         }
 
         while (node_stack.size) {
@@ -697,20 +715,17 @@ namespace Helix {
 
             node_matrix[node_index] = local_matrix;
 
+            Node* base_node = (Node*)node_pool.access_node(node_handles[node_index]);
+            base_node->name = node.name.data ? node.name.data : "Node";
+            base_node->local_transform = local_transform;
+            
+            i32 node_parent = node_parents[node_index];
+            base_node->parent.index = node_parent != -1 ? node_handles[node_parent].index : k_invalid_index;
+
+            
+            // Assuming nodes that contain meshes don't contain other glTF nodes
             if (node.mesh == glTF::INVALID_INT_VALUE) {
-                Node* base_node = (Node*)node_pool.base_nodes.access_resource(node_handles[node_index].index);
-                base_node->name = node.name.data ? node.name.data : "Node";
-                base_node->local_transform = local_transform;
                 base_node->children.init(node_pool.allocator, node.children_count, node.children_count);
-
-                glm::mat4 final_matrix = local_matrix;
-                i32 node_parent = node_parents[node_index];
-                while (node_parent != -1) {
-                    final_matrix = node_matrix[node_parent] * final_matrix;
-                    node_parent = node_parents[node_parent];
-                }
-                base_node->world_transform.set_transform(final_matrix);
-
                 for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
                     u32 child_node_index = node.children[child_index];
                     node_parents[child_node_index] = node_index;
@@ -718,34 +733,14 @@ namespace Helix {
                     node_stack.push(child_node_index);
                     base_node->children[child_index] = node_handles[child_node_index];
                 }
-
                 continue;
-            }
-            
-            MeshNode* mesh_node = (MeshNode*)node_pool.access_node(node_handles[node_index]);
-            mesh_node->name = node.name.data ? node.name.data : "Node";
-            mesh_node->local_transform = local_transform;
-            mesh_node->children.init(node_pool.allocator, node.children_count, node.children_count);
-            for (u32 child_index = 0; child_index < node.children_count; ++child_index) {
-                u32 child_node_index = node.children[child_index];
-                node_parents[child_node_index] = node_index;
-                node_stack.push(child_node_index);
-                mesh_node->children[child_index] = node_handles[child_node_index];
             }
 
             glTF::Mesh& mesh = gltf_scene.meshes[node.mesh];
 
-            glm::mat4 final_matrix = local_matrix;
-            i32 node_parent = node_parents[node_index];
-            // TODO: Set up the parent index properly instead of a just the invalid value
-            //mesh_node->parent.index = k_invalid_index;
-            while (node_parent != -1) {
-                final_matrix = node_matrix[node_parent] * final_matrix;
-                node_parent = node_parents[node_parent];
-            }
-            mesh_node->world_transform.set_transform(final_matrix);
+            base_node->children.init(node_pool.allocator, mesh.primitives_count);
 
-            glm::vec3 node_scale{ 1.0f, 1.0f, 1.0f };
+            glm::vec3 node_scale{ 1.0f, 1.0f, 1.0f };// TODO: Needed?
             if (node.scale_count != 0) {
                 HASSERT(node.scale_count == 3);
                 node_scale = glm::vec3{ node.scale[0], node.scale[1], node.scale[2] };
@@ -757,7 +752,6 @@ namespace Helix {
 
                 mesh_draw.scale = node_scale;
 
-                mesh_draw.model = mesh_node->world_transform.calculate_matrix();
 
                 glTF::MeshPrimitive& mesh_primitive = mesh.primitives[primitive_index];
 
@@ -815,15 +809,23 @@ namespace Helix {
                 mesh_node_primitive->children.size = 0;
                 mesh_node_primitive->name = "Mesh_Primitive";
                 mesh_node_primitive->parent = node_handles[node_index];
-                mesh_node_primitive->world_transform.set_transform(final_matrix);
+
+                mesh_node_primitive->children.size = 0;
+
+
                 // TODO: Extract the position from the position buffer.
-                mesh_node->children.push(mesh_handle);
+                base_node->children.push(mesh_handle);
+
+                mesh_draw.model = base_node->world_transform.calculate_matrix();
 
                 mesh_draws.push(mesh_draw);
+                mesh_node_primitive->mesh_draw_index = &mesh_draws[mesh_draws.size - 1];
+
             }
         }
 
         qsort(mesh_draws.data, mesh_draws.size, sizeof(MeshDraw), gltf_mesh_material_compare);
+        node_pool.get_root_node()->update_transform(&node_pool);
     }
 
     void glTFScene::upload_materials(float model_scale) {
@@ -873,7 +875,7 @@ namespace Helix {
         }
     }
 
-    void glTFScene::imgui_draw_node_property(NodeHandle node_handle){
+    void glTFScene::imgui_draw_node_property(NodeHandle node_handle) {
         if (ImGui::Begin("Node Properties")) {
             if (node_handle.index == k_invalid_index) {
                 ImGui::Text("No node selected");
@@ -888,24 +890,21 @@ namespace Helix {
                     ImGui::Text("Parent: %s", parent->name);
                 }
 
-                Transform old_transform = node->local_transform;
                 bool modified = false;
-#
+
                 // TODO: Represent rotation as quats
                 ImGui::Text("Local Transform");
                 modified |= ImGui::InputFloat3("position##local", (float*)&node->local_transform.translation);
                 modified |= ImGui::InputFloat3("scale##local", (float*)&node->local_transform.scale);
-                ImGui::InputFloat3("rotation##local", (float*)&node->local_transform.rotation);
+                ImGui::InputFloat3("rotation##local", (float*)&glm::degrees(glm::eulerAngles(node->local_transform.rotation)));
 
                 ImGui::Text("World Transform");
                 ImGui::InputFloat3("position##world", (float*)&node->world_transform.translation);
                 ImGui::InputFloat3("scale##world", (float*)&node->world_transform.scale);
-                ImGui::InputFloat3("rotation##world", (float*)&node->world_transform.rotation);
+                ImGui::InputFloat3("rotation##world", (float*)&glm::degrees(glm::eulerAngles(node->world_transform.rotation)));
 
                 if (modified) {
-                    old_transform.translation = node->local_transform.translation - old_transform.translation;
-                    old_transform.scale = node->local_transform.scale / old_transform.scale;
-                    node->update_transform(node_pool);
+                    node->update_transform(&node_pool);
                 }
             }
         }
@@ -937,7 +936,7 @@ namespace Helix {
         }
     }
 
-    void glTFScene::imgui_draw_hierarchy(){
+    void glTFScene::imgui_draw_hierarchy() {
         if (ImGui::Begin("Scene Hierarchy")) {
             imgui_draw_node(node_pool.root_node);
             ImGui::End();
@@ -946,7 +945,7 @@ namespace Helix {
 
     // Nodes //////////////////////////////////////////
 
-    void NodePool::init(Allocator* allocator_){
+    void NodePool::init(Allocator* allocator_) {
         allocator = allocator_;
 
         mesh_nodes.init(allocator_, 300, sizeof(MeshNode));
@@ -954,15 +953,22 @@ namespace Helix {
         light_nodes.init(allocator_, 5, sizeof(LightNode));
 
         root_node = obtain_node(NodeType_Node);
+
+        Node* root = (Node*)access_node(root_node);
+        root->children.init(allocator, 4);
+        root->parent = { k_invalid_index, NodeType_Node };
+        root->name = "Root_Node";
+        root->world_transform = Transform{};
+        root->local_transform = Transform{};
     }
 
-    void NodePool::shutdown(){
+    void NodePool::shutdown() {
         mesh_nodes.shutdown();
         base_nodes.shutdown();
         light_nodes.shutdown();
     }
 
-    void* NodePool::access_node(NodeHandle handle){
+    void* NodePool::access_node(NodeHandle handle) {
         switch (handle.type)
         {
         case NodeType_Node:
@@ -977,25 +983,34 @@ namespace Helix {
         }
     }
 
-    NodeHandle NodePool::obtain_node(NodeType type){
+    Node* NodePool::get_root_node(){
+        Node* root = (Node*)access_node(root_node);
+        HASSERT(root);
+        return root;
+    }
+
+    NodeHandle NodePool::obtain_node(NodeType type) {
         NodeHandle handle{};
         switch (type)
         {
         case NodeType_Node: {
             handle = { base_nodes.obtain_resource(), NodeType_Node };
-            Node* base_node = (Node*)access_node(handle);
+            Node* base_node = new((Node*)access_node(handle)) Node();
+            base_node->updateFunc = update_transform;
             base_node->handle = handle;
             break;
         }
         case NodeType_MeshNode: {
             handle = { mesh_nodes.obtain_resource(), NodeType_MeshNode };
-            MeshNode* mesh_node = (MeshNode*)access_node(handle);
+            MeshNode* mesh_node = new((MeshNode*)access_node(handle)) MeshNode();
+            mesh_node->updateFunc = update_mesh_transform;
             mesh_node->handle = handle;
             break;
         }
         case NodeType_LightNode: {
             handle = { light_nodes.obtain_resource(), NodeType_LightNode };
-            LightNode* light_node = (LightNode*)access_node(handle);
+            LightNode* light_node = new((LightNode*)access_node(handle)) LightNode();
+            light_node->updateFunc = update_transform;
             light_node->handle = handle;
             break;
         }

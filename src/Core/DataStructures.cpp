@@ -56,7 +56,7 @@ namespace Helix {
         memory_copy(new_memory, memory, pool_size * resource_size);
 
         u32* new_free_indicies = (u32*)(new_memory + new_pool_size * resource_size);
-        memory_copy(new_free_indicies, free_indices, used_indices);
+        memory_copy(new_free_indicies, free_indices, used_indices * sizeof(u32));
 
         for (u32 i = used_indices; i < new_pool_size; i++) {
             new_free_indicies[i] = i;
@@ -89,7 +89,6 @@ namespace Helix {
         HWARN("No more resources left, creating a larger pool");
         grow();
         return obtain_resource();
-        //return k_invalid_index;
     }
 
     void ResourcePool::release_resource(u32 index) {

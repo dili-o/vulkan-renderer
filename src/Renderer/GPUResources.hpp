@@ -810,11 +810,11 @@ namespace Helix {
 
         VkDescriptorSet                 vk_descriptor_set;
 
-        ResourceHandle* resources = nullptr;
-        SamplerHandle* samplers = nullptr;
-        u16* bindings = nullptr;
+        ResourceHandle*                 resources = nullptr;
+        SamplerHandle*                  samplers = nullptr;
+        u16*                            bindings = nullptr;
 
-        const DesciptorSetLayout* layout = nullptr;
+        const DesciptorSetLayout*       layout = nullptr;
         u32                             num_resources = 0;
     }; // struct DesciptorSetVulkan
 

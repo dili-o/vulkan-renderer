@@ -4,7 +4,7 @@
 #include "Core/Platform.hpp"
 #include "Core/String.hpp"
 
-static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Sponza/glTF/Sponza.gltf";
+//static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Sponza/glTF/Sponza.gltf";
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Bistro/Bistro.gltf";
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/Cube/glTF/Cube.gltf";
 //static cstring kDefault3DModel = "D:/Mastering-Graphics-Programming-with-Vulkan/deps/src/glTF-Sample-Models/2.0/SciFiHelmet/glTF/SciFiHelmet.gltf";

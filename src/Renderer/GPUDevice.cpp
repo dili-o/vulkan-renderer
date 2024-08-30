@@ -1642,6 +1642,9 @@ namespace Helix {
             return handle;
         }
 
+        HDEBUG("Created buffer: {}, buffer resource count: {}", creation.name, buffers.used_indices);
+
+
         Buffer* buffer = access_buffer(handle);
 
         buffer->name = creation.name;
