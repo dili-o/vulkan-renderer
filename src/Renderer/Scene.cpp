@@ -892,18 +892,22 @@ namespace Helix {
 
                 bool modified = false;
 
+                glm::vec3 local_rotation = glm::degrees(glm::eulerAngles(node->local_transform.rotation));
+                glm::vec3 world_rotation = glm::degrees(glm::eulerAngles(node->world_transform.rotation));
+
                 // TODO: Represent rotation as quats
                 ImGui::Text("Local Transform");
                 modified |= ImGui::InputFloat3("position##local", (float*)&node->local_transform.translation);
                 modified |= ImGui::InputFloat3("scale##local", (float*)&node->local_transform.scale);
-                ImGui::InputFloat3("rotation##local", (float*)&glm::degrees(glm::eulerAngles(node->local_transform.rotation)));
+                modified |= ImGui::InputFloat3("rotation##local", (float*)&local_rotation);
 
                 ImGui::Text("World Transform");
                 ImGui::InputFloat3("position##world", (float*)&node->world_transform.translation);
                 ImGui::InputFloat3("scale##world", (float*)&node->world_transform.scale);
-                ImGui::InputFloat3("rotation##world", (float*)&glm::degrees(glm::eulerAngles(node->world_transform.rotation)));
+                ImGui::InputFloat3("rotation##world", (float*)&world_rotation);
 
                 if (modified) {
+                    node->local_transform.rotation = glm::quat(glm::radians(local_rotation));
                     node->update_transform(&node_pool);
                 }
             }

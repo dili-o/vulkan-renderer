@@ -95,7 +95,7 @@ namespace Helix {
             ImVec2 canvas_size = ImGui::GetContentRegionAvail();
             f32 widget_height = canvas_size.y - 100;
 
-            f32 legend_width = 20;
+            f32 legend_width = 150;
             f32 graph_width = fabsf(canvas_size.x - legend_width);
             u32 rect_width = ceilu32(graph_width / max_frames);
             i32 rect_x = ceili32(graph_width - rect_width);
