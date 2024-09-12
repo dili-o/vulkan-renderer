@@ -5,6 +5,10 @@
 
 #include <string.h>
 
+//#define SPIRV_REFLECT_USE_SYSTEM_SPIRV_H
+
+#include <spirv_reflect.h>
+
 namespace Helix {
     namespace spirv {
 
@@ -69,6 +73,23 @@ namespace Helix {
         }
 
         void parse_binary(const u32* data, size_t data_size, StringBuffer& name_buffer, ParseResult* parse_result) {
+            /////
+            SpvReflectShaderModule module = {};
+            SpvReflectResult result = spvReflectCreateShaderModule(data_size, data, &module);
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+            uint32_t count = 0;
+            result = spvReflectEnumerateInputVariables(&module, &count, NULL);
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+            std::vector<SpvReflectInterfaceVariable*> input_vars(count);
+            result = spvReflectEnumerateInputVariables(&module, &count, input_vars.data());
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+            ////
+
+
+
             HASSERT((data_size % 4) == 0);
             u32 spv_word_count = safe_cast<u32>(data_size / 4);
 

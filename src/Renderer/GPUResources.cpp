@@ -311,6 +311,24 @@ namespace Helix {
     }
 
     // PipelineCreation ////////////////////////////////////////
+    PipelineCreation& PipelineCreation::reset() {
+        rasterization = RasterizationCreation{};
+        depth_stencil = DepthStencilCreation{};
+        blend_state.reset();
+        vertex_input.reset();
+        shaders.reset();
+        render_pass.reset();
+        viewport = nullptr;
+        name = nullptr;
+
+        for (u32 i = 0; i < num_active_layouts; i++) {
+            descriptor_set_layout[i].index = k_invalid_index;
+        }
+
+        num_active_layouts = 0;
+        return *this;
+    }
+
     PipelineCreation& PipelineCreation::add_descriptor_set_layout(DescriptorSetLayoutHandle handle) {
         descriptor_set_layout[num_active_layouts++] = handle;
         return *this;

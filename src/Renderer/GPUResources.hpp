@@ -494,8 +494,9 @@ namespace Helix {
 
         u32                             num_active_layouts = 0;
 
-        cstring                     name = nullptr;
+        cstring                         name = nullptr;
 
+        PipelineCreation&               reset();
         PipelineCreation&               add_descriptor_set_layout(DescriptorSetLayoutHandle handle);
         RenderPassOutput&               render_pass_output();
 

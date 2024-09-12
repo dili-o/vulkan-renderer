@@ -1310,7 +1310,6 @@ namespace Helix {
             shader_stage_info.stage = stage.type;
 
             if (vkCreateShaderModule(vulkan_device, &shader_create_info, nullptr, &shader_state->shader_stage_info[compiled_shaders].module) != VK_SUCCESS) {
-
                 break;
             }
             // [TAG: PIPELINE GENERATION]
@@ -2114,9 +2113,9 @@ namespace Helix {
         u32 active_attachments = 0;
         for (; active_attachments < output.num_color_formats; ++active_attachments) {
             attachments[active_attachments] = color_attachments[active_attachments];
-            ++active_attachments;
         }
-        subpass.colorAttachmentCount = active_attachments ? active_attachments - 1 : 0;
+        //++active_attachments;
+        subpass.colorAttachmentCount = active_attachments;
         subpass.pColorAttachments = color_attachments_ref;
 
         subpass.pDepthStencilAttachment = nullptr;
@@ -2132,7 +2131,7 @@ namespace Helix {
 
         VkRenderPassCreateInfo render_pass_info = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
 
-        render_pass_info.attachmentCount = (active_attachments ? active_attachments - 1 : 0) + depth_stencil_count;
+        render_pass_info.attachmentCount = active_attachments + depth_stencil_count;
         render_pass_info.pAttachments = attachments;
         render_pass_info.subpassCount = 1;
         render_pass_info.pSubpasses = &subpass;

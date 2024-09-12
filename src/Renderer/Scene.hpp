@@ -82,7 +82,7 @@ namespace Helix {
 
     struct MeshDraw {
 
-        Material* material;
+        Material*       material;
 
         BufferHandle    index_buffer;
         BufferHandle    position_buffer;

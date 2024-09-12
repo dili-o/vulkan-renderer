@@ -30,6 +30,11 @@ namespace Helix {
         render_index = render_index_;
         return *this;
     }
+    
+    MaterialCreation& MaterialCreation::set_program_pass_index(u32 program_pass_index_) {
+        program_pass_index = program_pass_index_;
+        return *this;
+    }
 
     MaterialCreation& MaterialCreation::set_name(cstring name_) {
         name = name_;
@@ -73,6 +78,23 @@ namespace Helix {
         return k_invalid_texture;
     }
 
+    // Program //////////////////////////////////////////////////////////////////////
+
+    ProgramCreation& ProgramCreation::reset() {
+        num_creations = 0;
+        name = nullptr;
+        return *this;
+    }
+
+    ProgramCreation& ProgramCreation::add_pipeline(const PipelineCreation& pipeline) {
+        creations[num_creations++] = pipeline;
+        return *this;
+    }
+
+    ProgramCreation& ProgramCreation::set_name(cstring name_) {
+        name = name_;
+        return *this;
+    }
 
     // Renderer /////////////////////////////////////////////////////////////////////
 
@@ -226,6 +248,21 @@ namespace Helix {
                     }
                     ImGui::EndTabItem();
                 }
+                if (ImGui::BeginTabItem("Pipelines"))
+                {
+                    Helix::FlatHashMapIterator it = resource_cache.programs.iterator_begin();
+                    ImGui::Text("Num of pipelines: %d", gpu->pipelines.used_indices);
+                    while (it.is_valid()) {
+                        Helix::Program* program = resource_cache.programs.get(it);
+                        if (ImGui::TreeNode(program->name)) {
+                            ImGui::Text("Num of passes: %d", program->passes.size);
+                            ImGui::TreePop();
+                        }
+                        resource_cache.programs.iterator_advance(it);
+                    }
+                    ImGui::EndTabItem();
+                }
+
                 ImGui::EndTabBar();
             }
         }
@@ -331,25 +368,24 @@ namespace Helix {
     Program* Renderer::create_program(const ProgramCreation& creation) {
         Program* program = programs.obtain();
         if (program) {
-            const u32 num_passes = 1;
-            // First create arrays
-            program->passes.init(gpu->allocator, num_passes, num_passes);
-
-            program->name = creation.pipeline_creation.name;
+            program->passes.init(gpu->allocator, creation.num_creations, creation.num_creations);
+            program->name = creation.name;
 
             StringBuffer pipeline_cache_path;
             pipeline_cache_path.init(1024, gpu->allocator);
 
-            for (uint32_t i = 0; i < num_passes; ++i) {
+            for (uint32_t i = 0; i < creation.num_creations; ++i) {
                 ProgramPass& pass = program->passes[i];
 
-                if (creation.pipeline_creation.name != nullptr) {
-                    char* cache_path = pipeline_cache_path.append_use_f("%s%s.cache", HELIX_SHADER_FOLDER"cache/", creation.pipeline_creation.name);
+                if (creation.name != nullptr) {
+                    char* cache_path = pipeline_cache_path.append_use_f("%s%s.cache", HELIX_SHADER_FOLDER"cache/", creation.name);
+                    pass.pipeline = gpu->create_pipeline(creation.creations[i], cache_path);
 
-                    pass.pipeline = gpu->create_pipeline(creation.pipeline_creation, cache_path);
+                    resource_cache.programs.insert(hash_calculate(creation.name), program);
                 }
                 else {
-                    pass.pipeline = gpu->create_pipeline(creation.pipeline_creation);
+                    HWARN("Pipeline Creation does not have a name");
+                    pass.pipeline = gpu->create_pipeline(creation.creations[i]);
                 }
 
                 pass.descriptor_set_layout = gpu->get_descriptor_set_layout(pass.pipeline, 0);
@@ -357,16 +393,11 @@ namespace Helix {
 
             pipeline_cache_path.shutdown();
 
-            if (creation.pipeline_creation.name != nullptr) {
-                resource_cache.programs.insert(hash_calculate(creation.pipeline_creation.name), program);
-            }else
-                HWARN("Pipeline Creation does not have a name");
-
-
             program->references = 1;
 
             return program;
         }
+        HWARN("Renderer could not create a Program");
         return nullptr;
     }
 
@@ -376,6 +407,7 @@ namespace Helix {
             material->program = creation.program;
             material->name = creation.name;
             material->render_index = creation.render_index;
+            material->program_pass_index = creation.program_pass_index;
 
             if (creation.name != nullptr) {
                 resource_cache.materials.insert(hash_calculate(creation.name), material);
@@ -397,7 +429,7 @@ namespace Helix {
     PipelineHandle Renderer::get_pipeline(Material* material) {
         HASSERT(material != nullptr);
 
-        return material->program->passes[0].pipeline;
+        return material->program->passes[material->program_pass_index].pipeline;
     }
 
     /*DescriptorSetHandle Renderer::create_descriptor_set(CommandBuffer* command_buffer, Material* material, DescriptorSetCreation& ds_creation) {
@@ -467,7 +499,9 @@ namespace Helix {
 
         resource_cache.programs.remove(hash_calculate(program->name));
 
-        gpu->destroy_pipeline(program->passes[0].pipeline);
+        for (u32 i = 0; i < program->passes.size; i++) {
+            gpu->destroy_pipeline(program->passes[i].pipeline);
+        }
         program->passes.shutdown();
 
         programs.release(program);

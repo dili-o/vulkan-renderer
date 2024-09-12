@@ -6,12 +6,21 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
 project(HelixEngine)
 set(CMAKE_CXX_STANDARD 17)
 
+# Ensure Vulkan SDK environment variable is correctly normalized
+file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" VULKAN_SDK_NORMALIZED)
+
+# Find and include SPIRV-Reflect headers
+set(SPIRV_REFLECT_INCLUDE_DIR "${VULKAN_SDK_NORMALIZED}/Source/SPIRV-Reflect")
+
 file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp" 
     "vendor/imgui/*.cpp" 
     "vendor/imgui/*.h"
     "vendor/enkiTS/TaskScheduler.cpp"
     "vendor/tlsf.c"
+    "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c"
 )
+
+#message(FATAL_ERROR "${SPIRV_REFLECT_INCLUDE_DIR}/")
 
 add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp")
 
@@ -27,11 +36,18 @@ else()
     message(FATAL_ERROR "Vulkan SDK not found. Make sure it is installed and accessible.")
 endif()
 
+
+#set(SPIRV_REFLECT_UNIFIED1_INCLUDE_DIR "${SPIRV_REFLECT_INCLUDE_DIR}/include/spirv/unified1")
+
+#target_include_directories(HelixEngine PUBLIC "${SPIRV_REFLECT_INCLUDE_DIR}/")
+#target_include_directories(HelixEngine PUBLIC "${SPIRV_REFLECT_UNIFIED1_INCLUDE_DIR}/")
+
 target_include_directories(HelixEngine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
 target_include_directories(HelixEngine PUBLIC "src/")
 target_include_directories(HelixEngine PUBLIC "vendor/")
 target_include_directories(HelixEngine PUBLIC "vendor/spdlog/include")
 target_include_directories(HelixEngine PUBLIC "vendor/SDL2/include")
+target_include_directories(HelixEngine PUBLIC "${SPIRV_REFLECT_INCLUDE_DIR}/")
 
 # Vendor Libraries
 # Find SDL2 library

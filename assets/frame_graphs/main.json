@@ -54,11 +54,8 @@
       "name": "transparent_pass",
       "outputs": [
         {
-          "type": "attachment",
-          "name": "final",
-          "format": "VK_FORMAT_B8G8R8A8_UNORM",
-          "resolution": [ 1280, 800 ],
-          "op": "VK_ATTACHMENT_LOAD_OP_CLEAR"
+          "type": "reference",
+          "name": "lighting"
         }
       ]
     },
@@ -100,6 +97,28 @@
           "type": "attachment",
           "name": "depth",
           "format": "VK_FORMAT_D32_SFLOAT",
+          "resolution": [ 1280, 800 ],
+          "op": "VK_ATTACHMENT_LOAD_OP_CLEAR"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "type": "attachment",
+          "name": "lighting"
+        },
+        {
+          "type": "attachment",
+          "name": "depth"
+        }
+      ],
+      "name": "light_debug_pass",
+      "outputs": [
+        {
+          "type": "attachment",
+          "name": "final",
+          "format": "VK_FORMAT_B8G8R8A8_UNORM",
           "resolution": [ 1280, 800 ],
           "op": "VK_ATTACHMENT_LOAD_OP_CLEAR"
         }

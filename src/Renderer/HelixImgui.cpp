@@ -150,7 +150,8 @@ namespace Helix {
 
         pipeline_creation.blend_state.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
 
-        pipeline_creation.vertex_input.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float2 })
+        pipeline_creation.vertex_input
+            .add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float2 })
             .add_vertex_attribute({ 1, 0, 8, VertexComponentFormat::Float2 })
             .add_vertex_attribute({ 2, 0, 16, VertexComponentFormat::UByte4N });
 

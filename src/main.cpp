@@ -23,6 +23,8 @@
 #include "Renderer/GPUProfiler.hpp"
 #include "Renderer/AsynchronousLoader.hpp"
 #include "Renderer/Scene.hpp"
+#include "Renderer/FrameGraph.hpp"
+
 
 #include "Core/File.hpp"
 #include "Core/Gltf.hpp"
@@ -103,8 +105,8 @@ int main(int argc, char** argv)
 	MemoryService::instance()->init(&memory_configuration);
 	Allocator* allocator = &MemoryService::instance()->system_allocator;
 
-	StackAllocator scratch_allocator;
-	scratch_allocator.init(hmega(8));
+	StackAllocator stack_allocator;
+	stack_allocator.init(hmega(8));
 
     // [TAG: MULTITHREADING]
     enki::TaskSchedulerConfig config;
@@ -128,7 +130,7 @@ int main(int argc, char** argv)
 	dc.set_window(window.width, window.height, window.platform_handle)
         .set_allocator(allocator)
         .set_num_threads(task_scheduler.GetNumTaskThreads())
-        .set_linear_allocator(&scratch_allocator);
+        .set_linear_allocator(&stack_allocator);
 	GpuDevice gpu;
 	gpu.init(dc);
 
@@ -145,6 +147,93 @@ int main(int argc, char** argv)
 	ImGuiService* imgui = ImGuiService::instance();
 	ImGuiServiceConfiguration imgui_config{ &gpu, window.platform_handle };
 	imgui->init(&imgui_config);
+
+    // FrameGraph
+    FrameGraphBuilder frame_graph_builder;
+    frame_graph_builder.init(&gpu);
+
+    FrameGraph frame_graph;
+    frame_graph.init(&frame_graph_builder);
+
+    StringBuffer temporary_name_buffer;
+    temporary_name_buffer.init(1024, &stack_allocator);
+    cstring frame_graph_path = temporary_name_buffer.append_use_f("D:/vulkan-renderer/assets/frame_graphs/main.json");
+
+    //frame_graph.parse(frame_graph_path, &stack_allocator);
+    //frame_graph.compile();
+
+    {
+        StringBuffer path_buffer;
+        path_buffer.init(1024, &stack_allocator);
+
+        // Create pipeline state
+        PipelineCreation pipeline_creation;
+
+        cstring vert_file = "depth.vert.glsl";
+        char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
+        FileReadResult vert_code = file_read_text(vert_path, &stack_allocator);
+
+        pipeline_creation.vertex_input.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
+        pipeline_creation.vertex_input.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
+
+        pipeline_creation.reset();
+
+        vert_file = "pbr.vert.glsl";
+        vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
+        vert_code = file_read_text(vert_path, &stack_allocator);
+
+        cstring frag_file = "pbr.frag.glsl";
+        char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
+        FileReadResult frag_code = file_read_text(frag_path, &stack_allocator);
+
+        // Vertex input
+        // TODO(marco): could these be inferred from SPIR-V?
+        pipeline_creation.vertex_input.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
+        pipeline_creation.vertex_input.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
+
+        pipeline_creation.vertex_input.add_vertex_attribute({ 1, 1, 0, VertexComponentFormat::Float4 }); // tangent
+        pipeline_creation.vertex_input.add_vertex_stream({ 1, 16, VertexInputRate::PerVertex });
+
+        pipeline_creation.vertex_input.add_vertex_attribute({ 2, 2, 0, VertexComponentFormat::Float3 }); // normal
+        pipeline_creation.vertex_input.add_vertex_stream({ 2, 12, VertexInputRate::PerVertex });
+
+        pipeline_creation.vertex_input.add_vertex_attribute({ 3, 3, 0, VertexComponentFormat::Float2 }); // texcoord
+        pipeline_creation.vertex_input.add_vertex_stream({ 3, 8, VertexInputRate::PerVertex });
+
+        // Render pass
+        pipeline_creation.render_pass = renderer.gpu->get_swapchain_output();
+        // Depth
+        pipeline_creation.depth_stencil.set_depth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+        // Blend
+        pipeline_creation.blend_state.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
+
+        pipeline_creation.shaders.set_name("pbr").add_stage(vert_code.data, vert_code.size, VK_SHADER_STAGE_VERTEX_BIT).add_stage(frag_code.data, frag_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        pipeline_creation.rasterization.front = VK_FRONT_FACE_CLOCKWISE;
+
+        pipeline_creation.name = "pbr_no_cull";
+
+        ProgramCreation program_creation{};
+        program_creation.add_pipeline(pipeline_creation);
+
+        PipelineCreation pipeline_creation2 = pipeline_creation;
+        pipeline_creation2.name = "pbr_cull";
+        pipeline_creation2.rasterization.cull_mode = VK_CULL_MODE_BACK_BIT;
+
+
+        program_creation.add_pipeline(pipeline_creation2);
+        program_creation.set_name("pbr");
+
+        renderer.create_program(program_creation);
+
+       /* pipeline_creation.rasterization.cull_mode = VK_CULL_MODE_BACK_BIT;
+
+        pipeline_creation.name = "pbr_cull";
+        renderer.create_program({ pipeline_creation });*/
+    }
+
+    
 
     // [TAG: Multithreading]
     AsynchronousLoader async_loader;
@@ -167,11 +256,11 @@ int main(int argc, char** argv)
     glTFScene* scene = nullptr;
     scene = new glTFScene;
 
-    scene->load(gltf_file, gltf_base_path, allocator, &scratch_allocator, &async_loader);
+    scene->load(gltf_file, gltf_base_path, allocator, &stack_allocator, &async_loader);
 
     directory_change(cwd.path);
 
-    scene->prepare_draws(&renderer, &scratch_allocator);
+    scene->prepare_draws(&renderer, &stack_allocator);
 
     directory_change(cwd.path);
 
@@ -404,11 +493,14 @@ int main(int argc, char** argv)
     scene->unload(&renderer);
     delete scene;
 
+    frame_graph.shutdown();
+    frame_graph_builder.shutdown();
+
     input_handler.shutdown();
     window.unregister_os_messages_callback(input_os_messages_callback);
     window.shutdown();
 
-    scratch_allocator.shutdown();
+    stack_allocator.shutdown();
     MemoryService::instance()->shutdown();
 
     return 0;

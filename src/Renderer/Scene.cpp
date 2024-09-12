@@ -550,7 +550,11 @@ namespace Helix {
                 .add_stage(gs_code.data, (u32)gs_code.size, VK_SHADER_STAGE_GEOMETRY_BIT)
                 .add_stage(fs_code.data, (u32)fs_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-            Program* light_program = renderer->create_program({ pipeline_creation });
+            ProgramCreation light_program_creation{};
+            light_program_creation.add_pipeline(pipeline_creation);
+            light_program_creation.set_name("Light");
+
+            Program* light_program = renderer->create_program(light_program_creation);
             light_pipeline = light_program->passes[0].pipeline;
 
             BufferCreation buffer_creation;
@@ -572,71 +576,26 @@ namespace Helix {
 
             node_pool.get_root_node()->add_child(light_node);
         }
-        // Create pipeline state
-        PipelineCreation pipeline_creation;
-
-        StringBuffer path_buffer;
-        path_buffer.init(1024, stack_allocator);
-
-        cstring vert_file = "pbr.vert.glsl";
-        char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
-        FileReadResult vert_code = file_read_text(vert_path, stack_allocator);
-
-        cstring frag_file = "pbr.frag.glsl";
-        char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
-        FileReadResult frag_code = file_read_text(frag_path, stack_allocator);
-
-        // Vertex input
-        // TODO(marco): could these be inferred from SPIR-V?
-        pipeline_creation.vertex_input.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
-        pipeline_creation.vertex_input.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
-
-        pipeline_creation.vertex_input.add_vertex_attribute({ 1, 1, 0, VertexComponentFormat::Float4 }); // tangent
-        pipeline_creation.vertex_input.add_vertex_stream({ 1, 16, VertexInputRate::PerVertex });
-
-        pipeline_creation.vertex_input.add_vertex_attribute({ 2, 2, 0, VertexComponentFormat::Float3 }); // normal
-        pipeline_creation.vertex_input.add_vertex_stream({ 2, 12, VertexInputRate::PerVertex });
-
-        pipeline_creation.vertex_input.add_vertex_attribute({ 3, 3, 0, VertexComponentFormat::Float2 }); // texcoord
-        pipeline_creation.vertex_input.add_vertex_stream({ 3, 8, VertexInputRate::PerVertex });
-
-        // Render pass
-        pipeline_creation.render_pass = renderer->gpu->get_swapchain_output();
-        // Depth
-        pipeline_creation.depth_stencil.set_depth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-        // Blend
-        pipeline_creation.blend_state.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
-
-        pipeline_creation.shaders.set_name("pbr").add_stage(vert_code.data, vert_code.size, VK_SHADER_STAGE_VERTEX_BIT).add_stage(frag_code.data, frag_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
-
-        pipeline_creation.rasterization.front = VK_FRONT_FACE_CLOCKWISE;
-
         // Constant buffer
         BufferCreation buffer_creation;
         buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(UniformData)).set_name("scene_buffer");
         scene_buffer = renderer->gpu->create_buffer(buffer_creation);
 
-        pipeline_creation.name = "pbr_no_cull";
-        Program* program_no_cull = renderer->create_program({ pipeline_creation });
-
-        pipeline_creation.rasterization.cull_mode = VK_CULL_MODE_BACK_BIT;
-
-        pipeline_creation.name = "pbr_cull";
-        Program* program_cull = renderer->create_program({ pipeline_creation });
+        const u64 program_hashed = hash_calculate("pbr");
+        Program* program = renderer->resource_cache.programs.get(program_hashed);
 
         MaterialCreation material_creation;
 
-        material_creation.set_name("material_no_cull_opaque").set_program(program_no_cull).set_render_index(0);
+        material_creation.set_name("material_no_cull_opaque").set_program(program).set_render_index(0).set_program_pass_index(0);
         Material* material_no_cull_opaque = renderer->create_material(material_creation);
 
-        material_creation.set_name("material_cull_opaque").set_program(program_cull).set_render_index(1);
+        material_creation.set_name("material_cull_opaque").set_render_index(1).set_program_pass_index(1);
         Material* material_cull_opaque = renderer->create_material(material_creation);
 
-        material_creation.set_name("material_no_cull_transparent").set_program(program_no_cull).set_render_index(2);
+        material_creation.set_name("material_no_cull_transparent").set_render_index(2).set_program_pass_index(0);
         Material* material_no_cull_transparent = renderer->create_material(material_creation);
 
-        material_creation.set_name("material_cull_transparent").set_program(program_cull).set_render_index(3);
+        material_creation.set_name("material_cull_transparent").set_render_index(3).set_program_pass_index(1);
         Material* material_cull_transparent = renderer->create_material(material_creation);
 
         stack_allocator->free_marker(cached_scratch_size);
@@ -720,7 +679,9 @@ namespace Helix {
             base_node->local_transform = local_transform;
             
             i32 node_parent = node_parents[node_index];
-            base_node->parent.index = node_parent != -1 ? node_handles[node_parent].index : k_invalid_index;
+            // Nodes that don't have parents would already have their parent set to the root node
+            if (node_parent != -1)
+                base_node->parent = node_handles[node_parent];
 
             
             // Assuming nodes that contain meshes don't contain other glTF nodes
@@ -782,7 +743,7 @@ namespace Helix {
                 bool transparent = get_mesh_material(*renderer, *this, material, mesh_draw);
 
                 DescriptorSetCreation ds_creation{};
-                DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(program_cull->passes[0].pipeline, 0);
+                DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(program->passes[0].pipeline, 0);
                 ds_creation.buffer(scene_buffer, 0).buffer(mesh_draw.material_buffer, 1).set_layout(layout);
                 mesh_draw.descriptor_set = renderer->gpu->create_descriptor_set(ds_creation);
 
