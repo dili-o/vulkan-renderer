@@ -196,69 +196,6 @@ int main(int argc, char** argv)
 
             stack_allocator.free_marker(scratch_marker);
         }
-        //StringBuffer path_buffer;
-        //path_buffer.init(1024, &stack_allocator);
-
-        //// Create pipeline state
-        //PipelineCreation pipeline_creation;
-
-        //cstring vert_file = "depth.vert.glsl";
-        //char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
-        //FileReadResult vert_code = file_read_text(vert_path, &stack_allocator);
-
-        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
-        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
-
-        //pipeline_creation.reset();
-
-        //vert_file = "pbr.vert.glsl";
-        //vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
-        //vert_code = file_read_text(vert_path, &stack_allocator);
-
-        //cstring frag_file = "pbr.frag.glsl";
-        //char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
-        //FileReadResult frag_code = file_read_text(frag_path, &stack_allocator);
-
-        //// Vertex input
-        //// TODO(marco): could these be inferred from SPIR-V?
-        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
-        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
-
-        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 1, 1, 0, VertexComponentFormat::Float4 }); // tangent
-        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 1, 16, VertexInputRate::PerVertex });
-
-        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 2, 2, 0, VertexComponentFormat::Float3 }); // normal
-        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 2, 12, VertexInputRate::PerVertex });
-
-        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 3, 3, 0, VertexComponentFormat::Float2 }); // texcoord
-        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 3, 8, VertexInputRate::PerVertex });
-
-        //// Render pass
-        //pipeline_creation.render_pass = renderer.gpu->get_swapchain_output();
-        //// Depth
-        //pipeline_creation.depth_stencil_creation.set_depth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-        //// Blend
-        //pipeline_creation.blend_state_creation.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
-
-        //pipeline_creation.shader_state_creation.set_name("pbr").add_stage(vert_code.data, vert_code.size, VK_SHADER_STAGE_VERTEX_BIT).add_stage(frag_code.data, frag_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
-
-        //pipeline_creation.rasterization_creation.front = VK_FRONT_FACE_CLOCKWISE;
-
-        //pipeline_creation.name = "pbr_no_cull";
-
-        //ProgramCreation program_creation{};
-        //program_creation.add_pipeline(pipeline_creation);
-
-        //PipelineCreation pipeline_creation2 = pipeline_creation;
-        //pipeline_creation2.name = "pbr_cull";
-        //pipeline_creation2.rasterization_creation.cull_mode = VK_CULL_MODE_BACK_BIT;
-
-
-        //program_creation.add_pipeline(pipeline_creation2);
-        //program_creation.set_name("pbr");
-
-        //renderer.create_program(program_creation);
     }
     
 
@@ -401,9 +338,9 @@ int main(int argc, char** argv)
 
             {
                 MapBufferParameters cb_map = { scene->local_constants_buffer, 0, 0 };
-                float* cb_data = (float*)gpu.map_buffer(cb_map);
+                UniformData* cb_data = (UniformData*)gpu.map_buffer(cb_map);
                 MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
-                float* light_cb_data = (float*)gpu.map_buffer(light_cb_map);
+                LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
                 if (cb_data) {
                     if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
                         pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
@@ -459,31 +396,26 @@ int main(int argc, char** argv)
 
                     glm::mat4 sm = glm::scale(glm::mat4(1.0f), glm::vec3( model_scale));
 
-                    UniformData uniform_data{ };
-                    uniform_data.view_projection = view_projection;
-                    uniform_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
-                    uniform_data.light_intensity = light_intensity;
-                    uniform_data.light_range = light_range;
 
                     // TODO: Fix Hard coded the light node handle
                     LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
 
-                    uniform_data.light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
+                    cb_data->light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
 
-                    memcpy(cb_data, &uniform_data, sizeof(UniformData));
+                    cb_data->view_projection = view_projection;
+                    cb_data->camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
+                    cb_data->light_intensity = light_intensity;
+                    cb_data->light_range = light_range;
 
                     gpu.unmap_buffer(cb_map);
-
-                    LightUniform light_uniform_data{ };
-                    light_uniform_data.view_projection = view_projection;
-                    light_uniform_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
-                    light_uniform_data.texture_index = scene->light_texture.handle.index;
+                    
+                    light_cb_data->view_projection = view_projection;
+                    light_cb_data->camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
+                    light_cb_data->texture_index = scene->light_texture.handle.index;
 
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, light_node->world_transform.translation);
-                    light_uniform_data.model = model;
-
-                    memcpy(light_cb_data, &light_uniform_data, sizeof(LightUniform));
+                    light_cb_data->model = model;
 
                     gpu.unmap_buffer(light_cb_map);
                 }

@@ -40,9 +40,7 @@ namespace Helix {
     // Light
     Helix::PipelineHandle                  light_pipeline;
 
-    Helix::DescriptorSetHandle             light_ds;
-
-
+    
     void get_mesh_vertex_buffer(glTFScene& scene, i32 accessor_index, BufferHandle& out_buffer_handle, u32& out_buffer_offset) {
 
         if (accessor_index != -1) {
@@ -380,6 +378,40 @@ namespace Helix {
         }
     }
 
+    //
+    // LightDebugPass ////////////////////////////////////////////////////////
+    void LightDebugPass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
+        glTFScene* scene = (glTFScene*)render_scene;
+
+        gpu_commands->bind_pipeline(light_pipeline);
+        gpu_commands->bind_descriptor_set(&light_descriptor_set, 1, nullptr, 0);
+        gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
+    }
+
+    void LightDebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+        renderer = scene.renderer;
+
+        FrameGraphNode* node = frame_graph->get_node("light_debug_pass");
+        if (node == nullptr) {
+            HASSERT(false);
+            return;
+        }
+
+        const u64 hashed_name = hash_calculate("light_debug");
+        Program* light_debug_program = scene.renderer->resource_cache.programs.get(hashed_name);
+
+        light_pipeline = light_debug_program->passes[0].pipeline;
+
+        DescriptorSetCreation ds_creation{};
+        DescriptorSetLayoutHandle layout = scene.renderer->gpu->get_descriptor_set_layout(light_debug_program->passes[0].pipeline, 1);
+        ds_creation.buffer(scene.light_cb, 0).set_layout(layout);
+        light_descriptor_set = scene.renderer->gpu->create_descriptor_set(ds_creation);
+    }
+
+    void LightDebugPass::free_gpu_resources() {
+        renderer->gpu->destroy_descriptor_set(light_descriptor_set);
+    }
+
     // glTFDrawTask //////////////////////////////////
 
     void glTFDrawTask::init(GpuDevice* gpu_, FrameGraph* frame_graph_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_) {
@@ -441,8 +473,6 @@ namespace Helix {
 
         gpu_commands->pop_marker();
         gpu_commands->pop_marker();
-
-
 
         gpu_profiler->update(*gpu);
 
@@ -667,9 +697,8 @@ namespace Helix {
         gbuffer_pass.free_gpu_resources();
         light_pass.free_gpu_resources();
         transparent_pass.free_gpu_resources();
-        //light_debug_pass.free_gpu_resources();
+        light_debug_pass.free_gpu_resources();
 
-        gpu.destroy_descriptor_set(light_ds);
         gpu.destroy_descriptor_set(fullscreen_ds);
 
         meshes.shutdown();
@@ -698,7 +727,7 @@ namespace Helix {
         frame_graph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
         frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
         frame_graph->builder->register_render_pass("transparent_pass", &transparent_pass);
-        //frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
+        frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
@@ -745,11 +774,6 @@ namespace Helix {
             BufferCreation buffer_creation;
             buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
             light_cb = renderer->gpu->create_buffer(buffer_creation);
-
-            DescriptorSetCreation ds_creation{};
-            DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(light_program->passes[0].pipeline, 1);
-            ds_creation.buffer(light_cb, 0).set_layout(layout);
-            light_ds = renderer->gpu->create_descriptor_set(ds_creation);
 
             NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
 
@@ -997,7 +1021,7 @@ namespace Helix {
         gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
         light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
         transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
-        //light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
+        light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
 
         // Handle fullscreen pass.
         fullscreen_program = renderer->resource_cache.programs.get(hash_calculate("fullscreen"));
@@ -1007,7 +1031,7 @@ namespace Helix {
         dsc.reset().buffer(local_constants_buffer, 0).set_layout(descriptor_set_layout);
         fullscreen_ds = renderer->gpu->create_descriptor_set(dsc);
 
-        FrameGraphResource* texture = frame_graph->get_resource("lighting"); // TODO: CHange
+        FrameGraphResource* texture = frame_graph->get_resource("final"); // TODO: CHange
         if (texture != nullptr) {
             fullscreen_texture_index = texture->resource_info.texture.texture.index;
         }

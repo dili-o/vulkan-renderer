@@ -44,7 +44,7 @@
       "inputs": [
         {
           "type": "attachment",
-          "name": "lighting"
+          "name": "final"
         },
         {
           "type": "attachment",
@@ -55,7 +55,7 @@
       "outputs": [
         {
           "type": "reference",
-          "name": "lighting"
+          "name": "final"
         }
       ]
     },
@@ -82,7 +82,7 @@
       "outputs": [
         {
           "type": "attachment",
-          "name": "lighting",
+          "name": "final",
           "format": "VK_FORMAT_B8G8R8A8_UNORM",
           "resolution": [ 1280, 800 ],
           "op": "VK_ATTACHMENT_LOAD_OP_CLEAR"
@@ -101,6 +101,26 @@
           "op": "VK_ATTACHMENT_LOAD_OP_CLEAR"
         }
       ]
-    }
+    },
+    {
+      "inputs":
+      [
+          {
+              "type": "attachment",
+              "name": "final"
+          },
+          {
+              "type": "attachment",
+              "name": "depth"
+          }
+      ],
+      "name": "light_debug_pass",
+      "outputs": [
+        {
+          "type": "reference",
+          "name": "final"
+        }
+      ]
+  }
   ]
 }

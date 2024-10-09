@@ -285,14 +285,15 @@ namespace Helix {
     //
     struct LightDebugPass : public FrameGraphRenderPass {
 
-        void                    render(CommandBuffer* gpu_commands, Scene* render_scene) override {};
+        void                    render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {};
+        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
         void                    upload_materials() {};
-        void                    free_gpu_resources() {};
+        void                    free_gpu_resources();
 
-        Mesh                    mesh;
-        Renderer* renderer;
+        PipelineHandle          light_pipeline;
+        DescriptorSetHandle     light_descriptor_set;
+        Renderer*               renderer;
     }; // struct DoFPass
 
 
