@@ -8,6 +8,8 @@
 #include "Renderer/Renderer.hpp"
 #include "Renderer/HelixImgui.hpp"
 #include "Renderer/GPUProfiler.hpp"
+#include "Renderer/FrameGraph.hpp"
+
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_ENABLE_EXPERIMENTAL
 #include <vendor/glm/glm/glm.hpp>
@@ -16,6 +18,10 @@
 
 namespace Helix {
     static const u16 INVALID_TEXTURE_INDEX = ~0u;
+
+    static const u32 k_material_descriptor_set_index = 1;
+
+    struct glTFScene;
 
     struct Transform {
 
@@ -68,81 +74,82 @@ namespace Helix {
 
     enum DrawFlags {
         DrawFlags_AlphaMask = 1 << 0,
+        DrawFlags_DoubleSided = 1 << 1,
+        DrawFlags_Transparent = 1 << 2,
     }; // enum DrawFlags
 
     struct PBRMaterial {
-        u16             diffuse_texture_index;
-        u16             roughness_texture_index;
-        u16             normal_texture_index;
-        u16             occlusion_texture_index;
+        Material*           material;
 
-        glm::vec4       base_color_factor;
-        glm::vec4       metallic_roughness_occlusion_factor;
-    };
+        BufferHandle        material_buffer;
+        DescriptorSetHandle descriptor_set;
 
-    struct MeshDraw {
-
-        Material*       material;
-
-        BufferHandle    index_buffer;
-        BufferHandle    position_buffer;
-        BufferHandle    tangent_buffer;
-        BufferHandle    normal_buffer;
-        BufferHandle    texcoord_buffer;
-        BufferHandle    material_buffer;
-
-        VkIndexType     index_type;
-        u32             index_offset;
-
-        u32             position_offset;
-        u32             tangent_offset;
-        u32             normal_offset;
-        u32             texcoord_offset;
-
-        u32             primitive_count;
-
-        // Indices used for bindless textures.
-        u16             diffuse_texture_index;
-        u16             roughness_texture_index;
-        u16             normal_texture_index;
-        u16             occlusion_texture_index;
+        u16                 diffuse_texture_index;
+        u16                 roughness_texture_index;
+        u16                 normal_texture_index;
+        u16                 occlusion_texture_index;
 
         glm::vec4           base_color_factor;
         glm::vec4           metallic_roughness_occlusion_factor;
 
-        glm::vec3           scale;
+        f32                 alpha_cutoff;
+        u32                 flags;
+    };
 
+    struct Mesh {
+
+        PBRMaterial         pbr_material;
+
+        BufferHandle        index_buffer;
+        VkIndexType         index_type;
+        u32                 index_offset;
+
+        BufferHandle        position_buffer;
+        BufferHandle        tangent_buffer;
+        BufferHandle        normal_buffer;
+        BufferHandle        texcoord_buffer;
+
+        u32                 position_offset;
+        u32                 tangent_offset;
+        u32                 normal_offset;
+        u32                 texcoord_offset;
+
+        u32                 primitive_count;
+        u32                 node_index;
+
+        bool                is_transparent() const { return (pbr_material.flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) != 0; }
+        bool                is_double_sided() const { return (pbr_material.flags & DrawFlags_DoubleSided) == DrawFlags_DoubleSided; }
+    }; // struct Mesh
+
+    struct MeshInstance {
+        Mesh*               mesh;
+        u32                 material_pass_index;
+    }; // struct MeshInstance
+
+    struct GPUMeshData {
         glm::mat4           model;
+        glm::mat4           inverse_model;
 
-        f32             alpha_cutoff;
-        u32             flags;
+        u32                 textures[4]; // diffuse, roughness, normal, occlusion
+        glm::vec4           base_color_factor;
+        glm::vec4           metallic_roughness_occlusion_factor; // metallic, roughness, occlusion
+        float               alpha_cutoff;
+        float               padding_[3];
 
-        DescriptorSetHandle descriptor_set;
-    }; // struct MeshDraw
-
-    struct MeshData {
-        glm::mat4   m;
-        glm::mat4   inverseM;
-
-        u32         textures[4]; // diffuse, roughness, normal, occlusion
-        glm::vec4   base_color_factor;
-        glm::vec4   metallic_roughness_occlusion_factor; // metallic, roughness, occlusion
-        float       alpha_cutoff;
-        float       padding_[3];
-        u32         flags;
-    }; // struct MeshData
+        u32                 flags;
+    }; // struct GPUMeshData
 
 
     // Nodes //////////////////////////////////////
-    enum NodeType {
-        NodeType_Node,
-        NodeType_MeshNode,
-        NodeType_LightNode
+    enum class NodeType {
+        Node,
+        MeshNode,
+        LightNode
     };
 
     struct NodeHandle {
         u32                     index = k_invalid_index;
-        NodeType                type = NodeType_Node;
+        NodeType                type = NodeType::Node;
 
         // Equality operator
         bool operator==(const NodeHandle& other) const {
@@ -176,8 +183,8 @@ namespace Helix {
     };
 
     struct Node {
-        NodeHandle              handle = { k_invalid_index, NodeType_Node };
-        NodeHandle              parent = { k_invalid_index, NodeType_Node };
+        NodeHandle              handle = { k_invalid_index, NodeType::Node };
+        NodeHandle              parent = { k_invalid_index, NodeType::Node };
         Array<NodeHandle>       children;
         Transform               local_transform{ };
         Transform               world_transform{ };
@@ -202,7 +209,7 @@ namespace Helix {
     };
 
     struct MeshNode : public Node {
-        MeshDraw* mesh_draw_index; // Index into the MeshDraw array
+        Mesh* mesh; 
     };
 
     struct LightNode : public Node {
@@ -218,21 +225,93 @@ namespace Helix {
         virtual void            free_gpu_resources(Renderer* renderer) { };
         virtual void            unload(Renderer* renderer) { };
 
+        virtual void            register_render_passes(FrameGraph* frame_graph) { };
         virtual void            prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator) { };
 
         virtual void            upload_materials(float model_scale) { };
         virtual void            submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) { };
     }; // struct Scene
 
+    //
+    //
+    struct DepthPrePass : public FrameGraphRenderPass {
+        void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
+
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                free_gpu_resources();
+
+        Array<MeshInstance> mesh_instances;
+        Renderer*           renderer;
+    }; // struct DepthPrePass
+
+    //
+    //
+    struct GBufferPass : public FrameGraphRenderPass {
+        void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
+
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                free_gpu_resources();
+
+        Array<MeshInstance> mesh_instances;
+        Renderer* renderer;
+    }; // struct GBufferPass
+
+    //
+    //
+    struct LightPass : public FrameGraphRenderPass {
+        void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
+
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                upload_materials();
+        void                free_gpu_resources();
+
+        Mesh                mesh;
+        Renderer*           renderer;
+    }; // struct LightPass
+
+    //
+    //
+    struct TransparentPass : public FrameGraphRenderPass {
+        void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
+
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                free_gpu_resources();
+
+        Array<MeshInstance> mesh_instances;
+        Renderer* renderer;
+    }; // struct TransparentPass
+
+    //
+    //
+    struct LightDebugPass : public FrameGraphRenderPass {
+
+        void                    render(CommandBuffer* gpu_commands, Scene* render_scene) override {};
+
+        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {};
+        void                    upload_materials() {};
+        void                    free_gpu_resources() {};
+
+        Mesh                    mesh;
+        Renderer* renderer;
+    }; // struct DoFPass
+
+
     struct glTFScene : public Scene {
 
-        void                    load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader);
-        void                    free_gpu_resources(Renderer* renderer);
-        void                    unload(Renderer* renderer);
+        void                    load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) override;
+        void                    free_gpu_resources(Renderer* renderer) override;
+        void                    unload(Renderer* renderer) override;
 
-        void                    prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator);
-        void                    upload_materials(float model_scale);
-        void                    submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler);
+        void                    register_render_passes(FrameGraph* frame_graph) override;
+        void                    prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator) override;
+        void                    fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material);
+        u16                     get_material_texture(GpuDevice& gpu, glTF::TextureInfo* texture_info);
+        u16                     get_material_texture(GpuDevice& gpu, i32 gltf_texture_index);
+
+        void                    upload_materials(float model_scale) override;
+        void                    submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) override;
+
+        void                    draw_mesh(CommandBuffer* gpu_commands, Mesh& mesh);
 
         void                    destroy_node(NodeHandle handle);
 
@@ -241,7 +320,7 @@ namespace Helix {
 
         void                    imgui_draw_node_property(NodeHandle node_handle);
 
-        Array<MeshDraw>         mesh_draws;
+        Array<Mesh>             meshes;
 
         // All graphics resources used by the scene
         Array<TextureResource>  images; // TODO: Maybe just store the pool index rather than the whole Texture resource
@@ -252,13 +331,23 @@ namespace Helix {
 
         NodePool                node_pool;
 
-        //Node* root_node;
+        DepthPrePass            depth_pre_pass;
+        GBufferPass             gbuffer_pass;
+        LightPass               light_pass;
+        TransparentPass         transparent_pass;
+        LightDebugPass          light_debug_pass;
+
+        // Fullscreen data
+        Program*                fullscreen_program = nullptr;
+        DescriptorSetHandle     fullscreen_ds;
+        u32                     fullscreen_texture_index = u32_max;
 
         NodeHandle              current_node{ };
 
-        Renderer* renderer;
+        Renderer*               renderer;
+        FrameGraph*             frame_graph;
 
-        BufferHandle            scene_buffer;
+        BufferHandle            local_constants_buffer;
         Helix::BufferHandle     light_cb;
         Helix::TextureResource  light_texture;
 
@@ -266,16 +355,17 @@ namespace Helix {
 
     struct glTFDrawTask : public enki::ITaskSet {
 
-        GpuDevice* gpu = nullptr;
-        Renderer* renderer = nullptr;
-        ImGuiService* imgui = nullptr;
-        GPUProfiler* gpu_profiler = nullptr;
-        glTFScene* scene = nullptr;
-        u32                     thread_id = 0;
+        GpuDevice*          gpu = nullptr;
+        FrameGraph*         frame_graph = nullptr;
+        Renderer*           renderer = nullptr;
+        ImGuiService*       imgui = nullptr;
+        GPUProfiler*        gpu_profiler = nullptr;
+        glTFScene*          scene = nullptr;
+        u32                 thread_id = 0;
 
-        void init(GpuDevice* gpu_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_);
+        void                init(GpuDevice* gpu_, FrameGraph* frame_graph_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_);
 
-        void ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
+        void                ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
 
     }; // struct DrawTask
 

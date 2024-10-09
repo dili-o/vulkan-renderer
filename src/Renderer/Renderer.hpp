@@ -94,12 +94,10 @@ namespace Helix {
         MaterialCreation&               set_program(Program* program);
         MaterialCreation&               set_name(cstring name);
         MaterialCreation&               set_render_index(u32 render_index);
-        MaterialCreation&               set_program_pass_index(u32 program_pass_index);
 
         Program*                        program = nullptr;
         cstring                         name = nullptr;
         u32                             render_index = ~0u;
-        u32                             program_pass_index = ~0u;
 
     }; // struct MaterialCreation
 
@@ -108,8 +106,6 @@ namespace Helix {
     struct Material : public Helix::Resource {
 
         Program*                        program;
-
-        u32                             program_pass_index;
 
         u32                             render_index;
 
@@ -182,7 +178,7 @@ namespace Helix {
         Material*                   create_material(Program* program, cstring name);
 
         // Draw
-        PipelineHandle              get_pipeline(Material* material);
+        PipelineHandle              get_pipeline(Material* material, u32 pass_index);
         DescriptorSetHandle         create_descriptor_set(CommandBuffer* command_buffer, Material* material, DescriptorSetCreation& ds_creation);
 
         void                        destroy_buffer(BufferResource* buffer);

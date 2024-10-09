@@ -30,11 +30,6 @@ namespace Helix {
         render_index = render_index_;
         return *this;
     }
-    
-    MaterialCreation& MaterialCreation::set_program_pass_index(u32 program_pass_index_) {
-        program_pass_index = program_pass_index_;
-        return *this;
-    }
 
     MaterialCreation& MaterialCreation::set_name(cstring name_) {
         name = name_;
@@ -136,7 +131,7 @@ namespace Helix {
         Material::k_type_hash = hash_calculate(Material::k_type);
 
 
-        resource_name_buffer.init(hkilo(100), creation.allocator);
+        resource_name_buffer.init(hkilo(10), creation.allocator);
         //s_texture_loader.renderer = this;
         //s_buffer_loader.renderer = this;
         //s_sampler_loader.renderer = this;
@@ -407,7 +402,6 @@ namespace Helix {
             material->program = creation.program;
             material->name = creation.name;
             material->render_index = creation.render_index;
-            material->program_pass_index = creation.program_pass_index;
 
             if (creation.name != nullptr) {
                 resource_cache.materials.insert(hash_calculate(creation.name), material);
@@ -426,10 +420,10 @@ namespace Helix {
         return create_material(creation);
     }
 
-    PipelineHandle Renderer::get_pipeline(Material* material) {
+    PipelineHandle Renderer::get_pipeline(Material* material, u32 pass_index) {
         HASSERT(material != nullptr);
 
-        return material->program->passes[material->program_pass_index].pipeline;
+        return material->program->passes[pass_index].pipeline;
     }
 
     /*DescriptorSetHandle Renderer::create_descriptor_set(CommandBuffer* command_buffer, Material* material, DescriptorSetCreation& ds_creation) {

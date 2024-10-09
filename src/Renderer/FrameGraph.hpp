@@ -1,10 +1,11 @@
+#pragma once
+
 #include "Core/Array.hpp"
 #include "Core/DataStructures.hpp"
 #include "Core/HashMap.hpp"
 #include "Core/Service.hpp"
 
 #include "Renderer/GPUResources.hpp"
-#include "Renderer/Scene.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -14,9 +15,17 @@ namespace Helix {
     struct CommandBuffer;
     struct FrameGraph;
     struct GpuDevice;
+    struct Scene;
 
     typedef u32                             FrameGraphHandle;
 
+    struct FrameGraphNodeHandle {
+        FrameGraphHandle                    index;
+    };
+
+    struct FrameGraphResourceHandle {
+        FrameGraphHandle                    index;
+    };
 
 	enum FrameGraphResourceType {
 		FrameGraphResourceType_Invalid = -1,
@@ -51,14 +60,6 @@ namespace Helix {
                 TextureHandle               texture;
             } texture;
         };
-    };
-
-    struct FrameGraphNodeHandle {
-        FrameGraphHandle                    index;
-    };
-
-    struct FrameGraphResourceHandle {
-        FrameGraphHandle                    index;
     };
 
     struct FrameGraphResourceCreation {

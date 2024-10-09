@@ -24,6 +24,7 @@
 #include "Renderer/AsynchronousLoader.hpp"
 #include "Renderer/Scene.hpp"
 #include "Renderer/FrameGraph.hpp"
+#include "Renderer/ResourcesLoader.hpp"
 
 
 #include "Core/File.hpp"
@@ -155,84 +156,110 @@ int main(int argc, char** argv)
     FrameGraph frame_graph;
     frame_graph.init(&frame_graph_builder);
 
-    StringBuffer temporary_name_buffer;
-    temporary_name_buffer.init(1024, &stack_allocator);
-    cstring frame_graph_path = temporary_name_buffer.append_use_f("D:/vulkan-renderer/assets/frame_graphs/main.json");
+    ResourcesLoader resources_loader;
+    //StringBuffer temporary_name_buffer;
+    //temporary_name_buffer.init(1024, &stack_allocator);
+    //cstring frame_graph_path = temporary_name_buffer.append_use_f("D:/vulkan-renderer/assets/frame_graphs/main.json");
 
     //frame_graph.parse(frame_graph_path, &stack_allocator);
     //frame_graph.compile();
 
     {
-        StringBuffer path_buffer;
-        path_buffer.init(1024, &stack_allocator);
+        {
+            sizet scratch_marker = stack_allocator.get_marker();
 
-        // Create pipeline state
-        PipelineCreation pipeline_creation;
+            StringBuffer temporary_name_buffer;
+            temporary_name_buffer.init(1024, &stack_allocator);
+            cstring frame_graph_path = temporary_name_buffer.append_use_f("D:/vulkan-renderer/assets/frame_graphs/main.json"); // TODO: Use MACRO
 
-        cstring vert_file = "depth.vert.glsl";
-        char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
-        FileReadResult vert_code = file_read_text(vert_path, &stack_allocator);
+            frame_graph.parse(frame_graph_path, &stack_allocator);
+            frame_graph.compile();
 
-        pipeline_creation.vertex_input.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
-        pipeline_creation.vertex_input.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
+            resources_loader.init(&renderer, &stack_allocator, &frame_graph);
 
-        pipeline_creation.reset();
+            // Parse programs
+            temporary_name_buffer.clear();
+            cstring full_screen_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/fullscreen.json");
+            resources_loader.load_program(full_screen_pipeline_path);
 
-        vert_file = "pbr.vert.glsl";
-        vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
-        vert_code = file_read_text(vert_path, &stack_allocator);
+            temporary_name_buffer.clear();
+            cstring geometry_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/geometry.json");
+            resources_loader.load_program(geometry_pipeline_path);
 
-        cstring frag_file = "pbr.frag.glsl";
-        char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
-        FileReadResult frag_code = file_read_text(frag_path, &stack_allocator);
+            temporary_name_buffer.clear();
+            cstring pbr_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/pbr_lighting.json");
+            resources_loader.load_program(pbr_pipeline_path);
 
-        // Vertex input
-        // TODO(marco): could these be inferred from SPIR-V?
-        pipeline_creation.vertex_input.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
-        pipeline_creation.vertex_input.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
+            temporary_name_buffer.clear();
+            cstring light_debug_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/light_debug.json");
+            resources_loader.load_program(light_debug_pipeline_path);
 
-        pipeline_creation.vertex_input.add_vertex_attribute({ 1, 1, 0, VertexComponentFormat::Float4 }); // tangent
-        pipeline_creation.vertex_input.add_vertex_stream({ 1, 16, VertexInputRate::PerVertex });
+            stack_allocator.free_marker(scratch_marker);
+        }
+        //StringBuffer path_buffer;
+        //path_buffer.init(1024, &stack_allocator);
 
-        pipeline_creation.vertex_input.add_vertex_attribute({ 2, 2, 0, VertexComponentFormat::Float3 }); // normal
-        pipeline_creation.vertex_input.add_vertex_stream({ 2, 12, VertexInputRate::PerVertex });
+        //// Create pipeline state
+        //PipelineCreation pipeline_creation;
 
-        pipeline_creation.vertex_input.add_vertex_attribute({ 3, 3, 0, VertexComponentFormat::Float2 }); // texcoord
-        pipeline_creation.vertex_input.add_vertex_stream({ 3, 8, VertexInputRate::PerVertex });
+        //cstring vert_file = "depth.vert.glsl";
+        //char* vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
+        //FileReadResult vert_code = file_read_text(vert_path, &stack_allocator);
 
-        // Render pass
-        pipeline_creation.render_pass = renderer.gpu->get_swapchain_output();
-        // Depth
-        pipeline_creation.depth_stencil.set_depth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
+        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
 
-        // Blend
-        pipeline_creation.blend_state.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
+        //pipeline_creation.reset();
 
-        pipeline_creation.shaders.set_name("pbr").add_stage(vert_code.data, vert_code.size, VK_SHADER_STAGE_VERTEX_BIT).add_stage(frag_code.data, frag_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
+        //vert_file = "pbr.vert.glsl";
+        //vert_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, vert_file);
+        //vert_code = file_read_text(vert_path, &stack_allocator);
 
-        pipeline_creation.rasterization.front = VK_FRONT_FACE_CLOCKWISE;
+        //cstring frag_file = "pbr.frag.glsl";
+        //char* frag_path = path_buffer.append_use_f("%s%s", HELIX_SHADER_FOLDER, frag_file);
+        //FileReadResult frag_code = file_read_text(frag_path, &stack_allocator);
 
-        pipeline_creation.name = "pbr_no_cull";
+        //// Vertex input
+        //// TODO(marco): could these be inferred from SPIR-V?
+        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float3 }); // position
+        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 0, 12, VertexInputRate::PerVertex });
 
-        ProgramCreation program_creation{};
-        program_creation.add_pipeline(pipeline_creation);
+        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 1, 1, 0, VertexComponentFormat::Float4 }); // tangent
+        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 1, 16, VertexInputRate::PerVertex });
 
-        PipelineCreation pipeline_creation2 = pipeline_creation;
-        pipeline_creation2.name = "pbr_cull";
-        pipeline_creation2.rasterization.cull_mode = VK_CULL_MODE_BACK_BIT;
+        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 2, 2, 0, VertexComponentFormat::Float3 }); // normal
+        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 2, 12, VertexInputRate::PerVertex });
+
+        //pipeline_creation.vertex_input_creation.add_vertex_attribute({ 3, 3, 0, VertexComponentFormat::Float2 }); // texcoord
+        //pipeline_creation.vertex_input_creation.add_vertex_stream({ 3, 8, VertexInputRate::PerVertex });
+
+        //// Render pass
+        //pipeline_creation.render_pass = renderer.gpu->get_swapchain_output();
+        //// Depth
+        //pipeline_creation.depth_stencil_creation.set_depth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+        //// Blend
+        //pipeline_creation.blend_state_creation.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
+
+        //pipeline_creation.shader_state_creation.set_name("pbr").add_stage(vert_code.data, vert_code.size, VK_SHADER_STAGE_VERTEX_BIT).add_stage(frag_code.data, frag_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        //pipeline_creation.rasterization_creation.front = VK_FRONT_FACE_CLOCKWISE;
+
+        //pipeline_creation.name = "pbr_no_cull";
+
+        //ProgramCreation program_creation{};
+        //program_creation.add_pipeline(pipeline_creation);
+
+        //PipelineCreation pipeline_creation2 = pipeline_creation;
+        //pipeline_creation2.name = "pbr_cull";
+        //pipeline_creation2.rasterization_creation.cull_mode = VK_CULL_MODE_BACK_BIT;
 
 
-        program_creation.add_pipeline(pipeline_creation2);
-        program_creation.set_name("pbr");
+        //program_creation.add_pipeline(pipeline_creation2);
+        //program_creation.set_name("pbr");
 
-        renderer.create_program(program_creation);
-
-       /* pipeline_creation.rasterization.cull_mode = VK_CULL_MODE_BACK_BIT;
-
-        pipeline_creation.name = "pbr_cull";
-        renderer.create_program({ pipeline_creation });*/
+        //renderer.create_program(program_creation);
     }
-
     
 
     // [TAG: Multithreading]
@@ -260,6 +287,7 @@ int main(int argc, char** argv)
 
     directory_change(cwd.path);
 
+    scene->register_render_passes(&frame_graph);
     scene->prepare_draws(&renderer, &stack_allocator);
 
     directory_change(cwd.path);
@@ -313,6 +341,14 @@ int main(int argc, char** argv)
             if (async_loader.file_load_requests.size == 0 && checksz) {
                 checksz = false;
                 HINFO("Finished uploading textures in {} seconds", Time::from_seconds(absolute_begin_frame_tick));
+                //char* statsString = nullptr;
+                //// Build the stats string with detailed information
+                //vmaBuildStatsString(allocator, &statsString, VK_TRUE);
+                //printf("====================================================================================");
+                //// Print the statistics
+                //printf("%s\n", statsString);
+                //// Free the stats string when done
+                //vmaFreeStatsString(allocator, statsString
             }
             if (window.resized) {
                 gpu.resize(window.width, window.height);
@@ -364,7 +400,7 @@ int main(int argc, char** argv)
             }
 
             {
-                MapBufferParameters cb_map = { scene->scene_buffer, 0, 0 };
+                MapBufferParameters cb_map = { scene->local_constants_buffer, 0, 0 };
                 float* cb_data = (float*)gpu.map_buffer(cb_map);
                 MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
                 float* light_cb_data = (float*)gpu.map_buffer(light_cb_map);
@@ -430,7 +466,7 @@ int main(int argc, char** argv)
                     uniform_data.light_range = light_range;
 
                     // TODO: Fix Hard coded the light node handle
-                    LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType_LightNode});
+                    LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
 
                     uniform_data.light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
 
@@ -478,23 +514,25 @@ int main(int argc, char** argv)
 
     async_loader.shutdown();
 
-    gpu.destroy_buffer(scene->scene_buffer);
+    gpu.destroy_buffer(scene->local_constants_buffer);
     gpu.destroy_buffer(scene->light_cb);
 
     imgui->shutdown();
 
     gpu_profiler.shutdown();
 
+    frame_graph.shutdown();
+    frame_graph_builder.shutdown();
+
     scene->free_gpu_resources(&renderer);
+
+    resources_loader.shutdown();
 
     rm.shutdown();
     renderer.shutdown();
 
     scene->unload(&renderer);
     delete scene;
-
-    frame_graph.shutdown();
-    frame_graph_builder.shutdown();
 
     input_handler.shutdown();
     window.unregister_os_messages_callback(input_os_messages_callback);

@@ -1,0 +1,27 @@
+{
+	"name" : "light_debug",
+	"pipelines" : [
+		{
+			"name" : "main",
+			"render_pass" : "light_debug_pass",
+            "depth" : {
+				"write" : true,
+				"test" : "less_or_equal"
+			},
+			"shaders" : [
+				{
+					"stage" : "vertex",
+					"shader" : "light_debug.glsl"
+				},
+                {
+					"stage" : "geometry",
+					"shader" : "light_debug.glsl"
+				},
+				{
+					"stage" : "fragment",
+					"shader" : "light_debug.glsl"
+				}
+			]
+		}
+	]
+}

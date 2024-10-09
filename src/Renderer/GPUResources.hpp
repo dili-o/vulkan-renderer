@@ -281,7 +281,7 @@ namespace Helix {
     //
     struct ShaderStage {
 
-        cstring code = nullptr;
+        cstring                         code = nullptr;
         u32                             code_size = 0;
         VkShaderStageFlagBits           type = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 
@@ -293,16 +293,16 @@ namespace Helix {
 
         ShaderStage                     stages[k_max_shader_stages];
 
-        cstring name = nullptr;
+        cstring                         name = nullptr;
 
         u32                             stages_count = 0;
         u32                             spv_input = 0;
 
         // Building helpers
-        ShaderStateCreation& reset();
-        ShaderStateCreation& set_name(cstring name);
-        ShaderStateCreation& add_stage(cstring code, u32 code_size, VkShaderStageFlagBits type);
-        ShaderStateCreation& set_spv_input(bool value);
+        ShaderStateCreation&            reset();
+        ShaderStateCreation&            set_name(cstring name);
+        ShaderStateCreation&            add_stage(cstring code, u32 code_size, VkShaderStageFlagBits type);
+        ShaderStateCreation&            set_spv_input(bool value);
 
     }; // struct ShaderStateCreation
 
@@ -316,7 +316,7 @@ namespace Helix {
         struct Binding {
 
             VkDescriptorType            type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-            u16                         start = 0;
+            u16                         index = 0;
             u16                         count = 0;
             cstring                     name = nullptr;  // Comes from external memory.
         }; // struct Binding
@@ -482,11 +482,11 @@ namespace Helix {
     // TODO: Consider removing num_active_layouts because it is now auto generated
     struct PipelineCreation {
 
-        RasterizationCreation           rasterization;
-        DepthStencilCreation            depth_stencil;
-        BlendStateCreation              blend_state;
-        VertexInputCreation             vertex_input;
-        ShaderStateCreation             shaders;
+        RasterizationCreation           rasterization_creation;
+        DepthStencilCreation            depth_stencil_creation;
+        BlendStateCreation              blend_state_creation;
+        VertexInputCreation             vertex_input_creation;
+        ShaderStateCreation             shader_state_creation;
 
         RenderPassOutput                render_pass;
         DescriptorSetLayoutHandle       descriptor_set_layout[k_max_descriptor_set_layouts];
@@ -770,7 +770,7 @@ namespace Helix {
 
         VkPipelineShaderStageCreateInfo shader_stage_info[k_max_shader_stages];
 
-        cstring name = nullptr;
+        cstring                         name = nullptr;
 
         u32                             active_shaders = 0;
         bool                            graphics_pipeline = false;
@@ -783,7 +783,7 @@ namespace Helix {
     struct DescriptorBinding {
 
         VkDescriptorType                type;
-        u16                             start = 0;
+        u16                             index = 0;
         u16                             count = 0;
         u16                             set = 0;
 
@@ -796,8 +796,8 @@ namespace Helix {
 
         VkDescriptorSetLayout           vk_handle;
 
-        VkDescriptorSetLayoutBinding* vk_binding = nullptr;
-        DescriptorBinding* bindings = nullptr;
+        VkDescriptorSetLayoutBinding*   vk_binding = nullptr;
+        DescriptorBinding*              bindings = nullptr;
         u16                             num_bindings = 0;
         u16                             set_index = 0;
 

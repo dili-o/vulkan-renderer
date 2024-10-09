@@ -13,11 +13,12 @@ namespace Helix {
         void            init(Helix::Renderer* renderer, Helix::StackAllocator* temp_allocator, Helix::FrameGraph* frame_graph);
         void            shutdown();
 
-        void            load_gpu_technique(cstring json_path);
+        void            load_program(cstring json_path);
 
         Renderer*       renderer;
         FrameGraph*     frame_graph;
         StackAllocator* temp_allocator;
+        StringBuffer    resource_name_buffer;
 
     }; // struct ResourcesLoader
 

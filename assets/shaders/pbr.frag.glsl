@@ -151,13 +151,6 @@ void main() {
     vec3 tangent = normalize( vTangent );
     vec3 bitangent = normalize( vBiTangent );
 
-    if (gl_FrontFacing == false)
-    {
-        //tangent *= -1.0;
-        //bitangent *= -1.0;
-        //normal *= -1.0;
-    }
-
     if (textures.z != INVALID_TEXTURE_INDEX) {
         // NOTE(marco): normal textures are encoded to [0, 1] but need to be mapped to [-1, 1] value
         vec3 bump_normal = normalize( texture(global_textures[nonuniformEXT(textures.z)], vTexcoord0).rgb * 2.0 - 1.0 );

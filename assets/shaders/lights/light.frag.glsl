@@ -1,6 +1,6 @@
 #version 450
 
-layout(std140, binding = 0) uniform LocalConstants {
+layout( std140, set = 1, binding = 0 ) uniform LocalConstants {
     mat4 model;
     mat4 view_projection;
     vec4 camera_position;
@@ -9,7 +9,7 @@ layout(std140, binding = 0) uniform LocalConstants {
 
 // Bindless support
 #extension GL_EXT_nonuniform_qualifier : enable
-layout ( set = 1, binding = 10 ) uniform sampler2D global_textures[];
+layout ( set = 0, binding = 10 ) uniform sampler2D global_textures[];
 
 layout(location = 0) in vec2 gTexCoord;
 layout(location = 1) in vec4 gColor;

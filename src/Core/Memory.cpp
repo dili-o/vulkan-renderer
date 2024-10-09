@@ -218,7 +218,7 @@ namespace Helix {
 
     void* HeapAllocator::allocate(sizet size, sizet alignment, cstring file, i32 line) {
         void* allocation = allocate(size, alignment);
-        //HDEBUG("Allocation pointer: {}, in file: {}, in line: {}", allocation, file, line);
+        HDEBUG("Allocation pointer: {}, in file: {}, in line: {}", allocation, file, line);
         return allocation;
     }
 

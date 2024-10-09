@@ -40,6 +40,7 @@ constexpr const T& helix_max(const T& a, const T& b) {
 #endif // _MSC_VER
 
 #define VMA_IMPLEMENTATION
+#define VMA_DEBUG_LOG
 #include "vendor/vk_mem_alloc.h"
 
 // SDL and Vulkan headers
@@ -466,8 +467,6 @@ namespace Helix {
         swapchain_pass_output.color(vulkan_surface_format.format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, RenderPassOperation::Clear);
 
         set_present_mode(present_mode);
-
-  
 
         //////// Create VMA Allocator
         VmaAllocatorCreateInfo allocatorInfo = {};
@@ -1195,7 +1194,7 @@ namespace Helix {
 
         sizet current_marker = temporary_allocator->get_marker();
         StringBuffer temp_string_buffer;
-        temp_string_buffer.init(hkilo(1), temporary_allocator);
+        temp_string_buffer.init(hkilo(3), temporary_allocator);
 
         // Add uppercase define as STAGE_NAME
         char* stage_define = temp_string_buffer.append_use_f("%s_%s", to_stage_defines(stage), name);
@@ -1239,7 +1238,8 @@ namespace Helix {
 
         // Handling compilation error
         if (shader_create_info.pCode == nullptr) {
-            //dump_shader_code(temp_string_buffer, code, stage, name);
+            dump_shader_code(temp_string_buffer, code, stage, name);
+            
             HERROR("{}", process_get_output());
             HASSERT(false);
         }
@@ -1380,7 +1380,7 @@ namespace Helix {
         }
 
 
-        ShaderStateHandle shader_state = create_shader_state(creation.shaders);
+        ShaderStateHandle shader_state = create_shader_state(creation.shader_state_creation);
         if (shader_state.index == k_invalid_index) {
             // Shader did not compile.
             pipelines.release_resource(handle.index);
@@ -1400,24 +1400,34 @@ namespace Helix {
         // [TAG: PIPELINE GENERATION]
         u32 num_active_layouts = shader_state_data->parse_result->set_count;
         // Create VkPipelineLayout
-        for (u32 l = 0; l < num_active_layouts; ++l) {
-            pipeline->descriptor_set_layout_handles[l] = create_descriptor_set_layout(shader_state_data->parse_result->sets[l]);
-
-            vk_layouts[l] = access_descriptor_set_layout(pipeline->descriptor_set_layout_handles[l])->vk_handle;
-        }
+        // Note: The first layout is always the bindless layout
 
         // TODO: improve.
         // Add bindless resource layout after other layouts.
         // [TAG: BINDLESS]
         u32 bindless_active = 0;
         if (bindless_supported) {
-            vk_layouts[num_active_layouts] = vulkan_bindless_descriptor_layout;
             bindless_active = 1;
+        }
+
+        for (u32 l = 0; l < num_active_layouts; ++l) {
+            // Ensures we skip the bindless layout at index 0.
+
+            if (bindless_supported && l == 0) {
+                pipeline->descriptor_set_layout_handles[0] = k_invalid_layout;
+
+                vk_layouts[0] = vulkan_bindless_descriptor_layout;
+            }
+            else {
+                pipeline->descriptor_set_layout_handles[l] = create_descriptor_set_layout(shader_state_data->parse_result->sets[l]);
+
+                vk_layouts[l] = access_descriptor_set_layout(pipeline->descriptor_set_layout_handles[l])->vk_handle;
+            }
         }
 
         VkPipelineLayoutCreateInfo pipeline_layout_info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
         pipeline_layout_info.pSetLayouts = vk_layouts;
-        pipeline_layout_info.setLayoutCount = num_active_layouts + bindless_active;
+        pipeline_layout_info.setLayoutCount = num_active_layouts;// +bindless_active;
 
         VkPipelineLayout pipeline_layout;
         check(vkCreatePipelineLayout(vulkan_device, &pipeline_layout_info, vulkan_allocation_callbacks, &pipeline_layout));
@@ -1440,14 +1450,14 @@ namespace Helix {
 
             // Vertex attributes.
             VkVertexInputAttributeDescription vertex_attributes[8];
-            if (creation.vertex_input.num_vertex_attributes) {
+            if (creation.vertex_input_creation.num_vertex_attributes) {
 
-                for (u32 i = 0; i < creation.vertex_input.num_vertex_attributes; ++i) {
-                    const VertexAttribute& vertex_attribute = creation.vertex_input.vertex_attributes[i];
+                for (u32 i = 0; i < creation.vertex_input_creation.num_vertex_attributes; ++i) {
+                    const VertexAttribute& vertex_attribute = creation.vertex_input_creation.vertex_attributes[i];
                     vertex_attributes[i] = { vertex_attribute.location, vertex_attribute.binding, to_vk_vertex_format(vertex_attribute.format), vertex_attribute.offset };
                 }
 
-                vertex_input_info.vertexAttributeDescriptionCount = creation.vertex_input.num_vertex_attributes;
+                vertex_input_info.vertexAttributeDescriptionCount = creation.vertex_input_creation.num_vertex_attributes;
                 vertex_input_info.pVertexAttributeDescriptions = vertex_attributes;
             }
             else {
@@ -1456,11 +1466,11 @@ namespace Helix {
             }
             // Vertex bindings
             VkVertexInputBindingDescription vertex_bindings[8];
-            if (creation.vertex_input.num_vertex_streams) {
-                vertex_input_info.vertexBindingDescriptionCount = creation.vertex_input.num_vertex_streams;
+            if (creation.vertex_input_creation.num_vertex_streams) {
+                vertex_input_info.vertexBindingDescriptionCount = creation.vertex_input_creation.num_vertex_streams;
 
-                for (u32 i = 0; i < creation.vertex_input.num_vertex_streams; ++i) {
-                    const VertexStream& vertex_stream = creation.vertex_input.vertex_streams[i];
+                for (u32 i = 0; i < creation.vertex_input_creation.num_vertex_streams; ++i) {
+                    const VertexStream& vertex_stream = creation.vertex_input_creation.vertex_streams[i];
                     VkVertexInputRate vertex_rate = vertex_stream.input_rate == VertexInputRate::PerVertex ? VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX : VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE;
                     vertex_bindings[i] = { vertex_stream.binding, vertex_stream.stride, vertex_rate };
                 }
@@ -1476,7 +1486,7 @@ namespace Helix {
             //// Input Assembly
             VkPipelineInputAssemblyStateCreateInfo input_assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
             // TODO: make this more configurable
-            input_assembly.topology = creation.shaders.stages_count == 3 ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            input_assembly.topology = creation.shader_state_creation.stages_count == 3 ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
             input_assembly.primitiveRestartEnable = VK_FALSE;
 
             pipeline_info.pInputAssemblyState = &input_assembly;
@@ -1484,9 +1494,10 @@ namespace Helix {
             //// Color Blending
             VkPipelineColorBlendAttachmentState color_blend_attachment[8];
 
-            if (creation.blend_state.active_states) {
-                for (size_t i = 0; i < creation.blend_state.active_states; i++) {
-                    const BlendState& blend_state = creation.blend_state.blend_states[i];
+            if (creation.blend_state_creation.active_states) {
+                HASSERT_MSGS(creation.blend_state_creation.active_states == creation.render_pass.num_color_formats, "Blend states (count: {}) mismatch with output targets (count {})!If blend states are active, they must be defined for all outputs", creation.blend_state_creation.active_states, creation.render_pass.num_color_formats);
+                for (size_t i = 0; i < creation.blend_state_creation.active_states; i++) {
+                    const BlendState& blend_state = creation.blend_state_creation.blend_states[i];
 
                     color_blend_attachment[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
                     color_blend_attachment[i].blendEnable = blend_state.blend_enabled ? VK_TRUE : VK_FALSE;
@@ -1508,15 +1519,17 @@ namespace Helix {
             }
             else {
                 // Default non blended state
-                color_blend_attachment[0] = {};
-                color_blend_attachment[0].blendEnable = VK_FALSE;
-                color_blend_attachment[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+                for (u32 i = 0; i < creation.render_pass.num_color_formats; ++i) {
+                    color_blend_attachment[i] = {};
+                    color_blend_attachment[i].blendEnable = VK_FALSE;
+                    color_blend_attachment[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+                }
             }
 
             VkPipelineColorBlendStateCreateInfo color_blending{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
             color_blending.logicOpEnable = VK_FALSE;
             color_blending.logicOp = VK_LOGIC_OP_COPY; // Optional
-            color_blending.attachmentCount = creation.blend_state.active_states ? creation.blend_state.active_states : 1; // Always have 1 blend defined.
+            color_blending.attachmentCount = creation.render_pass.num_color_formats;
             color_blending.pAttachments = color_blend_attachment;
             color_blending.blendConstants[0] = 0.0f; // Optional
             color_blending.blendConstants[1] = 0.0f; // Optional
@@ -1528,11 +1541,11 @@ namespace Helix {
             //// Depth Stencil
             VkPipelineDepthStencilStateCreateInfo depth_stencil{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
 
-            depth_stencil.depthWriteEnable = creation.depth_stencil.depth_write_enable ? VK_TRUE : VK_FALSE;
-            depth_stencil.stencilTestEnable = creation.depth_stencil.stencil_enable ? VK_TRUE : VK_FALSE;
-            depth_stencil.depthTestEnable = creation.depth_stencil.depth_enable ? VK_TRUE : VK_FALSE;
-            depth_stencil.depthCompareOp = creation.depth_stencil.depth_comparison;
-            if (creation.depth_stencil.stencil_enable) {
+            depth_stencil.depthWriteEnable = creation.depth_stencil_creation.depth_write_enable ? VK_TRUE : VK_FALSE;
+            depth_stencil.stencilTestEnable = creation.depth_stencil_creation.stencil_enable ? VK_TRUE : VK_FALSE;
+            depth_stencil.depthTestEnable = creation.depth_stencil_creation.depth_enable ? VK_TRUE : VK_FALSE;
+            depth_stencil.depthCompareOp = creation.depth_stencil_creation.depth_comparison;
+            if (creation.depth_stencil_creation.stencil_enable) {
                 // TODO: add stencil
                 HASSERT(false);
             }
@@ -1557,8 +1570,8 @@ namespace Helix {
             rasterizer.rasterizerDiscardEnable = VK_FALSE;
             rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
             rasterizer.lineWidth = 1.0f;
-            rasterizer.cullMode = creation.rasterization.cull_mode;
-            rasterizer.frontFace = creation.rasterization.front;
+            rasterizer.cullMode = creation.rasterization_creation.cull_mode;
+            rasterizer.frontFace = creation.rasterization_creation.front;
             rasterizer.depthBiasEnable = VK_FALSE;
             rasterizer.depthBiasConstantFactor = 0.0f; // Optional
             rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -1757,7 +1770,7 @@ namespace Helix {
         // TODO: add support for multiple sets.
         // Create flattened binding list
         descriptor_set_layout->num_bindings = (u16)creation.num_bindings;
-        u8* memory = hallocam((sizeof(VkDescriptorSetLayoutBinding) + sizeof(DescriptorBinding)) * creation.num_bindings, allocator);
+        u8* memory = hallocam((sizeof(DescriptorBinding) + sizeof(VkDescriptorSetLayoutBinding)) * creation.num_bindings, allocator);
         descriptor_set_layout->bindings = (DescriptorBinding*)memory;
         descriptor_set_layout->vk_binding = (VkDescriptorSetLayoutBinding*)(memory + sizeof(DescriptorBinding) * creation.num_bindings);
         descriptor_set_layout->handle = handle;
@@ -1767,7 +1780,7 @@ namespace Helix {
         for (u32 r = 0; r < creation.num_bindings; ++r) {
             DescriptorBinding& binding = descriptor_set_layout->bindings[r];
             const DescriptorSetLayoutCreation::Binding& input_binding = creation.bindings[r];
-            binding.start = input_binding.start == u16_max ? (u16)r : input_binding.start;
+            binding.index = input_binding.index == u16_max ? (u16)r : input_binding.index;
             binding.count = 1;
             binding.type = input_binding.type;
             binding.name = input_binding.name;
@@ -1781,7 +1794,7 @@ namespace Helix {
             VkDescriptorSetLayoutBinding& vk_binding = descriptor_set_layout->vk_binding[used_bindings];
             ++used_bindings;
 
-            vk_binding.binding = binding.start;
+            vk_binding.binding = binding.index;
             vk_binding.descriptorType = input_binding.type;
             vk_binding.descriptorType = vk_binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC : vk_binding.descriptorType;
             vk_binding.descriptorCount = 1;
@@ -1828,7 +1841,7 @@ namespace Helix {
             descriptor_write[i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
             descriptor_write[i].dstSet = vk_descriptor_set;
             // Use binding array to get final binding point.
-            const u32 binding_point = binding.start;
+            const u32 binding_point = binding.index;
             descriptor_write[i].dstBinding = binding_point;
             descriptor_write[i].dstArrayElement = 0;
             descriptor_write[i].descriptorCount = 1;
@@ -2243,10 +2256,12 @@ namespace Helix {
 
             // [TAG: PIPELINE GENERATION]
             ShaderState* shader_state_data = access_shader_state(v_pipeline->shader_state);
+            // TODO: Here
             for (u32 l = 0; l < shader_state_data->parse_result->set_count; ++l) {
-                destroy_descriptor_set_layout(v_pipeline->descriptor_set_layout_handles[l]);
+                if (v_pipeline->descriptor_set_layout_handles[l].index != k_invalid_index) {
+                    destroy_descriptor_set_layout(v_pipeline->descriptor_set_layout_handles[l]);
+                }
             }
-
             destroy_shader_state(v_pipeline->shader_state);
         }
         else {
@@ -2327,10 +2342,21 @@ namespace Helix {
     void GpuDevice::destroy_texture_instant(ResourceHandle texture) {
         Texture* v_texture = (Texture*)textures.access_resource(texture);
         
+        if (!v_texture->vk_image_view) {
+            return;
+        }
+
         if (v_texture) {
-            HDEBUG("Texture name: {}", v_texture->name);
             vkDestroyImageView(vulkan_device, v_texture->vk_image_view, vulkan_allocation_callbacks);
-            vmaDestroyImage(vma_allocator, v_texture->vk_image, v_texture->vma_allocation);
+            v_texture->vk_image_view = VK_NULL_HANDLE;
+
+            if (v_texture->vma_allocation != 0) {
+                vmaDestroyImage(vma_allocator, v_texture->vk_image, v_texture->vma_allocation);
+            }
+            else if (v_texture->vma_allocation == nullptr) {
+                // Aliased textures
+                vkDestroyImage(vulkan_device, v_texture->vk_image, vulkan_allocation_callbacks);
+            }
         }
         textures.release_resource(texture);
     }

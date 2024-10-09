@@ -34,7 +34,7 @@ namespace Helix {
         "layout( location = 2 ) in uvec4 Color;\n"
         "layout( location = 0 ) out vec2 Frag_UV;\n"
         "layout( location = 1 ) out vec4 Frag_Color;\n"
-        "layout( std140, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
+        "layout( std140, set = 1, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
         "void main()\n"
         "{\n"
         "    Frag_UV = UV;\n"
@@ -51,7 +51,7 @@ namespace Helix {
         "layout( location = 0 ) out vec2 Frag_UV;\n"
         "layout( location = 1 ) out vec4 Frag_Color;\n"
         "layout (location = 2) flat out uint texture_id;\n"
-        "layout( std140, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
+        "layout( std140, set = 1, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
         "void main()\n"
         "{\n"
         "    Frag_UV = UV;\n"
@@ -82,7 +82,8 @@ namespace Helix {
         "layout (location = 2) flat in uint texture_id;\n"
         "layout (location = 0) out vec4 Out_Color;\n"
         "#extension GL_EXT_nonuniform_qualifier : enable\n"
-        "layout (set = 1, binding = 10) uniform sampler2D textures[];\n"
+        "layout (set = 0, binding = 10) uniform sampler2D textures[];\n"
+        "layout( std140, set = 1, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
         "void main()\n"
         "{\n"
         "    Out_Color = Frag_Color * texture(textures[nonuniformEXT(texture_id)], Frag_UV.st);\n"
@@ -146,20 +147,21 @@ namespace Helix {
 
         PipelineCreation pipeline_creation = {};
         pipeline_creation.name = "Pipeline_ImGui";
-        pipeline_creation.shaders = shader_creation;
+        pipeline_creation.shader_state_creation = shader_creation;
 
-        pipeline_creation.blend_state.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
+        pipeline_creation.blend_state_creation.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
 
-        pipeline_creation.vertex_input
+        pipeline_creation.vertex_input_creation
             .add_vertex_attribute({ 0, 0, 0, VertexComponentFormat::Float2 })
             .add_vertex_attribute({ 1, 0, 8, VertexComponentFormat::Float2 })
             .add_vertex_attribute({ 2, 0, 16, VertexComponentFormat::UByte4N });
 
-        pipeline_creation.vertex_input.add_vertex_stream({ 0, 20, VertexInputRate::PerVertex });
+        pipeline_creation.vertex_input_creation.add_vertex_stream({ 0, 20, VertexInputRate::PerVertex });
         pipeline_creation.render_pass = gpu->get_swapchain_output();
 
         DescriptorSetLayoutCreation descriptor_set_layout_creation{};
-        if (gpu->bindless_supported) {
+        descriptor_set_layout_creation.set_set_index(1);
+        if (!gpu->bindless_supported) {
             descriptor_set_layout_creation.add_binding({ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants" }).add_binding({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, 1, "Texture" }).set_name("RLL_ImGui");
         }
         else {
@@ -180,7 +182,7 @@ namespace Helix {
 
         // Create descriptor set
         DescriptorSetCreation ds_creation{};
-        if (gpu->bindless_supported) {
+        if (!gpu->bindless_supported) {
             ds_creation.set_layout(pipeline_creation.descriptor_set_layout[0]).buffer(g_ui_cb, 0).texture(g_font_texture, 1).set_name("RL_ImGui");
         }
         else {

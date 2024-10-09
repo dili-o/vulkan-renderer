@@ -312,11 +312,11 @@ namespace Helix {
 
     // PipelineCreation ////////////////////////////////////////
     PipelineCreation& PipelineCreation::reset() {
-        rasterization = RasterizationCreation{};
-        depth_stencil = DepthStencilCreation{};
-        blend_state.reset();
-        vertex_input.reset();
-        shaders.reset();
+        rasterization_creation = RasterizationCreation{};
+        depth_stencil_creation = DepthStencilCreation{};
+        blend_state_creation.reset();
+        vertex_input_creation.reset();
+        shader_state_creation.reset();
         render_pass.reset();
         viewport = nullptr;
         name = nullptr;

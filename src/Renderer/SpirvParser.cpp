@@ -72,402 +72,56 @@ namespace Helix {
             return 0;
         }
 
+        static void add_binding_if_unique(DescriptorSetLayoutCreation& creation, DescriptorSetLayoutCreation::Binding& binding) {
+
+            const DescriptorSetLayoutCreation::Binding& set_binding = creation.bindings[binding.index];
+
+            if (set_binding.type == binding.type && set_binding.index == binding.index) {
+                return;
+            }
+
+            // TODO: Figure out how to differentiate between normal bindings and the bindless binding.
+
+            creation.add_binding(binding);
+        }
+
         void parse_binary(const u32* data, size_t data_size, StringBuffer& name_buffer, ParseResult* parse_result) {
             /////
             SpvReflectShaderModule module = {};
             SpvReflectResult result = spvReflectCreateShaderModule(data_size, data, &module);
-            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+            HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
             uint32_t count = 0;
-            result = spvReflectEnumerateInputVariables(&module, &count, NULL);
-            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+            result = spvReflectEnumerateDescriptorSets(&module, &count, NULL);
+            HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-            std::vector<SpvReflectInterfaceVariable*> input_vars(count);
-            result = spvReflectEnumerateInputVariables(&module, &count, input_vars.data());
-            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+            std::vector<SpvReflectDescriptorSet*> sets(count);
+            result = spvReflectEnumerateDescriptorSets(&module, &count, sets.data());
+            HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-            ////
+            for (u32 i = 0; i < sets.size(); ++i) {
+                bool image_detected = false;
+                DescriptorSetLayoutCreation& creation = parse_result->sets[sets[i]->set];
+                // Skip the first descriptor set because it contains bindless textures.
+                /*if (sets[i]->set == 0)
+                    continue;*/
+                creation.set_set_index(sets[i]->set);
+                for (u32 j = 0; j < sets[i]->binding_count; ++j) {
+                    DescriptorSetLayoutCreation::Binding binding{ };
+                    SpvReflectDescriptorBinding* spirv_binding = sets[i]->bindings[j];
 
+                    binding.name = spirv_binding->name;
+                    binding.count = spirv_binding->count;
+                    binding.index = spirv_binding->binding;
+                    binding.type = (VkDescriptorType)spirv_binding->descriptor_type;
+                    image_detected = (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
-
-            HASSERT((data_size % 4) == 0);
-            u32 spv_word_count = safe_cast<u32>(data_size / 4);
-
-            u32 magic_number = data[0];
-            HASSERT_MSG(magic_number == 0x07230203, "SPIR-V byte data does not match the magic number");
-
-            u32 id_bound = data[3];
-
-            Allocator* allocator = &MemoryService::instance()->system_allocator;
-            Array<Id> ids;
-            ids.init(allocator, id_bound, id_bound);
-
-            memset(ids.data, 0, id_bound * sizeof(Id));
-
-            VkShaderStageFlags stage;
-
-            size_t word_index = 5;
-            while (word_index < spv_word_count) {
-                SpvOp op = (SpvOp)(data[word_index] & 0xFF);
-                u16 word_count = (u16)(data[word_index] >> 16);
-
-                switch (op) {
-
-                case (SpvOpEntryPoint):
-                {
-                    HASSERT(word_count >= 4);
-
-                    SpvExecutionModel model = (SpvExecutionModel)data[word_index + 1];
-
-                    stage = parse_execution_model(model);
-                    HASSERT(stage != 0);
-
-                    break;
+                    //creation.add_binding(binding);
+                    add_binding_if_unique(creation, binding);
                 }
-
-                case (SpvOpDecorate):
-                {
-                    HASSERT(word_count >= 3);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-
-                    SpvDecoration decoration = (SpvDecoration)data[word_index + 2];
-                    switch (decoration)
-                    {
-                    case (SpvDecorationBinding):
-                    {
-                        id.binding = data[word_index + 3];
-                        break;
-                    }
-
-                    case (SpvDecorationDescriptorSet):
-                    {
-                        id.set = data[word_index + 3];
-                        break;
-                    }
-                    }
-
-                    break;
-                }
-
-                case (SpvOpMemberDecorate):
-                {
-                    HASSERT(word_count >= 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-
-                    u32 member_index = data[word_index + 2];
-
-                    if (id.members.capacity == 0) {
-                        id.members.init(allocator, 64, 64);
-                    }
-
-                    Member& member = id.members[member_index];
-
-                    SpvDecoration decoration = (SpvDecoration)data[word_index + 3];
-                    switch (decoration)
-                    {
-                    case (SpvDecorationOffset):
-                    {
-                        member.offset = data[word_index + 4];
-                        break;
-                    }
-                    }
-
-                    break;
-                }
-
-                case (SpvOpName):
-                {
-                    HASSERT(word_count >= 3);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-
-                    char* name = (char*)(data + (word_index + 2));
-                    char* name_view = name_buffer.append_use(name);
-
-                    id.name.text = name_view;
-                    id.name.length = strlen(name_view);
-
-                    break;
-                }
-
-                case (SpvOpMemberName):
-                {
-                    HASSERT(word_count >= 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-
-                    u32 member_index = data[word_index + 2];
-
-                    if (id.members.capacity == 0) {
-                        id.members.init(allocator, 64, 64);
-                    }
-
-                    Member& member = id.members[member_index];
-
-                    char* name = (char*)(data + (word_index + 3));
-                    char* name_view = name_buffer.append_use(name);
-
-                    member.name.text = name_view;
-                    member.name.length = strlen(name_view);
-
-                    break;
-                }
-
-                case (SpvOpTypeInt):
-                {
-                    HASSERT(word_count == 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.width = (u8)data[word_index + 2];
-                    id.sign = (u8)data[word_index + 3];
-
-                    break;
-                }
-
-                case (SpvOpTypeFloat):
-                {
-                    HASSERT(word_count == 3);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.width = (u8)data[word_index + 2];
-
-                    break;
-                }
-
-                case (SpvOpTypeVector):
-                {
-                    HASSERT(word_count == 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 2];
-                    id.count = data[word_index + 3];
-
-                    break;
-                }
-
-                case (SpvOpTypeMatrix):
-                {
-                    HASSERT(word_count == 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 2];
-                    id.count = data[word_index + 3];
-
-                    break;
-                }
-
-                case (SpvOpTypeImage):
-                {
-                    // NOTE(marco): not sure we need this information just yet
-                    HASSERT(word_count >= 9);
-
-                    break;
-                }
-
-                case (SpvOpTypeSampler):
-                {
-                    HASSERT(word_count == 2);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-
-                    break;
-                }
-
-                case (SpvOpTypeSampledImage):
-                {
-                    HASSERT(word_count == 3);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-
-                    break;
-                }
-
-                case (SpvOpTypeArray):
-                {
-                    HASSERT(word_count == 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 2];
-                    id.count = data[word_index + 3];
-
-                    break;
-                }
-
-                case (SpvOpTypeRuntimeArray):
-                {
-                    HASSERT(word_count == 3);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 2];
-
-                    break;
-                }
-
-                case (SpvOpTypeStruct):
-                {
-                    HASSERT(word_count >= 2);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-
-                    if (word_count > 2) {
-                        for (u16 member_index = 0; member_index < word_count - 2; ++member_index) {
-                            id.members[member_index].id_index = data[word_index + member_index + 2];
-                        }
-                    }
-
-                    break;
-                }
-
-                case (SpvOpTypePointer):
-                {
-                    HASSERT(word_count == 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 3];
-
-                    break;
-                }
-
-                case (SpvOpConstant):
-                {
-                    HASSERT(word_count >= 4);
-
-                    u32 id_index = data[word_index + 1];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 2];
-                    id.value = data[word_index + 3]; // NOTE(marco): we assume all constants to have maximum 32bit width
-
-                    break;
-                }
-
-                case (SpvOpVariable):
-                {
-                    HASSERT(word_count >= 4);
-
-                    u32 id_index = data[word_index + 2];
-                    HASSERT(id_index < id_bound);
-
-                    Id& id = ids[id_index];
-                    id.op = op;
-                    id.type_index = data[word_index + 1];
-                    id.storage_class = (SpvStorageClass)data[word_index + 3];
-
-                    break;
-                }
-                }
-
-                word_index += word_count;
             }
-
-            for (u32 id_index = 0; id_index < ids.size; ++id_index) {
-                Id& id = ids[id_index];
-
-                if (id.op == SpvOpVariable) {
-                    switch (id.storage_class) {
-                    case (SpvStorageClassUniform):
-                    case (SpvStorageClassUniformConstant):
-                    {
-                        if (id.set == 1 && (id.binding == k_bindless_texture_binding || id.binding == (k_bindless_texture_binding + 1))) {
-                            // NOTE(marco): these are managed by the GPU device
-                            continue;
-                        }
-
-                        // NOTE(marco): get actual type
-                        Id& uniform_type = ids[ids[id.type_index].type_index];
-
-                        DescriptorSetLayoutCreation& setLayout = parse_result->sets[id.set];
-                        setLayout.set_set_index(id.set);
-
-                        DescriptorSetLayoutCreation::Binding binding{ };
-                        binding.start = id.binding;
-                        binding.count = 1;
-
-                        switch (uniform_type.op) {
-                        case (SpvOpTypeStruct):
-                        {
-                            binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                            binding.name = uniform_type.name.text;
-                            break;
-                        }
-
-                        case (SpvOpTypeSampledImage):
-                        {
-                            binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                            binding.name = id.name.text;
-                            break;
-                        }
-                        }
-
-                        setLayout.add_binding_at_index(binding, id.binding);
-
-                        parse_result->set_count = max(parse_result->set_count, (id.set + 1));
-
-                        break;
-                    }
-                    }
-                }
-
-                id.members.shutdown();
-            }
-
-            ids.shutdown();
+            parse_result->set_count = max(parse_result->set_count, (u32)sets.size());
+            return;
         }
 
     } // namespace spirv

@@ -788,6 +788,8 @@ namespace Helix {
 
     void FrameGraph::render(CommandBuffer* gpu_commands, Scene* render_scene)
     {
+        gpu_commands->push_marker("Frame");
+
         for (u32 n = 0; n < nodes.size; ++n) {
             FrameGraphNode* node = builder->access_node(nodes[n]);
             if (!node->enabled) {
