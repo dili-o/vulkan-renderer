@@ -79,7 +79,7 @@ namespace Helix {
 
         // Apply global scale matrix
         // NOTE: for left-handed systems (as defined in cglm) need to invert positive and negative Z.
-        glm::mat4 scale_mat = glm::scale(glm::mat4(1.0f), glm::vec3(-global_scale, global_scale, global_scale));
+        glm::mat4 scale_mat = glm::scale(glm::mat4(1.0f), glm::vec3(-global_scale, global_scale, -global_scale));
         MeshNode* mesh_node = (MeshNode*)mesh_nodes->access_resource(mesh.node_index);
         gpu_mesh_data.model = mesh_node->world_transform.calculate_matrix() * scale_mat;
         gpu_mesh_data.inverse_model = glm::inverse(glm::transpose(gpu_mesh_data.model));
@@ -119,11 +119,6 @@ namespace Helix {
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        MaterialCreation material_creation;
-
-        material_creation.set_name("material_depth_pre_pass").set_program(geometry_program).set_render_index(0);
-        Material* material_depth_pre_pass = renderer->create_material(material_creation);
-
         glTF::glTF& gltf_scene = scene.gltf_scene;
 
         mesh_instances.init(resident_allocator, 16);
@@ -138,9 +133,7 @@ namespace Helix {
 
             MeshInstance mesh_instance{};
             mesh_instance.mesh = mesh;
-            // TODO: pass 0 of main material is depth prepass.
             mesh_instance.material_pass_index = 0;
-
             mesh_instances.push(mesh_instance);
         }
     }
@@ -186,11 +179,6 @@ namespace Helix {
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        MaterialCreation material_creation;
-
-        material_creation.set_name("material_no_cull").set_program(geometry_program).set_render_index(0);
-        Material* material = renderer->create_material(material_creation);
-
         glTF::glTF& gltf_scene = scene.gltf_scene;
 
         mesh_instances.init(resident_allocator, 16);
@@ -206,6 +194,7 @@ namespace Helix {
 
             MeshInstance mesh_instance{};
             mesh_instance.mesh = mesh;
+            //mesh_instance.material_pass_index = mesh->is_double_sided() ? 1 : 2; // Setting the pass index for no_cull and cull
             mesh_instance.material_pass_index = 1;
 
             mesh_instances.push(mesh_instance);
@@ -328,11 +317,6 @@ namespace Helix {
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        MaterialCreation material_creation;
-
-        material_creation.set_name("material_transparent").set_program(geometry_program).set_render_index(0);
-        Material* material_depth_pre_pass = renderer->create_material(material_creation);
-
         glTF::glTF& gltf_scene = scene.gltf_scene;
 
         mesh_instances.init(resident_allocator, 16);
@@ -348,7 +332,7 @@ namespace Helix {
 
             MeshInstance mesh_instance{};
             mesh_instance.mesh = mesh;
-            mesh_instance.material_pass_index = 4;
+            mesh_instance.material_pass_index = mesh->is_double_sided() ? 3 : 4; // Setting the pass index for cull and no_cull
 
             mesh_instances.push(mesh_instance);
         }
@@ -434,9 +418,6 @@ namespace Helix {
 
         frame_graph->render(gpu_commands, scene);
 
-        //gpu_commands->bind_pipeline(light_pipeline);
-        //gpu_commands->bind_descriptor_set(&light_ds, 1, nullptr, 0);
-        //gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
 
         gpu_commands->push_marker("Fullscreen");
         gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
@@ -447,24 +428,8 @@ namespace Helix {
         viewport.rect = { 0,0,gpu->swapchain_width, gpu->swapchain_height };
         viewport.max_depth = 1.0f;
         viewport.min_depth = 0.0f;
+
         gpu_commands->set_viewport(&viewport);
-
-        //Material* last_material = nullptr;
-        //// TODO(marco): loop by material so that we can deal with multiple passes
-        //for (u32 mesh_index = 0; mesh_index < scene->meshes.size; ++mesh_index) {
-        //    Mesh& mesh = scene->meshes[mesh_index];
-
-        //    if (mesh.material != last_material) {
-        //        PipelineHandle pipeline = renderer->get_pipeline(mesh.material);
-
-        //        gpu_commands->bind_pipeline(pipeline);
-
-        //        last_material = mesh.material;
-        //    }
-
-        //    draw_mesh(*renderer, gpu_commands, mesh);
-        //}
-
         gpu_commands->bind_pipeline(scene->fullscreen_program->passes[0].pipeline);
         gpu_commands->bind_descriptor_set(&scene->fullscreen_ds, 1, nullptr, 0);
         gpu_commands->draw(TopologyType::Triangle, 0, 3, scene->fullscreen_texture_index, 1);
@@ -742,30 +707,7 @@ namespace Helix {
             stbi_set_flip_vertically_on_load(false);
             HASSERT(tr != nullptr);
             light_texture = *tr;
-            // Create the light pipeline
-            PipelineCreation pipeline_creation;
 
-            pipeline_creation.name = "Light";
-
-            FileReadResult vs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.vert.glsl", stack_allocator);
-            FileReadResult fs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.frag.glsl", stack_allocator);
-            FileReadResult gs_code = file_read_text("D:/HelixEngine/Engine/assets/shaders/lights/light.geom.glsl", stack_allocator);
-
-            pipeline_creation.vertex_input_creation.reset();
-            pipeline_creation.render_pass = renderer->gpu->get_swapchain_output();
-            pipeline_creation.depth_stencil_creation.set_depth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
-            pipeline_creation.blend_state_creation.add_blend_state().set_color(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
-            pipeline_creation.shader_state_creation
-                .set_name("Light")
-                .add_stage(vs_code.data, (u32)vs_code.size, VK_SHADER_STAGE_VERTEX_BIT)
-                .add_stage(gs_code.data, (u32)gs_code.size, VK_SHADER_STAGE_GEOMETRY_BIT)
-                .add_stage(fs_code.data, (u32)fs_code.size, VK_SHADER_STAGE_FRAGMENT_BIT);
-
-            ProgramCreation light_program_creation{};
-            light_program_creation.add_pipeline(pipeline_creation);
-            light_program_creation.set_name("Light");
-
-            //Program* light_program = renderer->create_program(light_program_creation);
             const u64 hashed_name = hash_calculate("light_debug");
             Program* light_program = renderer->resource_cache.programs.get(hashed_name);
 
@@ -790,23 +732,6 @@ namespace Helix {
         buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(UniformData)).set_name("local_constants_buffer");
         local_constants_buffer = renderer->gpu->create_buffer(buffer_creation);
 
-        /*const u64 program_hashed = hash_calculate("pbr");
-        Program* program = renderer->resource_cache.programs.get(program_hashed);
-
-        MaterialCreation material_creation;
-
-        material_creation.set_name("material_no_cull_opaque").set_program(program).set_render_index(0).set_program_pass_index(0);
-        Material* material_no_cull_opaque = renderer->create_material(material_creation);
-
-        material_creation.set_name("material_cull_opaque").set_render_index(1).set_program_pass_index(1);
-        Material* material_cull_opaque = renderer->create_material(material_creation);
-
-        material_creation.set_name("material_no_cull_transparent").set_render_index(2).set_program_pass_index(0);
-        Material* material_no_cull_transparent = renderer->create_material(material_creation);
-
-        material_creation.set_name("material_cull_transparent").set_render_index(3).set_program_pass_index(1);
-        Material* material_cull_transparent = renderer->create_material(material_creation);*/
-
         // Create material
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
@@ -815,7 +740,6 @@ namespace Helix {
         material_creation.set_name("material_no_cull_opaque").set_program(geometry_program).set_render_index(0);
 
         Material* pbr_material = renderer->create_material(material_creation);
-
 
         glTF::Scene& root_gltf_scene = gltf_scene.scenes[gltf_scene.scene];
 
@@ -973,23 +897,6 @@ namespace Helix {
 
                 mesh.pbr_material.material = pbr_material;
 
-                /*if (transparent) {
-                    if (material.double_sided) {
-                        mesh.material = material_no_cull_transparent;
-                    }
-                    else {
-                        mesh.material = material_cull_transparent;
-                    }
-                }
-                else {
-                    if (material.double_sided) {
-                        mesh.material = material_no_cull_opaque;
-                    }
-                    else {
-                        mesh.material = material_cull_opaque;
-                    }
-                }*/
-
                 // TODO Make this a primitive struct. Not a MeshNode
                 NodeHandle mesh_handle = node_pool.obtain_node(NodeType::MeshNode);
                 MeshNode* mesh_node_primitive = (MeshNode*)node_pool.access_node(mesh_handle);
@@ -1031,7 +938,7 @@ namespace Helix {
         dsc.reset().buffer(local_constants_buffer, 0).set_layout(descriptor_set_layout);
         fullscreen_ds = renderer->gpu->create_descriptor_set(dsc);
 
-        FrameGraphResource* texture = frame_graph->get_resource("final"); // TODO: CHange
+        FrameGraphResource* texture = frame_graph->get_resource("final");
         if (texture != nullptr) {
             fullscreen_texture_index = texture->resource_info.texture.texture.index;
         }

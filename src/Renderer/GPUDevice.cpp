@@ -508,7 +508,7 @@ namespace Helix {
             VkDescriptorPoolSize pool_sizes_bindless[] =
             {
                 { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, k_max_bindless_resources },
-                //{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, k_max_bindless_resources },
+                { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, k_max_bindless_resources },
             };
 
             // Update after bind is needed here, for each binding and in the descriptor set layout creation.
@@ -530,6 +530,15 @@ namespace Helix {
             image_sampler_binding.stageFlags = VK_SHADER_STAGE_ALL;
             image_sampler_binding.pImmutableSamplers = nullptr;
 
+            VkDescriptorSetLayoutBinding& image_2d_binding = vk_binding[1];
+            image_2d_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            image_2d_binding.descriptorCount = k_max_bindless_resources;
+            image_2d_binding.binding = 11;
+            image_2d_binding.stageFlags = VK_SHADER_STAGE_ALL;
+            image_2d_binding.pImmutableSamplers = nullptr;
+
+
+
             VkDescriptorSetLayoutCreateInfo layout_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
             layout_info.bindingCount = pool_count;
             layout_info.pBindings = vk_binding;
@@ -537,13 +546,14 @@ namespace Helix {
 
             // TODO: reenable variable descriptor count
             // Binding flags for each binding
-            VkDescriptorBindingFlags bindless_flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
+            VkDescriptorBindingFlags bindless_flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;// | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
             VkDescriptorBindingFlags binding_flags[pool_count];
 
             binding_flags[0] = bindless_flags;
+            binding_flags[1] = bindless_flags;
 
             VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extended_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT, nullptr };
-            extended_info.bindingCount = ArraySize(binding_flags);
+            extended_info.bindingCount = 2;
             extended_info.pBindingFlags = binding_flags;
 
             layout_info.pNext = &extended_info;

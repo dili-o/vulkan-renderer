@@ -100,26 +100,3 @@ void main() {
 }
 
 #endif // FRAGMENT
-
-#if defined(COMPUTE)
-
-layout(std140, set = 1, binding = 2) uniform locals {
-    uint                albedo_id;
-    uint                voxelized_id;
-    uint                horizontal;
-    uint                pad02;
-
-    vec4                position;
-    vec4                albedo_size;
-    mat4                view_projection;
-};
-
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-void main() {
-    ivec3 pos = ivec3(gl_GlobalInvocationID.xyz);
-
-    vec4 color = vec4(pos / 1000.f, 1.0f);// texelFetch( textures[albedo_id], pos.xy, 0 ).rgba;
-    imageStore(global_images_2d[0], pos.xy, color);
-}
-
-#endif // COMPUTE

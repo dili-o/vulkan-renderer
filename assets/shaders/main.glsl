@@ -144,7 +144,7 @@ void main() {
         material_colour = mix( fresnel_mix, conductor_fresnel, metalness );
     }
 
-    frag_color = vec4( encode_srgb( material_colour ), base_colour.a );
+    frag_color = base_colour; //vec4( encode_srgb( material_colour ), base_colour.a );
 }
 
 #endif // FRAGMENT

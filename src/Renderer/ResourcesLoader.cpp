@@ -274,6 +274,12 @@ namespace Helix {
 			if (name == "back") {
 				pc.rasterization_creation.cull_mode = VK_CULL_MODE_BACK_BIT;
 			}
+			else if (name == "front") {
+				pc.rasterization_creation.cull_mode = VK_CULL_MODE_FRONT_BIT;
+			}
+			else if (name == "none") {
+				pc.rasterization_creation.cull_mode = VK_CULL_MODE_NONE;
+			}
 			else {
 				HCRITICAL("Invalid cull mode");
 			}

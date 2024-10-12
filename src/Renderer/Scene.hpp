@@ -137,6 +137,7 @@ namespace Helix {
         float               padding_[3];
 
         u32                 flags;
+        float               padding_2[3];
     }; // struct GPUMeshData
 
 
