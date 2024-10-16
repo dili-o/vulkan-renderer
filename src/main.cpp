@@ -418,7 +418,7 @@ int main(int argc, char** argv)
 
                     gpu.unmap_buffer(light_cb_map);
                 }
-                scene->upload_materials(model_scale);
+                scene->fill_gpu_material_buffer(model_scale);
             }
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
 

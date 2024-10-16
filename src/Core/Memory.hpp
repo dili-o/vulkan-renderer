@@ -175,7 +175,7 @@ namespace Helix {
 #endif // HELIX_IMGUI
 
         // Frame allocator
-        LinearAllocator             scratch_allocator;
+        LinearAllocator             stack_allocator;
         HeapAllocator               system_allocator;
 
         //

@@ -537,7 +537,7 @@ namespace Helix {
                 case FrameGraphResourceType_Buffer:
                 {
                     // TODO(marco)
-                    HASSERT(false);
+                    HASSERT_MSG(false, "ResourceType_Buffer not currently supported");
                 } break;
                 }
 

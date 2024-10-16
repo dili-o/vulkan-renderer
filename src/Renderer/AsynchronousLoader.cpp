@@ -77,7 +77,7 @@ namespace Helix
         vkDestroyFence(renderer->gpu->vulkan_device, transfer_fence, renderer->gpu->vulkan_allocation_callbacks);
     }
 
-    void AsynchronousLoader::update(Allocator* scratch_allocator) {
+    void AsynchronousLoader::update(Allocator* stack_allocator) {
 
         // If a texture was processed in the previous commands, signal the renderer
         if (texture_ready.index != k_invalid_texture.index) {

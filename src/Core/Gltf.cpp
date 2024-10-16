@@ -84,7 +84,7 @@ namespace Helix {
             type = glTF::Accessor::Type::Mat4;
         }
         else {
-            HASSERT(false);
+            HASSERT_MSG(false, "Unknown type");
         }
     }
 

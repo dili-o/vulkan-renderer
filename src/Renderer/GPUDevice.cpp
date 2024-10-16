@@ -456,7 +456,7 @@ namespace Helix {
         // Default to the first format supported.
         if (!format_found) {
             vulkan_surface_format = supported_formats[0];
-            HASSERT(false);
+            HASSERT_MSG(false, "Could not find a supported format");
         }
         hfree(supported_formats, allocator);
 

@@ -415,11 +415,6 @@ namespace Helix {
         return nullptr;
     }
 
-    Material* Renderer::create_material(Program* program, cstring name) {
-        MaterialCreation creation{ program, name };
-        return create_material(creation);
-    }
-
     PipelineHandle Renderer::get_pipeline(Material* material, u32 pass_index) {
         HASSERT(material != nullptr);
 

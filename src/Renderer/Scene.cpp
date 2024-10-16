@@ -107,14 +107,11 @@ namespace Helix {
         }
     }
 
-    void DepthPrePass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+    void DepthPrePass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("depth_pre_pass");
-        if (node == nullptr) {
-            HASSERT(false);
-            return;
-        }
+        HASSERT(node);
 
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
@@ -167,14 +164,11 @@ namespace Helix {
         }
     }
 
-    void GBufferPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+    void GBufferPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("gbuffer_pass");
-        if (node == nullptr) {
-            HASSERT(false);
-            return;
-        }
+        HASSERT(node);
 
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
@@ -221,14 +215,11 @@ namespace Helix {
         gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
     }
 
-    void LightPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+    void LightPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("lighting_pass");
-        if (node == nullptr) {
-            HASSERT(false);
-            return;
-        }
+        HASSERT(node);
 
         const u64 hashed_name = hash_calculate("pbr_lighting");
         Program* lighting_program = renderer->resource_cache.programs.get(hashed_name);
@@ -262,7 +253,7 @@ namespace Helix {
         mesh.pbr_material.material = material_pbr;
     }
 
-    void LightPass::upload_materials() {
+    void LightPass::fill_gpu_material_buffer() {
 
         MapBufferParameters cb_map = { mesh.pbr_material.material_buffer, 0, 0 };
         GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(cb_map);
@@ -302,14 +293,12 @@ namespace Helix {
         }
     }
 
-    void TransparentPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+    void TransparentPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("transparent_pass");
-        if (node == nullptr) {
-            HASSERT(false);
-            return;
-        }
+        HASSERT(node);
+
 
         // Create pipeline state
         PipelineCreation pipeline_creation;
@@ -373,14 +362,11 @@ namespace Helix {
         gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
     }
 
-    void LightDebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+    void LightDebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("light_debug_pass");
-        if (node == nullptr) {
-            HASSERT(false);
-            return;
-        }
+        HASSERT(node);
 
         const u64 hashed_name = hash_calculate("light_debug");
         Program* light_debug_program = scene.renderer->resource_cache.programs.get(hashed_name);
@@ -1026,7 +1012,7 @@ namespace Helix {
         }
     }
 
-    void glTFScene::upload_materials(float model_scale) {
+    void glTFScene::fill_gpu_material_buffer(float model_scale) {
         // Update per mesh material buffer
         for (u32 mesh_index = 0; mesh_index < meshes.size; ++mesh_index) {
             Mesh& mesh = meshes[mesh_index];
@@ -1041,7 +1027,7 @@ namespace Helix {
             }
         }
 
-        light_pass.upload_materials();
+        light_pass.fill_gpu_material_buffer();
     }
 
     void glTFScene::submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) {

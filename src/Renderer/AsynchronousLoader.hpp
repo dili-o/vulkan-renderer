@@ -45,7 +45,7 @@ namespace Helix
     struct AsynchronousLoader {
 
         void                                    init(Renderer* renderer, enki::TaskScheduler* task_scheduler, Allocator* resident_allocator);
-        void                                    update(Allocator* scratch_allocator);
+        void                                    update(Allocator* stack_allocator);
         void                                    shutdown();
 
         void                                    request_texture_data(cstring filename, TextureHandle texture);

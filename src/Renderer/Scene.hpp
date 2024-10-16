@@ -226,9 +226,9 @@ namespace Helix {
         virtual void            unload(Renderer* renderer) { };
 
         virtual void            register_render_passes(FrameGraph* frame_graph) { };
-        virtual void            prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator) { };
+        virtual void            prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) { };
 
-        virtual void            upload_materials(float model_scale) { };
+        virtual void            fill_gpu_material_buffer(float model_scale) { };
         virtual void            submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) { };
     }; // struct Scene
 
@@ -237,7 +237,7 @@ namespace Helix {
     struct DepthPrePass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
         void                free_gpu_resources();
 
         Array<MeshInstance> mesh_instances;
@@ -249,7 +249,7 @@ namespace Helix {
     struct GBufferPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
         void                free_gpu_resources();
 
         Array<MeshInstance> mesh_instances;
@@ -261,8 +261,8 @@ namespace Helix {
     struct LightPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
-        void                upload_materials();
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
+        void                fill_gpu_material_buffer();
         void                free_gpu_resources();
 
         Mesh                mesh;
@@ -274,7 +274,7 @@ namespace Helix {
     struct TransparentPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
         void                free_gpu_resources();
 
         Array<MeshInstance> mesh_instances;
@@ -287,7 +287,7 @@ namespace Helix {
 
         void                    render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
         void                    upload_materials() {};
         void                    free_gpu_resources();
 
@@ -304,12 +304,12 @@ namespace Helix {
         void                    unload(Renderer* renderer) override;
 
         void                    register_render_passes(FrameGraph* frame_graph) override;
-        void                    prepare_draws(Renderer* renderer, StackAllocator* scratch_allocator) override;
+        void                    prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) override;
         void                    fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material);
         u16                     get_material_texture(GpuDevice& gpu, glTF::TextureInfo* texture_info);
         u16                     get_material_texture(GpuDevice& gpu, i32 gltf_texture_index);
 
-        void                    upload_materials(float model_scale) override;
+        void                    fill_gpu_material_buffer(float model_scale) override;
         void                    submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) override;
 
         void                    draw_mesh(CommandBuffer* gpu_commands, Mesh& mesh);

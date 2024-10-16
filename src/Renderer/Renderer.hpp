@@ -175,7 +175,6 @@ namespace Helix {
         Program*                    create_program(const ProgramCreation& creation);
 
         Material*                   create_material(const MaterialCreation& creation);
-        Material*                   create_material(Program* program, cstring name);
 
         // Draw
         PipelineHandle              get_pipeline(Material* material, u32 pass_index);
