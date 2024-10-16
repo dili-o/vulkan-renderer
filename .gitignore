@@ -1,6 +1,7 @@
 /out
 bin/
 build/
+assets/shaders/cache
 /.vs
 .idea/
 CMakeSettings.json

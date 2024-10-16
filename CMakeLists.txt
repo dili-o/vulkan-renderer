@@ -20,7 +20,8 @@ file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp"
     "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c"
 )
 
-#message(FATAL_ERROR "${SPIRV_REFLECT_INCLUDE_DIR}/")
+# Create the shaders cache directory
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/cache")
 
 add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp")
 
@@ -36,11 +37,6 @@ else()
     message(FATAL_ERROR "Vulkan SDK not found. Make sure it is installed and accessible.")
 endif()
 
-
-#set(SPIRV_REFLECT_UNIFIED1_INCLUDE_DIR "${SPIRV_REFLECT_INCLUDE_DIR}/include/spirv/unified1")
-
-#target_include_directories(HelixEngine PUBLIC "${SPIRV_REFLECT_INCLUDE_DIR}/")
-#target_include_directories(HelixEngine PUBLIC "${SPIRV_REFLECT_UNIFIED1_INCLUDE_DIR}/")
 
 target_include_directories(HelixEngine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
 target_include_directories(HelixEngine PUBLIC "src/")
