@@ -6,7 +6,6 @@ layout(std140, set = 1, binding = 0) uniform LocalConstants {
     mat4 model;
     mat4 view_projection;
     vec4 camera_position;
-    uint texture_index;
 };
 
 void main() {
@@ -21,7 +20,6 @@ layout( std140, set = 1, binding = 0 ) uniform LocalConstants {
     mat4 model;
     mat4 view_projection;
     vec4 camera_position;
-    uint texture_index;
 };
 
 // Bindless support
@@ -34,7 +32,7 @@ layout(location = 1) in vec4 gColor;
 layout(location = 0) out vec4 outColor;
 
 void main(){
-    outColor = texture(global_textures[nonuniformEXT(texture_index)], gTexCoord) * vec4(gColor.xyz, 1.0);
+    outColor = texture(global_textures[nonuniformEXT(int(camera_position.w))], gTexCoord) * vec4(gColor.xyz, 1.0);
 }
 
 #endif // FRAGMENT
@@ -45,7 +43,6 @@ layout(std140, set = 1, binding = 0) uniform LocalConstants {
     mat4 model;
     mat4 view_projection;
     vec4 camera_position;
-    uint texture_index;
 };
 
 layout(points) in;

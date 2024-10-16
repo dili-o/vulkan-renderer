@@ -410,8 +410,7 @@ int main(int argc, char** argv)
                     gpu.unmap_buffer(cb_map);
                     
                     light_cb_data->view_projection = view_projection;
-                    light_cb_data->camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
-                    light_cb_data->texture_index = scene->light_texture.handle.index;
+                    light_cb_data->camera_position_texture_index = glm::vec4(eye.x, eye.y, eye.z, scene->light_texture.handle.index);
 
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, light_node->world_transform.translation);

@@ -59,8 +59,7 @@ namespace Helix {
     struct LightUniform {
         glm::mat4       model;
         glm::mat4       view_projection;
-        glm::vec4       camera_position;
-        u32             texture_index;
+        glm::vec4       camera_position_texture_index;
     };
 
     struct UniformData {
