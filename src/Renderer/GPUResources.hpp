@@ -807,7 +807,7 @@ namespace Helix {
 
     //
     //
-    struct DesciptorSet {
+    struct DescriptorSet {
 
         VkDescriptorSet                 vk_descriptor_set;
 

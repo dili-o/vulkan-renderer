@@ -194,7 +194,8 @@ namespace Helix {
 
             MeshInstance mesh_instance{};
             mesh_instance.mesh = mesh;
-            mesh_instance.material_pass_index = mesh->is_double_sided() ? 1 : 2; // Setting the pass index for no_cull and cull
+            //mesh_instance.material_pass_index = mesh->is_double_sided() ? 1 : 2;
+            mesh_instance.material_pass_index = 1; // Setting the pass index for no_cull and cull
 
             mesh_instances.push(mesh_instance);
         }
@@ -331,7 +332,8 @@ namespace Helix {
 
             MeshInstance mesh_instance{};
             mesh_instance.mesh = mesh;
-            mesh_instance.material_pass_index = mesh->is_double_sided() ? 3 : 4; // Setting the pass index for cull and no_cull
+            //mesh_instance.material_pass_index = mesh->is_double_sided() ? 3 : 4; // Setting the pass index for cull and no_cull
+            mesh_instance.material_pass_index = 3;
 
             mesh_instances.push(mesh_instance);
         }

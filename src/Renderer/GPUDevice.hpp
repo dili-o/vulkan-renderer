@@ -362,8 +362,8 @@ namespace Helix {
         DescriptorSetLayoutHandle       get_descriptor_set_layout(PipelineHandle pipeline_handle, int layout_index);
         DescriptorSetLayoutHandle       get_descriptor_set_layout(PipelineHandle pipeline_handle, int layout_index) const;
 
-        DesciptorSet*                   access_descriptor_set(DescriptorSetHandle set);
-        const DesciptorSet*             access_descriptor_set(DescriptorSetHandle set) const;
+        DescriptorSet*                   access_descriptor_set(DescriptorSetHandle set);
+        const DescriptorSet*             access_descriptor_set(DescriptorSetHandle set) const;
 
         RenderPass*                     access_render_pass(RenderPassHandle render_pass);
         const RenderPass*               access_render_pass(RenderPassHandle render_pass) const;

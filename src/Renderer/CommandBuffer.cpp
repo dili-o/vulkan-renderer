@@ -21,7 +21,7 @@ namespace Helix {
 
         u32 resource_count = descriptor_sets.free_indices_head;
         for (u32 i = 0; i < resource_count; ++i) {
-            DesciptorSet* v_descriptor_set = (DesciptorSet*)descriptor_sets.access_resource(i);
+            DescriptorSet* v_descriptor_set = (DescriptorSet*)descriptor_sets.access_resource(i);
 
             if (v_descriptor_set) {
                 // Contains the allocation for all the resources, binding and samplers arrays.
@@ -60,7 +60,7 @@ namespace Helix {
         VkResult result = vkCreateDescriptorPool(device->vulkan_device, &pool_info, device->vulkan_allocation_callbacks, &vk_descriptor_pool);
         HASSERT(result == VK_SUCCESS);
 
-        descriptor_sets.init(device->allocator, k_descriptor_sets_pool_size, sizeof(DesciptorSet));
+        descriptor_sets.init(device->allocator, k_descriptor_sets_pool_size, sizeof(DescriptorSet));
 
         //is_recording = false;
 
@@ -86,7 +86,7 @@ namespace Helix {
             return handle;
         }
 
-        DesciptorSet* descriptor_set = (DesciptorSet*)descriptor_sets.access_resource(handle.index);
+        DescriptorSet* descriptor_set = (DescriptorSet*)descriptor_sets.access_resource(handle.index);
         const DesciptorSetLayout* descriptor_set_layout = device->access_descriptor_set_layout(creation.layout);
 
         // Allocate descriptor set
@@ -275,7 +275,7 @@ namespace Helix {
         num_offsets = 0;
         VkDescriptorSet vk_descriptor_sets[16];
         for (u32 l = 0; l < num_lists; ++l) {
-            DesciptorSet* descriptor_set = device->access_descriptor_set(handles[l]);
+            DescriptorSet* descriptor_set = device->access_descriptor_set(handles[l]);
             vk_descriptor_sets[l] = descriptor_set->vk_descriptor_set;
 
             // Search for dynamic buffers
@@ -311,7 +311,7 @@ namespace Helix {
         num_offsets = 0;
         VkDescriptorSet vk_descriptor_sets[16];
         for (u32 l = 0; l < num_lists; ++l) {
-            DesciptorSet* descriptor_set = (DesciptorSet*)descriptor_sets.access_resource(handles[l].index);
+            DescriptorSet* descriptor_set = (DescriptorSet*)descriptor_sets.access_resource(handles[l].index);
             vk_descriptor_sets[l] = descriptor_set->vk_descriptor_set;
 
             // Search for dynamic buffers

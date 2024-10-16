@@ -590,7 +590,7 @@ namespace Helix {
         descriptor_set_layouts.init(allocator, k_descriptor_set_layouts_pool_size, sizeof(DesciptorSetLayout));
         pipelines.init(allocator, k_pipelines_pool_size, sizeof(Pipeline));
         shaders.init(allocator, k_shaders_pool_size, sizeof(ShaderState));
-        descriptor_sets.init(allocator, k_descriptor_sets_pool_size, sizeof(DesciptorSet));
+        descriptor_sets.init(allocator, k_descriptor_sets_pool_size, sizeof(DescriptorSet));
         samplers.init(allocator, k_samplers_pool_size, sizeof(Sampler));
 
         // Init render frame informations. This includes fences, semaphores, command buffers, ...
@@ -1967,7 +1967,7 @@ namespace Helix {
             return handle;
         }
 
-        DesciptorSet* descriptor_set = access_descriptor_set(handle);
+        DescriptorSet* descriptor_set = access_descriptor_set(handle);
         const DesciptorSetLayout* descriptor_set_layout = access_descriptor_set_layout(creation.layout);
 
         // Allocate descriptor set
@@ -2404,7 +2404,7 @@ namespace Helix {
     }
 
     void GpuDevice::destroy_descriptor_set_instant(ResourceHandle descriptor_set) {
-        DesciptorSet* v_descriptor_set = (DesciptorSet*)descriptor_sets.access_resource(descriptor_set);
+        DescriptorSet* v_descriptor_set = (DescriptorSet*)descriptor_sets.access_resource(descriptor_set);
 
         if (v_descriptor_set) {
             // Contains the allocation for all the resources, binding and samplers arrays.
@@ -2730,9 +2730,9 @@ namespace Helix {
 
         // Use a dummy descriptor set to delete the vulkan descriptor set handle
         DescriptorSetHandle dummy_delete_descriptor_set_handle = { descriptor_sets.obtain_resource() };
-        DesciptorSet* dummy_delete_descriptor_set = access_descriptor_set(dummy_delete_descriptor_set_handle);
+        DescriptorSet* dummy_delete_descriptor_set = access_descriptor_set(dummy_delete_descriptor_set_handle);
 
-        DesciptorSet* descriptor_set = access_descriptor_set(update.descriptor_set);
+        DescriptorSet* descriptor_set = access_descriptor_set(update.descriptor_set);
         const DesciptorSetLayout* descriptor_set_layout = descriptor_set->layout;
 
         dummy_delete_descriptor_set->vk_descriptor_set = descriptor_set->vk_descriptor_set;
@@ -3274,7 +3274,7 @@ namespace Helix {
 
     void GpuDevice::query_descriptor_set(DescriptorSetHandle descriptor_set, DesciptorSetDescription& out_description) {
         if (descriptor_set.index != k_invalid_index) {
-            const DesciptorSet* descriptor_set_data = access_descriptor_set(descriptor_set);
+            const DescriptorSet* descriptor_set_data = access_descriptor_set(descriptor_set);
 
             out_description.num_active_resources = descriptor_set_data->num_resources;
             for (u32 i = 0; i < out_description.num_active_resources; ++i) {
@@ -3462,12 +3462,12 @@ namespace Helix {
         return  pipeline->descriptor_set_layout_handles[layout_index];
     }
 
-    DesciptorSet* GpuDevice::access_descriptor_set(DescriptorSetHandle descriptor_set) {
-        return (DesciptorSet*)descriptor_sets.access_resource(descriptor_set.index);
+    DescriptorSet* GpuDevice::access_descriptor_set(DescriptorSetHandle descriptor_set) {
+        return (DescriptorSet*)descriptor_sets.access_resource(descriptor_set.index);
     }
 
-    const DesciptorSet* GpuDevice::access_descriptor_set(DescriptorSetHandle descriptor_set) const {
-        return (const DesciptorSet*)descriptor_sets.access_resource(descriptor_set.index);
+    const DescriptorSet* GpuDevice::access_descriptor_set(DescriptorSetHandle descriptor_set) const {
+        return (const DescriptorSet*)descriptor_sets.access_resource(descriptor_set.index);
     }
 
     RenderPass* GpuDevice::access_render_pass(RenderPassHandle render_pass) {
