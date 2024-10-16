@@ -194,8 +194,7 @@ namespace Helix {
 
             MeshInstance mesh_instance{};
             mesh_instance.mesh = mesh;
-            //mesh_instance.material_pass_index = mesh->is_double_sided() ? 1 : 2; // Setting the pass index for no_cull and cull
-            mesh_instance.material_pass_index = 1;
+            mesh_instance.material_pass_index = mesh->is_double_sided() ? 1 : 2; // Setting the pass index for no_cull and cull
 
             mesh_instances.push(mesh_instance);
         }
@@ -751,7 +750,7 @@ namespace Helix {
         node_matrix.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         Array<u32> node_stack;
-        node_stack.init(stack_allocator, 8);
+        node_stack.init(&MemoryService::instance()->system_allocator, 8);
 
         // Create the node resources
         Array<NodeHandle> node_handles;
@@ -919,6 +918,8 @@ namespace Helix {
             }
         }
 
+        
+
         qsort(meshes.data, meshes.size, sizeof(Mesh), gltf_mesh_material_compare);
         node_pool.get_root_node()->update_transform(&node_pool);
 
@@ -942,6 +943,10 @@ namespace Helix {
         if (texture != nullptr) {
             fullscreen_texture_index = texture->resource_info.texture.texture.index;
         }
+
+        //node_parents.shutdown();
+        //node_matrix.shutdown();
+        node_stack.shutdown();
     }
 
     void glTFScene::fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material) {

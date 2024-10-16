@@ -993,7 +993,7 @@ namespace Helix {
             info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         }
 
-        info.subresourceRange.levelCount = 1;
+        info.subresourceRange.levelCount = creation.mipmaps;
         info.subresourceRange.layerCount = 1;
         check(vkCreateImageView(gpu.vulkan_device, &info, gpu.vulkan_allocation_callbacks, &texture->vk_image_view));
 
@@ -1752,12 +1752,12 @@ namespace Helix {
         create_info.compareEnable = 0;
         create_info.unnormalizedCoordinates = 0;
         create_info.borderColor = VkBorderColor::VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+        create_info.minLod = 0;
+        create_info.maxLod = 16;
         // TODO:
         /*float                   mipLodBias;
         float                   maxAnisotropy;
         VkCompareOp             compareOp;
-        float                   minLod;
-        float                   maxLod;
         VkBorderColor           borderColor;
         VkBool32                unnormalizedCoordinates;*/
 

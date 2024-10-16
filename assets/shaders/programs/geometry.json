@@ -88,7 +88,7 @@
 		{
 			"name" : "gbuffer_cull",
 			"inherit_from" : "gbuffer_no_cull",
-			"cull" : "front"
+			"cull" : "back"
 		},
 		{
 			"name" : "transparent_no_cull",
@@ -159,7 +159,7 @@
 		{
 			"name" : "transparent_cull",
 			"inherit_from" : "transparent_no_cull",
-			"cull" : "front"
+			"cull" : "back"
 		}
 	]
 }
