@@ -220,12 +220,13 @@ int main(int argc, char** argv)
     glTFScene* scene = nullptr;
     scene = new glTFScene;
 
-    scene->load(gltf_file, gltf_base_path, allocator, &stack_allocator, &async_loader);
+    scene->init(&renderer, allocator, &frame_graph, &stack_allocator, &async_loader);
+    //scene->load(gltf_file, gltf_base_path, allocator, &stack_allocator, &async_loader);
 
     directory_change(cwd.path);
 
     scene->register_render_passes(&frame_graph);
-    scene->prepare_draws(&renderer, &stack_allocator);
+    //scene->prepare_draws(&renderer, &stack_allocator);
 
     directory_change(cwd.path);
 

@@ -3,6 +3,8 @@
 #include "Core/Memory.hpp"
 #include "Core/Assert.hpp"
 
+#include <type_traits>
+
 namespace Helix {
 
     // Data structures ////////////////////////////////////////////////////
@@ -19,6 +21,9 @@ namespace Helix {
 
         void                        push(const T& element);
         T&                          push_use();                 // Grow the size and return T to be filled.
+
+        template <typename U>
+        void                        push_array(Array<U>& array);
 
         void                        pop();
         void                        delete_swap(u32 index);
@@ -116,6 +121,22 @@ namespace Helix {
         ++size;
 
         return back();
+    }
+
+    template<typename T>
+    template<typename U>
+    inline void Array<T>::push_array(Array<U>& array) {
+        bool type_match = std::is_same<T, U>::value;
+        HASSERT_MSG(type_match, "Attempting to push an array with a different type");
+
+        if ((size + array.size) >= capacity) {
+            grow(size + array.size);
+        }
+
+        memcpy(&data[size], array.data, array.size * sizeof(T));
+
+        size = size + array.size;
+
     }
 
     template<typename T>

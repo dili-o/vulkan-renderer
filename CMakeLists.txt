@@ -23,7 +23,7 @@ file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp"
 # Create the shaders cache directory
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/cache")
 
-add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp")
+add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp" )
 
 find_package(Vulkan REQUIRED)
 
@@ -71,4 +71,5 @@ target_compile_definitions(HelixEngine PRIVATE
     VEXPORT
     _CRT_SECURE_NO_WARNINGS
     HELIX_SHADER_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/"
+    HELIX_TEXTURE_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/"
 )

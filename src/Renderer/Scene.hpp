@@ -221,6 +221,7 @@ namespace Helix {
     ///////////////////////////////////////////////
     struct Scene {
 
+        virtual void            init(Renderer* renderer, Allocator* resident_allocator, FrameGraph* frame_graph, StackAllocator* stack_allocator, AsynchronousLoader* async_loader) { };
         virtual void            load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) { };
         virtual void            free_gpu_resources(Renderer* renderer) { };
         virtual void            unload(Renderer* renderer) { };
@@ -237,10 +238,13 @@ namespace Helix {
     struct DepthPrePass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
+        void                init();
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                free_gpu_resources();
 
-        Array<MeshInstance> mesh_instances;
+        //Array<MeshInstance> mesh_instances{ };
+        u32                 mesh_count;
+        Mesh*               meshes;
         Renderer*           renderer;
     }; // struct DepthPrePass
 
@@ -249,11 +253,14 @@ namespace Helix {
     struct GBufferPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
+        void                init();
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                free_gpu_resources();
 
-        Array<MeshInstance> mesh_instances;
-        Renderer* renderer;
+        //Array<MeshInstance> mesh_instances;
+        u32                 mesh_count;
+        Mesh*               meshes;
+        Renderer*           renderer;
     }; // struct GBufferPass
 
     //
@@ -261,11 +268,12 @@ namespace Helix {
     struct LightPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
+        void                init();
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                fill_gpu_material_buffer();
         void                free_gpu_resources();
 
-        Mesh                mesh;
+        Mesh                mesh{ };
         Renderer*           renderer;
     }; // struct LightPass
 
@@ -274,11 +282,14 @@ namespace Helix {
     struct TransparentPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
+        void                init();
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                free_gpu_resources();
 
-        Array<MeshInstance> mesh_instances;
-        Renderer* renderer;
+        //Array<MeshInstance> mesh_instances;
+        u32                 mesh_count;
+        Mesh*               meshes;
+        Renderer*           renderer;
     }; // struct TransparentPass
 
     //
@@ -287,7 +298,8 @@ namespace Helix {
 
         void                    render(CommandBuffer* gpu_commands, Scene* render_scene) override;
 
-        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator);
+        void                    init();
+        void                    prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                    upload_materials() {};
         void                    free_gpu_resources();
 
@@ -299,6 +311,7 @@ namespace Helix {
 
     struct glTFScene : public Scene {
 
+        void                    init(Renderer* renderer, Allocator* resident_allocator, FrameGraph* frame_graph, StackAllocator* stack_allocator, AsynchronousLoader* async_loader) override;
         void                    load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) override;
         void                    free_gpu_resources(Renderer* renderer) override;
         void                    unload(Renderer* renderer) override;
@@ -321,12 +334,18 @@ namespace Helix {
 
         void                    imgui_draw_node_property(NodeHandle node_handle);
 
-        Array<Mesh>             meshes;
+        Array<Mesh>             opaque_meshes;
+        Array<Mesh>             transparent_meshes;
 
         // All graphics resources used by the scene
         Array<TextureResource>  images; // TODO: Maybe just store the pool index rather than the whole Texture resource
         Array<SamplerResource>  samplers;
         Array<BufferResource>   buffers;
+
+        u32                     current_images_count = 0;
+        u32                     current_buffers_count = 0;
+        u32                     current_samplers_count = 0;
+
 
         glTF::glTF              gltf_scene; // Source gltf scene
 
@@ -347,6 +366,12 @@ namespace Helix {
 
         Renderer*               renderer;
         FrameGraph*             frame_graph;
+        StackAllocator*         scratch_allocator;
+        Allocator*              main_allocator;
+        AsynchronousLoader*     loader;
+        Material*               pbr_material;
+        StringBuffer            names;
+
 
         BufferHandle            local_constants_buffer;
         Helix::BufferHandle     light_cb;

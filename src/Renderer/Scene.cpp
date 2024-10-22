@@ -46,10 +46,15 @@ namespace Helix {
         if (accessor_index != -1) {
             glTF::Accessor& buffer_accessor = scene.gltf_scene.accessors[accessor_index];
             glTF::BufferView& buffer_view = scene.gltf_scene.buffer_views[buffer_accessor.buffer_view];
-            BufferResource& buffer_gpu = scene.buffers[buffer_accessor.buffer_view];
+            BufferResource& buffer_gpu = scene.buffers[buffer_accessor.buffer_view + scene.current_buffers_count];
 
+            
             out_buffer_handle = buffer_gpu.handle;
             out_buffer_offset = buffer_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : buffer_accessor.byte_offset;
+        }
+        else {
+            // TODO: Right now if a glTF model doesn't have a vertex buffer we just bind the 0 index buffer
+            out_buffer_handle.index = 0;
         }
     }
 
@@ -91,12 +96,12 @@ namespace Helix {
         glTFScene* scene = (glTFScene*)render_scene;
 
         Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < mesh_instances.size; ++mesh_index) {
-            MeshInstance& mesh_instance = mesh_instances[mesh_index];
-            Mesh& mesh = *mesh_instance.mesh;
+        for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
+            //MeshInstance& mesh_instance = mesh_instances[mesh_index];
+            Mesh& mesh = meshes[mesh_index];
 
             if (mesh.pbr_material.material != last_material) {
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, mesh_instance.material_pass_index);
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 0);
 
                 gpu_commands->bind_pipeline(pipeline);
 
@@ -107,38 +112,36 @@ namespace Helix {
         }
     }
 
-    void DepthPrePass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
+    void DepthPrePass::init(){
+        renderer = nullptr;
+        //mesh_instances.size = 0;
+        meshes = nullptr;
+        mesh_count = 0;
+    }
+
+    void DepthPrePass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+        
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("depth_pre_pass");
         HASSERT(node);
 
-        const u64 hashed_name = hash_calculate("geometry");
-        Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
+        //const u64 hashed_name = hash_calculate("geometry");
+        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        glTF::glTF& gltf_scene = scene.gltf_scene;
+        //glTF::glTF& gltf_scene = scene.gltf_scene;
 
-        mesh_instances.init(resident_allocator, 16);
+        //mesh_instances.init(resident_allocator, 16);
 
         // Copy all mesh draws and change only material.
-        for (u32 i = 0; i < scene.meshes.size; ++i) {
-
-            Mesh* mesh = &scene.meshes[i];
-            if (mesh->is_transparent()) {
-                continue;
-            }
-
-            MeshInstance mesh_instance{};
-            mesh_instance.mesh = mesh;
-            mesh_instance.material_pass_index = 0;
-            mesh_instances.push(mesh_instance);
+        if (scene.opaque_meshes.size) {
+            meshes = &scene.opaque_meshes[0];
+            mesh_count = scene.opaque_meshes.size;
         }
     }
 
     void DepthPrePass::free_gpu_resources() {
-        GpuDevice& gpu = *renderer->gpu;
-
-        mesh_instances.shutdown();
+        //mesh_instances.shutdown();
     }
 
 
@@ -148,12 +151,14 @@ namespace Helix {
         glTFScene* scene = (glTFScene*)render_scene;
 
         Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < mesh_instances.size; ++mesh_index) {
-            MeshInstance& mesh_instance = mesh_instances[mesh_index];
-            Mesh& mesh = *mesh_instance.mesh;
+        for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
+            //MeshInstance& mesh_instance = mesh_instances[mesh_index];
+            Mesh& mesh = meshes[mesh_index];
 
             if (mesh.pbr_material.material != last_material) {
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, mesh_instance.material_pass_index);
+                // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
+                //       Make more configurable
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 2);
 
                 gpu_commands->bind_pipeline(pipeline);
 
@@ -164,41 +169,35 @@ namespace Helix {
         }
     }
 
-    void GBufferPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
+    void GBufferPass::init(){
+        renderer = nullptr;
+        //mesh_instances.size = 0;
+        mesh_count = 0;
+        meshes = nullptr;
+    }
+
+    void GBufferPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("gbuffer_pass");
         HASSERT(node);
 
-        const u64 hashed_name = hash_calculate("geometry");
-        Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
+        //const u64 hashed_name = hash_calculate("geometry");
+        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        glTF::glTF& gltf_scene = scene.gltf_scene;
+        //glTF::glTF& gltf_scene = scene.gltf_scene;
 
-        mesh_instances.init(resident_allocator, 16);
+        //mesh_instances.init(resident_allocator, 16);
 
         // Copy all mesh draws and change only material.
-        for (u32 i = 0; i < scene.meshes.size; ++i) {
-
-            // Skip transparent meshes
-            Mesh* mesh = &scene.meshes[i];
-            if (mesh->is_transparent()) {
-                continue;
-            }
-
-            MeshInstance mesh_instance{};
-            mesh_instance.mesh = mesh;
-            //mesh_instance.material_pass_index = mesh->is_double_sided() ? 1 : 2;
-            mesh_instance.material_pass_index = 1; // Setting the pass index for no_cull and cull
-
-            mesh_instances.push(mesh_instance);
+        if (scene.opaque_meshes.size) {
+            meshes = &scene.opaque_meshes[0];
+            mesh_count = scene.opaque_meshes.size;
         }
     }
 
     void GBufferPass::free_gpu_resources() {
-        GpuDevice& gpu = *renderer->gpu;
-
-        mesh_instances.shutdown();
+        //mesh_instances.shutdown();
     }
 
     //
@@ -206,16 +205,24 @@ namespace Helix {
     void LightPass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
         glTFScene* scene = (glTFScene*)render_scene;
 
-        PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 0);
+        if (renderer) {
+            PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 0);
 
-        gpu_commands->bind_pipeline(pipeline);
-        gpu_commands->bind_vertex_buffer(mesh.position_buffer, 0, 0);
-        gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
+            gpu_commands->bind_pipeline(pipeline);
+            gpu_commands->bind_vertex_buffer(mesh.position_buffer, 0, 0);
+            gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
 
-        gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
+            gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
+        }
     }
 
-    void LightPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
+    void LightPass::init(){
+        renderer = nullptr;
+    }
+
+    void LightPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+        if (renderer)
+            return;
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("lighting_pass");
@@ -255,20 +262,23 @@ namespace Helix {
 
     void LightPass::fill_gpu_material_buffer() {
 
-        MapBufferParameters cb_map = { mesh.pbr_material.material_buffer, 0, 0 };
-        GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(cb_map);
-        if (mesh_data) {
-            copy_gpu_material_data(*mesh_data, mesh);
-
-            renderer->gpu->unmap_buffer(cb_map);
+        if(renderer){
+            MapBufferParameters cb_map = { mesh.pbr_material.material_buffer, 0, 0 };
+            GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(cb_map);
+            if (mesh_data) {
+                copy_gpu_material_data(*mesh_data, mesh);
+                renderer->gpu->unmap_buffer(cb_map);
+            }
         }
     }
 
     void LightPass::free_gpu_resources() {
-        GpuDevice& gpu = *renderer->gpu;
+        if(renderer){
+            GpuDevice& gpu = *renderer->gpu;
 
-        gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-        gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
+            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
+        }
     }
 
     //
@@ -277,12 +287,14 @@ namespace Helix {
         glTFScene* scene = (glTFScene*)render_scene;
 
         Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < mesh_instances.size; ++mesh_index) {
-            MeshInstance& mesh_instance = mesh_instances[mesh_index];
-            Mesh& mesh = *mesh_instance.mesh;
+        for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
+            //MeshInstance& mesh_instance = mesh_instances[mesh_index];
+            Mesh& mesh = meshes[mesh_index];
 
             if (mesh.pbr_material.material != last_material) {
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, mesh_instance.material_pass_index);
+                // TODO: Right now all transparent objects are drawn using the 4th pipeline in the program.
+                //       Make more configurable
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 3);
 
                 gpu_commands->bind_pipeline(pipeline);
 
@@ -293,45 +305,38 @@ namespace Helix {
         }
     }
 
-    void TransparentPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
+    void TransparentPass::init(){
+        renderer = nullptr;
+        meshes = nullptr;
+        mesh_count = 0;
+    }
+
+    void TransparentPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("transparent_pass");
         HASSERT(node);
 
-
         // Create pipeline state
-        PipelineCreation pipeline_creation;
+        //PipelineCreation pipeline_creation;
 
-        const u64 hashed_name = hash_calculate("geometry");
-        Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
+        //const u64 hashed_name = hash_calculate("geometry");
+        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        glTF::glTF& gltf_scene = scene.gltf_scene;
+        //glTF::glTF& gltf_scene = scene.gltf_scene;
 
-        mesh_instances.init(resident_allocator, 16);
+        //mesh_instances.init(resident_allocator, 16);
 
         // Copy all mesh draws and change only material.
-        for (u32 i = 0; i < scene.meshes.size; ++i) {
 
-            // Skip opaque meshes
-            Mesh* mesh = &scene.meshes[i];
-            if (!mesh->is_transparent()) {
-                continue;
-            }
-
-            MeshInstance mesh_instance{};
-            mesh_instance.mesh = mesh;
-            //mesh_instance.material_pass_index = mesh->is_double_sided() ? 3 : 4; // Setting the pass index for cull and no_cull
-            mesh_instance.material_pass_index = 3;
-
-            mesh_instances.push(mesh_instance);
+        if(scene.transparent_meshes.size){
+            meshes = &scene.transparent_meshes[0];
+            mesh_count = scene.transparent_meshes.size;
         }
     }
 
     void TransparentPass::free_gpu_resources() {
-        GpuDevice& gpu = *renderer->gpu;
-
-        mesh_instances.shutdown();
+        //mesh_instances.shutdown();
     }
 
     cstring node_type_to_cstring(NodeType type) {
@@ -362,7 +367,13 @@ namespace Helix {
         gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
     }
 
-    void LightDebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* stack_allocator) {
+    void LightDebugPass::init(){
+        renderer = nullptr;
+    }
+
+    void LightDebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+        if (renderer)
+            return;
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("light_debug_pass");
@@ -434,10 +445,90 @@ namespace Helix {
 
     // gltfScene //////////////////////////////////////////////////
 
+    void glTFScene::init(Renderer* _renderer, Allocator* resident_allocator, FrameGraph* _frame_graph, StackAllocator* stack_allocator, AsynchronousLoader* async_loader){
+        u32 k_num_meshes = 200;
+        renderer = _renderer;
+        frame_graph = _frame_graph;
+        scratch_allocator = stack_allocator;
+        main_allocator = resident_allocator;
+        loader = async_loader;
+
+        transparent_meshes.init(resident_allocator, k_num_meshes);
+        opaque_meshes.init(resident_allocator, k_num_meshes);
+
+        node_pool.init(resident_allocator);
+
+        images.init(resident_allocator, k_num_meshes);
+        samplers.init(resident_allocator, 1);
+        buffers.init(resident_allocator, k_num_meshes);
+
+        // Create material
+        u64 hashed_name = hash_calculate("geometry");
+        Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
+
+        MaterialCreation material_creation;
+        material_creation.set_name("material_no_cull_opaque").set_program(geometry_program).set_render_index(0);
+
+        pbr_material = renderer->create_material(material_creation);
+
+        names.init(4024, main_allocator);
+
+        local_constants_buffer = k_invalid_buffer;
+
+        // Creating the light image
+        stbi_set_flip_vertically_on_load(true);
+        TextureResource* tr = renderer->create_texture("Light", HELIX_TEXTURE_FOLDER"lights/point_light.png", true);
+        stbi_set_flip_vertically_on_load(false);
+        HASSERT(tr != nullptr);
+        light_texture = *tr;
+
+        hashed_name = hash_calculate("light_debug");
+        Program* light_program = renderer->resource_cache.programs.get(hashed_name);
+
+        light_pipeline = light_program->passes[0].pipeline;
+
+        BufferCreation buffer_creation;
+        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
+        light_cb = renderer->gpu->create_buffer(buffer_creation);
+
+        NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
+
+        LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
+        light_node->name = "Point Light";
+        light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
+        light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
+        light_node->world_transform.translation.y = 1.0f;
+
+        node_pool.get_root_node()->add_child(light_node);
+
+        // Constant buffer
+        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(UniformData)).set_name("local_constants_buffer");
+        local_constants_buffer = renderer->gpu->create_buffer(buffer_creation);
+
+
+        depth_pre_pass.init();
+        gbuffer_pass.init();
+        transparent_pass.init();
+        light_pass.init();
+        light_debug_pass.init();
+
+        fullscreen_program = renderer->resource_cache.programs.get(hash_calculate("fullscreen"));
+
+        DescriptorSetCreation dsc;
+        DescriptorSetLayoutHandle descriptor_set_layout = renderer->gpu->get_descriptor_set_layout(fullscreen_program->passes[0].pipeline, k_material_descriptor_set_index);
+        dsc.reset().buffer(local_constants_buffer, 0).set_layout(descriptor_set_layout);
+        fullscreen_ds = renderer->gpu->create_descriptor_set(dsc);
+
+        FrameGraphResource* texture = frame_graph->get_resource("final");
+        if (texture != nullptr) {
+            fullscreen_texture_index = texture->resource_info.texture.texture.index;
+        }
+    }
+
     void glTFScene::load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) {
 
 
-        renderer = async_loader->renderer;
+        //renderer = async_loader->renderer;
         sizet temp_allocator_initial_marker = temp_allocator->get_marker();
 
         // Time statistics
@@ -447,14 +538,17 @@ namespace Helix {
 
         i64 end_loading_file = Time::now();
 
-        node_pool.init(resident_allocator);
+        //node_pool.init(resident_allocator);
 
 
         // Load all textures
-        images.init(resident_allocator, gltf_scene.images_count);
+        //images.init(resident_allocator, gltf_scene.images_count);
 
         StringBuffer name_buffer;
         name_buffer.init(hkilo(100), temp_allocator);
+
+        Array<FileLoadRequest> texture_requests;
+        texture_requests.init(resident_allocator, gltf_scene.images_count, gltf_scene.images_count); // TODO: Maybe use stack allocator;
 
         for (u32 image_index = 0; image_index < gltf_scene.images_count; ++image_index) {
             glTF::Image& image = gltf_scene.images[image_index];
@@ -485,22 +579,31 @@ namespace Helix {
 
             // Reconstruct file path
             char* full_filename = name_buffer.append_use_f("%s%s", path, image.uri.data);
-            async_loader->request_texture_data(full_filename, tr->handle);
+
+            FileLoadRequest& request = texture_requests[image_index];
+            request.texture = tr->handle;
+            strcpy(request.path, full_filename);
+
+            //async_loader->request_texture_data(full_filename, tr->handle);
             // Reset name buffer
             name_buffer.clear();
         }
+
+        async_loader->file_load_requests.push_array(texture_requests);
+
+        texture_requests.shutdown();
 
         i64 end_loading_textures_files = Time::now();
 
         i64 end_creating_textures = Time::now();
 
         // Load all samplers
-        samplers.init(resident_allocator, gltf_scene.samplers_count);
+        //samplers.init(resident_allocator, gltf_scene.samplers_count);
 
         for (u32 sampler_index = 0; sampler_index < gltf_scene.samplers_count; ++sampler_index) {
             glTF::Sampler& sampler = gltf_scene.samplers[sampler_index];
 
-            char* sampler_name = renderer->resource_name_buffer.append_use_f("sampler_%u", sampler_index);
+            char* sampler_name = renderer->resource_name_buffer.append_use_f("sampler_%u", sampler_index + current_samplers_count);
 
             SamplerCreation creation;
             switch (sampler.min_filter) {
@@ -584,7 +687,7 @@ namespace Helix {
         i64 end_reading_buffers_data = Time::now();
 
         // Load all buffers and initialize them with buffer data
-        buffers.init(resident_allocator, gltf_scene.buffer_views_count);
+        //buffers.init(resident_allocator, gltf_scene.buffer_views_count);
 
         for (u32 buffer_index = 0; buffer_index < gltf_scene.buffer_views_count; ++buffer_index) {
             glTF::BufferView& buffer = gltf_scene.buffer_views[buffer_index];
@@ -604,7 +707,7 @@ namespace Helix {
                 //buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
             }
             // TODO: Identify resources (buffers in this case) that have the same name
-            buffer_name = renderer->resource_name_buffer.append_use_f("buffer_%u", buffer_index);
+            buffer_name = renderer->resource_name_buffer.append_use_f("buffer_%u", buffer_index + current_buffers_count);
             BufferResource* br = renderer->create_buffer(flags, ResourceUsageType::Immutable, buffer.byte_length, buffer_data, buffer_name);
             HASSERT(br != nullptr);
 
@@ -625,7 +728,7 @@ namespace Helix {
         // TODO: Right now mesh node has a reference to the data in meshes, This data changes because
         //       its in an array.
         //       Figure out how to make it so when meshes "grows" this does not affect MeshNode.
-        meshes.init(resident_allocator, 200);
+        //meshes.init(resident_allocator, 200);
 
         i64 end_loading = Time::now();
 
@@ -638,8 +741,14 @@ namespace Helix {
     void glTFScene::free_gpu_resources(Renderer* renderer) {
         GpuDevice& gpu = *renderer->gpu;
 
-        for (u32 mesh_index = 0; mesh_index < meshes.size; ++mesh_index) {
-            Mesh& mesh = meshes[mesh_index];
+        for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
+            Mesh& mesh = transparent_meshes[mesh_index];
+            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+            // TODO: Destroy the images.
+            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
+        }
+        for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
+            Mesh& mesh = opaque_meshes[mesh_index];
             gpu.destroy_buffer(mesh.pbr_material.material_buffer);
             // TODO: Destroy the images.
             gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
@@ -653,7 +762,9 @@ namespace Helix {
 
         gpu.destroy_descriptor_set(fullscreen_ds);
 
-        meshes.shutdown();
+        transparent_meshes.shutdown();
+        opaque_meshes.shutdown();
+        //meshes.shutdown();
     }
 
     void glTFScene::unload(Renderer* renderer) {
@@ -667,9 +778,12 @@ namespace Helix {
         images.shutdown();
         buffers.shutdown();
 
+
         // NOTE(marco): we can't destroy this sooner as textures and buffers
         // hold a pointer to the names stored here
         gltf_free(gltf_scene);
+
+        names.shutdown();
     }
 
     void glTFScene::register_render_passes(FrameGraph* frame_graph_) {
@@ -680,53 +794,16 @@ namespace Helix {
         frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
         frame_graph->builder->register_render_pass("transparent_pass", &transparent_pass);
         frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
+
+        light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
 
         sizet cached_scratch_size = stack_allocator->get_marker();
 
-        {
-            // Creating the light image
-            directory_change("D:/HelixEngine/Engine/assets/textures/lights");
-            stbi_set_flip_vertically_on_load(true);
-            TextureResource* tr = renderer->create_texture("Light", "point_light.png", true);
-            stbi_set_flip_vertically_on_load(false);
-            HASSERT(tr != nullptr);
-            light_texture = *tr;
-
-            const u64 hashed_name = hash_calculate("light_debug");
-            Program* light_program = renderer->resource_cache.programs.get(hashed_name);
-
-            light_pipeline = light_program->passes[0].pipeline;
-
-            BufferCreation buffer_creation;
-            buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
-            light_cb = renderer->gpu->create_buffer(buffer_creation);
-
-            NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
-
-            LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
-            light_node->name = "Point Light";
-            light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
-            light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
-            light_node->world_transform.translation.y = 1.0f;
-
-            node_pool.get_root_node()->add_child(light_node);
-        }
-        // Constant buffer
-        BufferCreation buffer_creation;
-        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(UniformData)).set_name("local_constants_buffer");
-        local_constants_buffer = renderer->gpu->create_buffer(buffer_creation);
-
-        // Create material
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
-
-        MaterialCreation material_creation;
-        material_creation.set_name("material_no_cull_opaque").set_program(geometry_program).set_render_index(0);
-
-        Material* pbr_material = renderer->create_material(material_creation);
 
         glTF::Scene& root_gltf_scene = gltf_scene.scenes[gltf_scene.scene];
 
@@ -803,7 +880,10 @@ namespace Helix {
             node_matrix[node_index] = local_matrix;
 
             Node* base_node = (Node*)node_pool.access_node(node_handles[node_index]);
-            base_node->name = node.name.data ? node.name.data : "Node";
+
+            cstring node_name = names.append_use_f("%s%d", "Node_", node_handles[node_index].index);
+
+            base_node->name = node.name.data ? node.name.data : node_name;
             base_node->local_transform = local_transform;
             
             i32 node_parent = node_parents[node_index];
@@ -860,7 +940,7 @@ namespace Helix {
                 mesh.index_type = (indices_accessor.component_type == glTF::Accessor::ComponentType::UNSIGNED_SHORT) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
 
                 glTF::BufferView& indices_buffer_view = gltf_scene.buffer_views[indices_accessor.buffer_view];
-                BufferResource& indices_buffer_gpu = buffers[indices_accessor.buffer_view];
+                BufferResource& indices_buffer_gpu = buffers[indices_accessor.buffer_view + current_buffers_count];
                 mesh.index_buffer = indices_buffer_gpu.handle;
                 mesh.index_offset = indices_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : indices_accessor.byte_offset;
                 mesh.primitive_count = indices_accessor.count;
@@ -898,39 +978,39 @@ namespace Helix {
                 base_node->children.push(mesh_handle);
 
                 mesh.node_index = mesh_handle.index;
-                //mesh.model = base_node->world_transform.calculate_matrix();
 
-                meshes.push(mesh);
-                mesh_node_primitive->mesh = &meshes[meshes.size - 1];
+                if (mesh.is_transparent()) {
+                    transparent_meshes.push(mesh);
+                    mesh_node_primitive->mesh = &transparent_meshes[transparent_meshes.size - 1];
+                }
+                else {
+                    opaque_meshes.push(mesh);
+                    mesh_node_primitive->mesh = &opaque_meshes[opaque_meshes.size - 1];
+                }
+
+                //meshes.push(mesh);
+                //mesh_node_primitive->mesh = &meshes[meshes.size - 1];
 
             }
         }
 
-        
+        current_images_count += gltf_scene.images_count;
+        current_buffers_count += gltf_scene.buffer_views_count;
+        current_samplers_count += gltf_scene.samplers_count;
 
-        qsort(meshes.data, meshes.size, sizeof(Mesh), gltf_mesh_material_compare);
+        //qsort(meshes.data, meshes.size, sizeof(Mesh), gltf_mesh_material_compare);
         node_pool.get_root_node()->update_transform(&node_pool);
 
         stack_allocator->free_marker(cached_scratch_size);
 
-        depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
-        gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
-        light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
-        transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
-        light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator, stack_allocator);
+        depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        //light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
 
         // Handle fullscreen pass.
-        fullscreen_program = renderer->resource_cache.programs.get(hash_calculate("fullscreen"));
-
-        DescriptorSetCreation dsc;
-        DescriptorSetLayoutHandle descriptor_set_layout = renderer->gpu->get_descriptor_set_layout(fullscreen_program->passes[0].pipeline, k_material_descriptor_set_index);
-        dsc.reset().buffer(local_constants_buffer, 0).set_layout(descriptor_set_layout);
-        fullscreen_ds = renderer->gpu->create_descriptor_set(dsc);
-
-        FrameGraphResource* texture = frame_graph->get_resource("final");
-        if (texture != nullptr) {
-            fullscreen_texture_index = texture->resource_info.texture.texture.index;
-        }
+        
 
         //node_parents.shutdown();
         //node_matrix.shutdown();
@@ -985,8 +1065,8 @@ namespace Helix {
     u16 glTFScene::get_material_texture(GpuDevice& gpu, glTF::TextureInfo* texture_info) {
         if (texture_info != nullptr) {
             glTF::Texture& gltf_texture = gltf_scene.textures[texture_info->index];
-            TextureResource& texture_gpu = images[gltf_texture.source];
-            SamplerResource& sampler_gpu = samplers[gltf_texture.sampler];
+            TextureResource& texture_gpu = images[gltf_texture.source + current_images_count];
+            SamplerResource& sampler_gpu = samplers[gltf_texture.sampler + current_samplers_count];
 
             gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu.handle);
 
@@ -1000,8 +1080,8 @@ namespace Helix {
     u16 glTFScene::get_material_texture(GpuDevice& gpu, i32 gltf_texture_index) {
         if (gltf_texture_index >= 0) {
             glTF::Texture& gltf_texture = gltf_scene.textures[gltf_texture_index];
-            TextureResource& texture_gpu = images[gltf_texture.source];
-            SamplerResource& sampler_gpu = samplers[gltf_texture.sampler];
+            TextureResource& texture_gpu = images[gltf_texture.source + current_images_count];
+            SamplerResource& sampler_gpu = samplers[gltf_texture.sampler + current_samplers_count];
 
             gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu.handle);
 
@@ -1014,8 +1094,20 @@ namespace Helix {
 
     void glTFScene::fill_gpu_material_buffer(float model_scale) {
         // Update per mesh material buffer
-        for (u32 mesh_index = 0; mesh_index < meshes.size; ++mesh_index) {
-            Mesh& mesh = meshes[mesh_index];
+        for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
+            Mesh& mesh = opaque_meshes[mesh_index];
+
+            MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
+            GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(material_buffer_map);
+            if (mesh_data) {
+                copy_gpu_material_data(*mesh_data, mesh);
+                copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
+
+                renderer->gpu->unmap_buffer(material_buffer_map);
+            }
+        }
+        for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
+            Mesh& mesh = transparent_meshes[mesh_index];
 
             MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
             GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(material_buffer_map);
@@ -1142,6 +1234,32 @@ namespace Helix {
 
     void glTFScene::imgui_draw_hierarchy() {
         if (ImGui::Begin("Scene Hierarchy")) {
+            ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+            if (ImGui::Button("Add GLTF model", { viewportPanelSize.x, 30 })) {
+                char* file_path = nullptr;
+                char* filename = nullptr;
+                if (file_open_dialog(file_path, filename)) {
+                    HDEBUG("Found file!, {}, Oath: {}", filename, file_path);
+
+                    Directory cwd{};
+                    directory_current(&cwd);
+
+                    directory_change(file_path);
+
+                    load(filename, file_path, main_allocator, scratch_allocator, loader);
+
+                    directory_change(cwd.path);
+
+                    prepare_draws(renderer, scratch_allocator);
+
+                    //gltf_free(gltf_scene);
+
+                    directory_change(cwd.path);
+
+                    delete[] filename, file_path;
+                }
+            }
+
             imgui_draw_node(node_pool.root_node);
             ImGui::End();
         }

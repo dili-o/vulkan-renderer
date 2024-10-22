@@ -54,6 +54,8 @@ namespace Helix {
     sizet                           file_write(uint8_t* memory, u32 element_size, u32 count, FileHandle file);
     bool                            file_delete(cstring path);
 
+    bool                            file_open_dialog(char*& file_path, char*& filename);
+
 #if defined(_WIN64)
     FileTime                        file_last_write_time(cstring filename);
 #endif

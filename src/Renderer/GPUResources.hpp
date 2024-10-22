@@ -29,7 +29,7 @@ namespace Helix {
     typedef u32                         ResourceHandle;
 
     struct BufferHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = k_invalid_index;
     }; // struct BufferHandle
 
     struct TextureHandle {

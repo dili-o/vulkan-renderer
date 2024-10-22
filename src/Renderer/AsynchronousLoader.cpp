@@ -180,7 +180,7 @@ namespace Helix
 
         // Process a file request
         if (file_load_requests.size) {
-            FileLoadRequest load_request = file_load_requests.back();
+            FileLoadRequest& load_request = file_load_requests.back();
             file_load_requests.pop();
 
             i64 start_reading_file = Time::now();
