@@ -67,6 +67,20 @@ namespace Helix {
         return 0;
     }
 
+    int gltf_mesh_doublesided_compare(const void* a, const void* b) {
+        const Mesh* mesh_a = static_cast<const Mesh*>(a);
+        const Mesh* mesh_b = static_cast<const Mesh*>(b);
+
+        // Sort double-sided meshes first.
+        if (mesh_a->is_double_sided() && !mesh_b->is_double_sided()) {
+            return -1;  // meshA comes before meshB
+        }
+        if (!mesh_a->is_double_sided() && mesh_b->is_double_sided()) {
+            return 1;   // meshB comes before meshA
+        }
+        return 0; // both are the same (both double-sided or both not double-sided)
+    }
+
     static void copy_gpu_material_data(GPUMeshData& gpu_mesh_data, const Mesh& mesh) {
         gpu_mesh_data.textures[0] = mesh.pbr_material.diffuse_texture_index;
         gpu_mesh_data.textures[1] = mesh.pbr_material.roughness_texture_index;
@@ -151,10 +165,24 @@ namespace Helix {
         glTFScene* scene = (glTFScene*)render_scene;
 
         Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
-            //MeshInstance& mesh_instance = mesh_instances[mesh_index];
+        for (u32 mesh_index = 0; mesh_index < double_sided_mesh_count; ++mesh_index) {
             Mesh& mesh = meshes[mesh_index];
+            bool db = mesh.is_double_sided();
+            if (mesh.pbr_material.material != last_material) {
+                // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
+                //       Make more configurable
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 1);
 
+                gpu_commands->bind_pipeline(pipeline);
+
+                last_material = mesh.pbr_material.material;
+            }
+
+            scene->draw_mesh(gpu_commands, mesh);
+        }
+        for (u32 mesh_index = double_sided_mesh_count; mesh_index < mesh_count; ++mesh_index) {
+            Mesh& mesh = meshes[mesh_index];
+            bool db = mesh.is_double_sided();
             if (mesh.pbr_material.material != last_material) {
                 // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
                 //       Make more configurable
@@ -171,7 +199,7 @@ namespace Helix {
 
     void GBufferPass::init(){
         renderer = nullptr;
-        //mesh_instances.size = 0;
+        double_sided_mesh_count = 0;
         mesh_count = 0;
         meshes = nullptr;
     }
@@ -182,14 +210,6 @@ namespace Helix {
         FrameGraphNode* node = frame_graph->get_node("gbuffer_pass");
         HASSERT(node);
 
-        //const u64 hashed_name = hash_calculate("geometry");
-        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
-
-        //glTF::glTF& gltf_scene = scene.gltf_scene;
-
-        //mesh_instances.init(resident_allocator, 16);
-
-        // Copy all mesh draws and change only material.
         if (scene.opaque_meshes.size) {
             meshes = &scene.opaque_meshes[0];
             mesh_count = scene.opaque_meshes.size;
@@ -287,12 +307,27 @@ namespace Helix {
         glTFScene* scene = (glTFScene*)render_scene;
 
         Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
+        for (u32 mesh_index = 0; mesh_index < double_sided_mesh_count; ++mesh_index) {
             //MeshInstance& mesh_instance = mesh_instances[mesh_index];
             Mesh& mesh = meshes[mesh_index];
 
             if (mesh.pbr_material.material != last_material) {
                 // TODO: Right now all transparent objects are drawn using the 4th pipeline in the program.
+                //       Make more configurable
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 4);
+
+                gpu_commands->bind_pipeline(pipeline);
+
+                last_material = mesh.pbr_material.material;
+            }
+
+            scene->draw_mesh(gpu_commands, mesh);
+        }
+        for (u32 mesh_index = double_sided_mesh_count; mesh_index < mesh_count; ++mesh_index) {
+            Mesh& mesh = meshes[mesh_index];
+
+            if (mesh.pbr_material.material != last_material) {
+                // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
                 //       Make more configurable
                 PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 3);
 
@@ -303,10 +338,12 @@ namespace Helix {
 
             scene->draw_mesh(gpu_commands, mesh);
         }
+
     }
 
     void TransparentPass::init(){
         renderer = nullptr;
+        double_sided_mesh_count = 0;
         meshes = nullptr;
         mesh_count = 0;
     }
@@ -835,6 +872,9 @@ namespace Helix {
             node_pool.get_root_node()->add_child(node);
         }
 
+        u32 num_double_sided_meshes_t = 0; // Transparent meshes
+        u32 num_double_sided_meshes = 0;
+
         while (node_stack.size) {
             u32 node_index = node_stack.back();
             node_stack.pop();
@@ -982,15 +1022,15 @@ namespace Helix {
                 if (mesh.is_transparent()) {
                     transparent_meshes.push(mesh);
                     mesh_node_primitive->mesh = &transparent_meshes[transparent_meshes.size - 1];
+                    if (mesh.is_double_sided())
+                        num_double_sided_meshes_t++;
                 }
                 else {
                     opaque_meshes.push(mesh);
                     mesh_node_primitive->mesh = &opaque_meshes[opaque_meshes.size - 1];
+                    if (mesh.is_double_sided())
+                        num_double_sided_meshes++;
                 }
-
-                //meshes.push(mesh);
-                //mesh_node_primitive->mesh = &meshes[meshes.size - 1];
-
             }
         }
 
@@ -998,7 +1038,9 @@ namespace Helix {
         current_buffers_count += gltf_scene.buffer_views_count;
         current_samplers_count += gltf_scene.samplers_count;
 
-        //qsort(meshes.data, meshes.size, sizeof(Mesh), gltf_mesh_material_compare);
+
+        qsort(transparent_meshes.data, transparent_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
+        qsort(opaque_meshes.data, opaque_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
         node_pool.get_root_node()->update_transform(&node_pool);
 
         stack_allocator->free_marker(cached_scratch_size);
@@ -1007,13 +1049,10 @@ namespace Helix {
         gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
-        //light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
 
-        // Handle fullscreen pass.
-        
+        transparent_pass.double_sided_mesh_count += num_double_sided_meshes_t;
+        gbuffer_pass.double_sided_mesh_count += num_double_sided_meshes;
 
-        //node_parents.shutdown();
-        //node_matrix.shutdown();
         node_stack.shutdown();
     }
 

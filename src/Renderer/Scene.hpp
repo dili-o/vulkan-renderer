@@ -257,7 +257,7 @@ namespace Helix {
         void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                free_gpu_resources();
 
-        //Array<MeshInstance> mesh_instances;
+        u32                 double_sided_mesh_count;
         u32                 mesh_count;
         Mesh*               meshes;
         Renderer*           renderer;
@@ -286,7 +286,7 @@ namespace Helix {
         void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                free_gpu_resources();
 
-        //Array<MeshInstance> mesh_instances;
+        u32                 double_sided_mesh_count;
         u32                 mesh_count;
         Mesh*               meshes;
         Renderer*           renderer;
