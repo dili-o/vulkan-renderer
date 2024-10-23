@@ -328,6 +328,10 @@ namespace Helix {
 
         VmaAllocator                    vma_allocator;
 
+        // Extension functions
+        PFN_vkCmdBeginRenderingKHR      cmd_begin_rendering;
+        PFN_vkCmdEndRenderingKHR        cmd_end_rendering;
+
         // These are dynamic - so that workload can be handled correctly.
         Array<ResourceUpdate>           resource_deletion_queue;
         Array<DescriptorSetUpdate>      descriptor_set_updates;
@@ -337,6 +341,7 @@ namespace Helix {
         f32                             gpu_timestamp_frequency;
         bool                            gpu_timestamp_reset = true;
         bool                            debug_utils_extension_present = false;
+        bool                            dynamic_rendering_extension_present = false;
 
         char                            vulkan_binaries_path[512];
 

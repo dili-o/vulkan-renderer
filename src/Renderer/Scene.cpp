@@ -1105,9 +1105,13 @@ namespace Helix {
         if (texture_info != nullptr) {
             glTF::Texture& gltf_texture = gltf_scene.textures[texture_info->index];
             TextureResource& texture_gpu = images[gltf_texture.source + current_images_count];
-            SamplerResource& sampler_gpu = samplers[gltf_texture.sampler + current_samplers_count];
+            SamplerHandle sampler_gpu{};
+            sampler_gpu = gpu.default_sampler;
+            if (gltf_texture.sampler != 2147483647) {
+                sampler_gpu = samplers[gltf_texture.sampler + current_samplers_count].handle;
+            }
 
-            gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu.handle);
+            gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu);
 
             return texture_gpu.handle.index;
         }
@@ -1120,9 +1124,13 @@ namespace Helix {
         if (gltf_texture_index >= 0) {
             glTF::Texture& gltf_texture = gltf_scene.textures[gltf_texture_index];
             TextureResource& texture_gpu = images[gltf_texture.source + current_images_count];
-            SamplerResource& sampler_gpu = samplers[gltf_texture.sampler + current_samplers_count];
+            SamplerHandle sampler_gpu{};
+            sampler_gpu = gpu.default_sampler;
+            if (gltf_texture.sampler != 2147483647) {
+                sampler_gpu = samplers[gltf_texture.sampler + current_samplers_count].handle;
+            }
 
-            gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu.handle);
+            gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu);
 
             return texture_gpu.handle.index;
         }

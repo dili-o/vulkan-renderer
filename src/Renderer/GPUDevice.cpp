@@ -195,7 +195,7 @@ namespace Helix {
         VkResult result;
         vulkan_allocation_callbacks = nullptr;
 
-        VkApplicationInfo application_info = { VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr, "Helix Graphics Device", 1, "Helix", 1, VK_MAKE_VERSION(1, 2, 0) };
+        VkApplicationInfo application_info = { VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr, "Helix Graphics Device", 1, "Helix", 1, VK_MAKE_VERSION(1, 3, 0) };
 
         VkInstanceCreateInfo create_info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, nullptr, 0, &application_info,
     #if defined(VULKAN_DEBUG_REPORT)
@@ -227,12 +227,15 @@ namespace Helix {
         swapchain_width = creation.width;
         swapchain_height = creation.height;
 
+        StackAllocator* temp_allocator = creation.temporary_allocator;
+        sizet initial_temp_allocator_marker = temp_allocator->get_marker();
+
         //// Choose extensions
 #ifdef VULKAN_DEBUG_REPORT
         {
             u32 num_instance_extensions;
             vkEnumerateInstanceExtensionProperties(nullptr, &num_instance_extensions, nullptr);
-            VkExtensionProperties* extensions = (VkExtensionProperties*)halloca(sizeof(VkExtensionProperties) * num_instance_extensions, allocator);
+            VkExtensionProperties* extensions = (VkExtensionProperties*)halloca(sizeof(VkExtensionProperties) * num_instance_extensions, temp_allocator);
             vkEnumerateInstanceExtensionProperties(nullptr, &num_instance_extensions, extensions);
             for (size_t i = 0; i < num_instance_extensions; i++) {
 
@@ -241,8 +244,6 @@ namespace Helix {
                     break;
                 }
             }
-
-            hfree(extensions, allocator);
 
             if (!debug_utils_extension_present) {
                 HERROR("Extension {} for debugging non present.", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -262,7 +263,7 @@ namespace Helix {
         result = vkEnumeratePhysicalDevices(vulkan_instance, &num_physical_device, NULL);
         check(result);
 
-        VkPhysicalDevice* gpus = (VkPhysicalDevice*)halloca(sizeof(VkPhysicalDevice) * num_physical_device, allocator);
+        VkPhysicalDevice* gpus = (VkPhysicalDevice*)halloca(sizeof(VkPhysicalDevice) * num_physical_device, temp_allocator);
         result = vkEnumeratePhysicalDevices(vulkan_instance, &num_physical_device, gpus);
         check(result);
 
@@ -312,7 +313,25 @@ namespace Helix {
             return;
         }
 
-        hfree(gpus, allocator);
+        temp_allocator->free_marker(initial_temp_allocator_marker);
+
+        {
+            initial_temp_allocator_marker = temp_allocator->get_marker();
+
+            u32 device_extension_count = 0;
+            vkEnumerateDeviceExtensionProperties(vulkan_physical_device, nullptr, &device_extension_count, nullptr);
+            VkExtensionProperties* extensions = (VkExtensionProperties*)halloca(sizeof(VkExtensionProperties) * device_extension_count, temp_allocator);
+            vkEnumerateDeviceExtensionProperties(vulkan_physical_device, nullptr, &device_extension_count, extensions);
+            for (size_t i = 0; i < device_extension_count; i++) {
+
+                if (!strcmp(extensions[i].extensionName, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)) {
+                    dynamic_rendering_extension_present = true;
+                    continue;
+                }
+            }
+
+            temp_allocator->free_marker(initial_temp_allocator_marker);
+        }
 
         vkGetPhysicalDeviceProperties(vulkan_physical_device, &vulkan_physical_properties);
         gpu_timestamp_frequency = vulkan_physical_properties.limits.timestampPeriod / (1000 * 1000);
@@ -335,7 +354,7 @@ namespace Helix {
         u32 queue_family_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(vulkan_physical_device, &queue_family_count, nullptr);
 
-        VkQueueFamilyProperties* queue_families = (VkQueueFamilyProperties*)halloca(sizeof(VkQueueFamilyProperties) * queue_family_count, allocator);
+        VkQueueFamilyProperties* queue_families = (VkQueueFamilyProperties*)halloca(sizeof(VkQueueFamilyProperties) * queue_family_count, temp_allocator);
         vkGetPhysicalDeviceQueueFamilyProperties(vulkan_physical_device, &queue_family_count, queue_families);
 
         u32 main_queue_index = u32_max, transfer_queue_index = u32_max, compute_queue_index = u32_max, present_queue_index = u32_max;
@@ -363,8 +382,14 @@ namespace Helix {
         vulkan_main_queue_family = main_queue_index;
         vulkan_transfer_queue_family = transfer_queue_index;
 
-        u32 device_extension_count = 1;
-        cstring device_extensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+        Array<const char*> device_extensions;
+        device_extensions.init(allocator, 2);
+        device_extensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+
+        if (dynamic_rendering_extension_present) {
+            device_extensions.push(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        }
+
         const float queue_priority[] = { 1.0f };
         VkDeviceQueueCreateInfo queue_info[2] = {};
 
@@ -384,7 +409,18 @@ namespace Helix {
 
         // Enable all features: just pass the physical features 2 struct.
         VkPhysicalDeviceFeatures2 physical_features2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR };
+        if (dynamic_rendering_extension_present) {
+            physical_features2.pNext = &dynamic_rendering_features;
+        }
         vkGetPhysicalDeviceFeatures2(vulkan_physical_device, &physical_features2);
+
+        VkDeviceCreateInfo device_create_info{ VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
+        device_create_info.queueCreateInfoCount = vulkan_transfer_queue_family < queue_family_count ? 2 : 1;
+        device_create_info.pQueueCreateInfos = queue_info;
+        device_create_info.enabledExtensionCount = device_extensions.size;
+        device_create_info.ppEnabledExtensionNames = device_extensions.data;
+        device_create_info.pNext = &physical_features2;
 
         // [TAG: BINDLESS]
         // We also add the bindless needed feature on the device creation.
@@ -395,18 +431,18 @@ namespace Helix {
             indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
             indexing_features.runtimeDescriptorArray = VK_TRUE;
 
-            physical_features2.pNext = &indexing_features;
+            if (dynamic_rendering_extension_present) {
+                dynamic_rendering_features.pNext = &indexing_features;
+            }
+            else {
+                physical_features2.pNext = &indexing_features;
+            }
         }
-
-        VkDeviceCreateInfo device_create_info{ VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
-        device_create_info.queueCreateInfoCount = vulkan_transfer_queue_family < queue_family_count ? 2 : 1;
-        device_create_info.pQueueCreateInfos = queue_info;
-        device_create_info.enabledExtensionCount = device_extension_count;
-        device_create_info.ppEnabledExtensionNames = device_extensions;
-        device_create_info.pNext = &physical_features2;
 
         result = vkCreateDevice(vulkan_physical_device, &device_create_info, vulkan_allocation_callbacks, &vulkan_device);
         check(result);
+
+        device_extensions.shutdown();
 
         //  Get the function pointers to Debug Utils functions.
         if (debug_utils_extension_present) {
@@ -414,6 +450,12 @@ namespace Helix {
             pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdBeginDebugUtilsLabelEXT");
             pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdEndDebugUtilsLabelEXT");
         }
+
+        if (dynamic_rendering_extension_present) {
+            cmd_begin_rendering = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdBeginRenderingKHR");
+            cmd_end_rendering = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdEndRenderingKHR");
+        }
+
         // Get main queue
         vkGetDeviceQueue(vulkan_device, main_queue_index, 0, &vulkan_main_queue);
         // Get transfer queue if present
@@ -432,7 +474,7 @@ namespace Helix {
 
         u32 supported_count;
         vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan_physical_device, vulkan_window_surface, &supported_count, NULL);
-        VkSurfaceFormatKHR* supported_formats = (VkSurfaceFormatKHR*)halloca(sizeof(VkSurfaceFormatKHR) * supported_count, allocator);
+        VkSurfaceFormatKHR* supported_formats = (VkSurfaceFormatKHR*)halloca(sizeof(VkSurfaceFormatKHR) * supported_count, temp_allocator);
         vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan_physical_device, vulkan_window_surface, &supported_count, supported_formats);
 
         // Cache render pass output
@@ -453,18 +495,19 @@ namespace Helix {
             if (format_found)
                 break;
         }
+
         // Default to the first format supported.
         if (!format_found) {
             vulkan_surface_format = supported_formats[0];
             HASSERT_MSG(false, "Could not find a supported format");
         }
-        hfree(supported_formats, allocator);
-
-        hfree(queue_families, allocator);
 
         swapchain_pass_output.depth_stencil(VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
         swapchain_pass_output.set_depth_stencil_operations(RenderPassOperation::Clear, RenderPassOperation::Clear);
         swapchain_pass_output.color(vulkan_surface_format.format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, RenderPassOperation::Clear);
+
+        // Final use of temp allocator, free all temporary memory created here.
+        temp_allocator->free_marker(initial_temp_allocator_marker);
 
         set_present_mode(present_mode);
 
@@ -812,10 +855,13 @@ namespace Helix {
 
         // Destroy render passes from the cache.
         FlatHashMapIterator it = render_pass_cache.iterator_begin();
-        while (it.is_valid()) {
-            VkRenderPass vk_render_pass = render_pass_cache.get(it);
-            vkDestroyRenderPass(vulkan_device, vk_render_pass, vulkan_allocation_callbacks);
-            render_pass_cache.iterator_advance(it);
+        if (!dynamic_rendering_extension_present) {
+            FlatHashMapIterator it = render_pass_cache.iterator_begin();
+            while (it.is_valid()) {
+                VkRenderPass vk_render_pass = render_pass_cache.get(it);
+                vkDestroyRenderPass(vulkan_device, vk_render_pass, vulkan_allocation_callbacks);
+                render_pass_cache.iterator_advance(it);
+            }
         }
         render_pass_cache.shutdown();
 
@@ -1615,7 +1661,19 @@ namespace Helix {
             pipeline_info.pViewportState = &viewport_state;
 
             //// Render Pass
-            pipeline_info.renderPass = get_vulkan_render_pass(creation.render_pass, creation.name);
+            VkPipelineRenderingCreateInfoKHR pipeline_rendering_create_info{ VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR };
+            if (dynamic_rendering_extension_present) {
+                pipeline_rendering_create_info.viewMask = 0;
+                pipeline_rendering_create_info.colorAttachmentCount = creation.render_pass.num_color_formats;
+                pipeline_rendering_create_info.pColorAttachmentFormats = creation.render_pass.num_color_formats > 0 ? creation.render_pass.color_formats : nullptr;
+                pipeline_rendering_create_info.depthAttachmentFormat = creation.render_pass.depth_stencil_format;
+                pipeline_rendering_create_info.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+
+                pipeline_info.pNext = &pipeline_rendering_create_info;
+            }
+            else {
+                pipeline_info.renderPass = get_vulkan_render_pass(creation.render_pass, creation.name);
+            }
 
             //// Dynamic states
             VkDynamicState dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
@@ -2206,7 +2264,9 @@ namespace Helix {
 
         render_pass->output = fill_render_pass_output(*this, creation);
 
-        render_pass->vk_handle = get_vulkan_render_pass(render_pass->output, creation.name);
+        if (!dynamic_rendering_extension_present) {
+            render_pass->vk_handle = get_vulkan_render_pass(render_pass->output, creation.name);
+        }
 
         return handle;
     }
@@ -2232,7 +2292,9 @@ namespace Helix {
         framebuffer->name = creation.name;
         framebuffer->render_pass = creation.render_pass;
 
-        vulkan_create_framebuffer(*this, framebuffer);
+        if (!dynamic_rendering_extension_present) {
+            vulkan_create_framebuffer(*this, framebuffer);
+        }
 
         return handle;
     }
@@ -2438,7 +2500,9 @@ namespace Helix {
                 //destroy_texture_instant(v_framebuffer->depth_stencil_attachment.index);
             }
 
-            vkDestroyFramebuffer(vulkan_device, v_framebuffer->vk_handle, vulkan_allocation_callbacks);
+            if (!dynamic_rendering_extension_present) {
+                vkDestroyFramebuffer(vulkan_device, v_framebuffer->vk_handle, vulkan_allocation_callbacks);
+            }
         }
         framebuffers.release_resource(framebuffer);
     }
@@ -2637,7 +2701,9 @@ namespace Helix {
                 destroy_texture_instant(vk_framebuffer->depth_stencil_attachment.index);
             }
 
-            vkDestroyFramebuffer(vulkan_device, vk_framebuffer->vk_handle, vulkan_allocation_callbacks);
+            if (!dynamic_rendering_extension_present) {
+                vkDestroyFramebuffer(vulkan_device, vk_framebuffer->vk_handle, vulkan_allocation_callbacks);
+            }
 
             framebuffers.release_resource(vulkan_swapchain_framebuffers[iv].index);
         }

@@ -174,8 +174,12 @@ namespace Helix {
 
     void CommandBuffer::end_current_render_pass() {
         if (is_recording && current_render_pass != nullptr) {
-            vkCmdEndRenderPass(vk_handle);
-
+            if (device->dynamic_rendering_extension_present) {
+                device->cmd_end_rendering(vk_handle);
+            }
+            else {
+                vkCmdEndRenderPass(vk_handle);
+            }
             current_render_pass = nullptr;
         }
     }
@@ -190,38 +194,113 @@ namespace Helix {
 
             // Begin/End render pass are valid only for graphics render passes.
             if (current_render_pass && (render_pass != current_render_pass)) {
-                vkCmdEndRenderPass(vk_handle);
+                end_current_render_pass();
             }
 
             Framebuffer* framebuffer = device->access_framebuffer(framebuffer_);
 
             if (render_pass != current_render_pass) {
-                VkRenderPassBeginInfo render_pass_begin{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-                render_pass_begin.framebuffer = framebuffer->vk_handle;
-                render_pass_begin.renderPass = render_pass->vk_handle;
+                if (device->dynamic_rendering_extension_present) {
+                    Array<VkRenderingAttachmentInfoKHR> color_attachments_info;
+                    color_attachments_info.init(device->allocator, framebuffer->num_color_attachments, framebuffer->num_color_attachments);
+                    memset(color_attachments_info.data, 0, sizeof(VkRenderingAttachmentInfoKHR) * framebuffer->num_color_attachments);
 
-                render_pass_begin.renderArea.offset = { 0, 0 };
-                render_pass_begin.renderArea.extent = { framebuffer->width, framebuffer->height };
+                    for (u32 a = 0; a < framebuffer->num_color_attachments; ++a) {
+                        Texture* texture = device->access_texture(framebuffer->color_attachments[a]);
 
-                VkClearValue clear_values[k_max_image_outputs + 1];
+                        VkAttachmentLoadOp color_op;
+                        switch (render_pass->output.color_operations[a]) {
+                        case RenderPassOperation::Load:
+                            color_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+                            break;
+                        case RenderPassOperation::Clear:
+                            color_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                            break;
+                        default:
+                            color_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                            break;
+                        }
 
-                u32 clear_values_count = 0;
-                for (u32 o = 0; o < render_pass->output.num_color_formats; ++o) {
-                    if (render_pass->output.color_operations[o] == RenderPassOperation::Enum::Clear) {
-                        clear_values[clear_values_count++] = clears[0];
+                        VkRenderingAttachmentInfoKHR& color_attachment_info = color_attachments_info[a];
+                        color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+                        color_attachment_info.imageView = texture->vk_image_view;
+                        color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                        color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+                        color_attachment_info.loadOp = color_op;
+                        color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                        color_attachment_info.clearValue = render_pass->output.color_operations[a] == RenderPassOperation::Enum::Clear ? clears[0] : VkClearValue{ };
                     }
-                }
 
-                if (render_pass->output.depth_stencil_format != VK_FORMAT_UNDEFINED) {
-                    if (render_pass->output.depth_operation == RenderPassOperation::Enum::Clear) {
-                        clear_values[clear_values_count++] = clears[1];
+                    VkRenderingAttachmentInfoKHR depth_attachment_info{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR };
+
+                    bool has_depth_attachment = framebuffer->depth_stencil_attachment.index != k_invalid_index;
+
+                    if (has_depth_attachment) {
+                        Texture* texture = device->access_texture(framebuffer->depth_stencil_attachment);
+
+                        VkAttachmentLoadOp depth_op;
+                        switch (render_pass->output.depth_operation) {
+                        case RenderPassOperation::Load:
+                            depth_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+                            break;
+                        case RenderPassOperation::Clear:
+                            depth_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                            break;
+                        default:
+                            depth_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                            break;
+                        }
+
+                        depth_attachment_info.imageView = texture->vk_image_view;
+                        depth_attachment_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                        depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+                        depth_attachment_info.loadOp = depth_op;
+                        depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                        depth_attachment_info.clearValue = render_pass->output.depth_operation == RenderPassOperation::Enum::Clear ? clears[1] : VkClearValue{ };
                     }
+
+                    VkRenderingInfoKHR rendering_info{ VK_STRUCTURE_TYPE_RENDERING_INFO_KHR };
+                    rendering_info.flags = use_secondary ? VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT_KHR : 0;
+                    rendering_info.renderArea = { 0, 0, framebuffer->width, framebuffer->height };
+                    rendering_info.layerCount = 1;
+                    rendering_info.viewMask = 0;
+                    rendering_info.colorAttachmentCount = framebuffer->num_color_attachments;
+                    rendering_info.pColorAttachments = framebuffer->num_color_attachments > 0 ? color_attachments_info.data : nullptr;
+                    rendering_info.pDepthAttachment = has_depth_attachment ? &depth_attachment_info : nullptr;
+                    rendering_info.pStencilAttachment = nullptr;
+
+                    device->cmd_begin_rendering(vk_handle, &rendering_info);
+
+                    color_attachments_info.shutdown();
                 }
+                else{
+                    VkRenderPassBeginInfo render_pass_begin{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+                    render_pass_begin.framebuffer = framebuffer->vk_handle;
+                    render_pass_begin.renderPass = render_pass->vk_handle;
 
-                render_pass_begin.clearValueCount = clear_values_count;
-                render_pass_begin.pClearValues = clear_values;
+                    render_pass_begin.renderArea.offset = { 0, 0 };
+                    render_pass_begin.renderArea.extent = { framebuffer->width, framebuffer->height };
 
-                vkCmdBeginRenderPass(vk_handle, &render_pass_begin, use_secondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
+                    VkClearValue clear_values[k_max_image_outputs + 1];
+
+                    u32 clear_values_count = 0;
+                    for (u32 o = 0; o < render_pass->output.num_color_formats; ++o) {
+                        if (render_pass->output.color_operations[o] == RenderPassOperation::Enum::Clear) {
+                            clear_values[clear_values_count++] = clears[0];
+                        }
+                    }
+
+                    if (render_pass->output.depth_stencil_format != VK_FORMAT_UNDEFINED) {
+                        if (render_pass->output.depth_operation == RenderPassOperation::Enum::Clear) {
+                            clear_values[clear_values_count++] = clears[1];
+                        }
+                    }
+
+                    render_pass_begin.clearValueCount = clear_values_count;
+                    render_pass_begin.pClearValues = clear_values;
+
+                    vkCmdBeginRenderPass(vk_handle, &render_pass_begin, use_secondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
+                }
             }
 
             // Cache render pass

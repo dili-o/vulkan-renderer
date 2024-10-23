@@ -69,6 +69,10 @@ void main() {
         normal *= -1.0;
     }
 
+    if(vTangent == vec3(0.0, 0.0, 0.0)){
+        tangent = vec3(1.0, 1.0, 1.0);
+    }
+
     if (textures.z != INVALID_TEXTURE_INDEX) {
         // NOTE(marco): normal textures are encoded to [0, 1] but need to be mapped to [-1, 1] value
         vec3 bump_normal = normalize( texture(global_textures[nonuniformEXT(textures.z)], vTexcoord0).rgb * 2.0 - 1.0 );
