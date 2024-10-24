@@ -310,7 +310,13 @@ namespace Helix {
         // Per frame synchronization
         VkSemaphore                     vulkan_render_complete_semaphore[k_max_swapchain_images];
         VkSemaphore                     vulkan_image_acquired_semaphore[k_max_swapchain_images];
+        VkSemaphore                     vulkan_timeline_graphics_semaphore;
         VkFence                         vulkan_command_buffer_executed_fence[k_max_swapchain_images];
+
+        VkSemaphore                     vulkan_compute_semaphore;
+        VkFence                         vulkan_compute_fence;
+        u64                             last_compute_semaphore_value = 0;
+        bool                            has_async_work = false;
 
         static const uint32_t           k_max_frames = 3;
 
@@ -331,6 +337,8 @@ namespace Helix {
         // Extension functions
         PFN_vkCmdBeginRenderingKHR      cmd_begin_rendering;
         PFN_vkCmdEndRenderingKHR        cmd_end_rendering;
+        PFN_vkQueueSubmit2KHR           queue_submit2;
+        PFN_vkCmdPipelineBarrier2KHR    cmd_pipeline_barrier2;
 
         // These are dynamic - so that workload can be handled correctly.
         Array<ResourceUpdate>           resource_deletion_queue;
@@ -342,6 +350,8 @@ namespace Helix {
         bool                            gpu_timestamp_reset = true;
         bool                            debug_utils_extension_present = false;
         bool                            dynamic_rendering_extension_present = false;
+        bool                            timeline_semaphore_extension_present = false;
+        bool                            synchronization2_extension_present = false;
 
         char                            vulkan_binaries_path[512];
 
