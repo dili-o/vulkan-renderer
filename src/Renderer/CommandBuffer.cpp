@@ -201,9 +201,8 @@ namespace Helix {
 
             if (render_pass != current_render_pass) {
                 if (device->dynamic_rendering_extension_present) {
-                    Array<VkRenderingAttachmentInfoKHR> color_attachments_info;
-                    color_attachments_info.init(device->allocator, framebuffer->num_color_attachments, framebuffer->num_color_attachments);
-                    memset(color_attachments_info.data, 0, sizeof(VkRenderingAttachmentInfoKHR) * framebuffer->num_color_attachments);
+                    VkRenderingAttachmentInfoKHR color_attachments_info[8]; // max_number of attachments is 8
+                    memset(color_attachments_info, 0, sizeof(VkRenderingAttachmentInfoKHR) * framebuffer->num_color_attachments);
 
                     for (u32 a = 0; a < framebuffer->num_color_attachments; ++a) {
                         Texture* texture = device->access_texture(framebuffer->color_attachments[a]);
@@ -265,13 +264,11 @@ namespace Helix {
                     rendering_info.layerCount = 1;
                     rendering_info.viewMask = 0;
                     rendering_info.colorAttachmentCount = framebuffer->num_color_attachments;
-                    rendering_info.pColorAttachments = framebuffer->num_color_attachments > 0 ? color_attachments_info.data : nullptr;
+                    rendering_info.pColorAttachments = framebuffer->num_color_attachments > 0 ? color_attachments_info : nullptr;
                     rendering_info.pDepthAttachment = has_depth_attachment ? &depth_attachment_info : nullptr;
                     rendering_info.pStencilAttachment = nullptr;
 
                     device->cmd_begin_rendering(vk_handle, &rendering_info);
-
-                    color_attachments_info.shutdown();
                 }
                 else{
                     VkRenderPassBeginInfo render_pass_begin{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };

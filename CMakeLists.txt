@@ -73,4 +73,5 @@ target_compile_definitions(HelixEngine PRIVATE
     _CRT_SECURE_NO_WARNINGS
     HELIX_SHADER_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/"
     HELIX_TEXTURE_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/"
+    HELIX_FRAMEGRAPH_FOLDER="${CMAKE_CURRENT_SOURCE_DIR}/assets/frame_graphs/"
 )

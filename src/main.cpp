@@ -157,20 +157,13 @@ int main(int argc, char** argv)
     frame_graph.init(&frame_graph_builder);
 
     ResourcesLoader resources_loader;
-    //StringBuffer temporary_name_buffer;
-    //temporary_name_buffer.init(1024, &stack_allocator);
-    //cstring frame_graph_path = temporary_name_buffer.append_use_f("D:/vulkan-renderer/assets/frame_graphs/main.json");
-
-    //frame_graph.parse(frame_graph_path, &stack_allocator);
-    //frame_graph.compile();
-
     {
         {
             sizet scratch_marker = stack_allocator.get_marker();
 
             StringBuffer temporary_name_buffer;
             temporary_name_buffer.init(1024, &stack_allocator);
-            cstring frame_graph_path = temporary_name_buffer.append_use_f("D:/vulkan-renderer/assets/frame_graphs/main.json"); // TODO: Use MACRO
+            cstring frame_graph_path = temporary_name_buffer.append_use_f(HELIX_FRAMEGRAPH_FOLDER"main.hgraph"); // TODO: Use MACRO
 
             frame_graph.parse(frame_graph_path, &stack_allocator);
             frame_graph.compile();
