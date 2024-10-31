@@ -60,7 +60,7 @@ namespace Helix {
 		}
 
 		ProgramCreation program_creation;
-		program_creation.name = name_string.c_str();
+		program_creation.name = resource_name_buffer.append_use_f("%s", name_string.c_str()); //name_string.c_str();
 
 		json pipelines = json_data["pipelines"];
 		if (pipelines.is_array()) {

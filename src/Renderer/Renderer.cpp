@@ -170,7 +170,7 @@ namespace Helix {
 
     void Renderer::end_frame() {
         // Present
-        gpu->present();
+        gpu->present(nullptr);
     }
 
     void Renderer::imgui_draw() {
@@ -192,8 +192,7 @@ namespace Helix {
         if (ImGui::Begin("Renderer Resources")) {
             
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None)) {
-                if (ImGui::BeginTabItem("Textures"))
-                {
+                if (ImGui::BeginTabItem("Textures")){
                     Helix::FlatHashMapIterator it = resource_cache.textures.iterator_begin();
                     while (it.is_valid()) {
                         Helix::TextureResource* texture = resource_cache.textures.get(it);
@@ -246,7 +245,6 @@ namespace Helix {
                 if (ImGui::BeginTabItem("Pipelines"))
                 {
                     Helix::FlatHashMapIterator it = resource_cache.programs.iterator_begin();
-                    ImGui::Text("Num of pipelines: %d", gpu->pipelines.used_indices);
                     while (it.is_valid()) {
                         Helix::Program* program = resource_cache.programs.get(it);
                         if (ImGui::TreeNode(program->name)) {

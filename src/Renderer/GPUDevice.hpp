@@ -182,7 +182,7 @@ namespace Helix {
 
         // Rendering /////////////////////////////////////////////////////////
         void                            new_frame();
-        void                            present();
+        void                            present(CommandBuffer* async_compute_command_buffer);
         void                            resize(u16 width, u16 height);
         void                            set_presentation_mode(PresentMode::Enum mode);
 
@@ -197,6 +197,9 @@ namespace Helix {
         const RenderPassOutput&         get_swapchain_output() const { return swapchain_pass_output; }
 
         VkRenderPass                    get_vulkan_render_pass(const RenderPassOutput& output, cstring name);
+
+        // Compute ///////////////////////////////////////////////////////////
+        void                            submit_compute_load(CommandBuffer* command_buffer);
 
         // Names and markers /////////////////////////////////////////////////
         void                            set_resource_name(VkObjectType object_type, uint64_t handle, cstring name);
@@ -293,8 +296,10 @@ namespace Helix {
         VkPhysicalDeviceProperties      vulkan_physical_properties;
         VkDevice                        vulkan_device;
         VkQueue                         vulkan_main_queue;
+        VkQueue                         vulkan_compute_queue;
         VkQueue                         vulkan_transfer_queue;
         u32                             vulkan_main_queue_family;
+        u32                             vulkan_compute_queue_family;
         u32                             vulkan_transfer_queue_family;
         VkDescriptorPool                vulkan_descriptor_pool;
 

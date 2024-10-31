@@ -423,7 +423,7 @@ int main(int argc, char** argv)
             }
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
 
-            gpu.present();
+            gpu.present(nullptr);
 
             f64 current_time = Time::from_seconds(absolute_begin_frame_tick);
             frame_count++;

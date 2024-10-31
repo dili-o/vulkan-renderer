@@ -5,7 +5,10 @@
 #include "Core/Gltf.hpp"
 #include "Core/Time.hpp"
 #include "Core/File.hpp"
+
 #include <vendor/tracy/tracy/Tracy.hpp>
+#include <vendor/meshoptimizer/meshoptimizer.h>
+
 #include <imgui/imgui.h>
 
 namespace Helix {
@@ -564,8 +567,6 @@ namespace Helix {
 
     void glTFScene::load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) {
 
-
-        //renderer = async_loader->renderer;
         sizet temp_allocator_initial_marker = temp_allocator->get_marker();
 
         // Time statistics
@@ -575,15 +576,11 @@ namespace Helix {
 
         i64 end_loading_file = Time::now();
 
-        //node_pool.init(resident_allocator);
-
-
-        // Load all textures
-        //images.init(resident_allocator, gltf_scene.images_count);
-
         StringBuffer name_buffer;
         name_buffer.init(hkilo(100), temp_allocator);
 
+
+        // Load all textures
         Array<FileLoadRequest> texture_requests;
         texture_requests.init(resident_allocator, gltf_scene.images_count, gltf_scene.images_count); // TODO: Maybe use stack allocator;
 
@@ -621,7 +618,6 @@ namespace Helix {
             request.texture = tr->handle;
             strcpy(request.path, full_filename);
 
-            //async_loader->request_texture_data(full_filename, tr->handle);
             // Reset name buffer
             name_buffer.clear();
         }
@@ -635,8 +631,6 @@ namespace Helix {
         i64 end_creating_textures = Time::now();
 
         // Load all samplers
-        //samplers.init(resident_allocator, gltf_scene.samplers_count);
-
         for (u32 sampler_index = 0; sampler_index < gltf_scene.samplers_count; ++sampler_index) {
             glTF::Sampler& sampler = gltf_scene.samplers[sampler_index];
 
@@ -724,8 +718,6 @@ namespace Helix {
         i64 end_reading_buffers_data = Time::now();
 
         // Load all buffers and initialize them with buffer data
-        //buffers.init(resident_allocator, gltf_scene.buffer_views_count);
-
         for (u32 buffer_index = 0; buffer_index < gltf_scene.buffer_views_count; ++buffer_index) {
             glTF::BufferView& buffer = gltf_scene.buffer_views[buffer_index];
 
@@ -751,15 +743,10 @@ namespace Helix {
             buffers.push(*br);
         }
 
-        for (u32 buffer_index = 0; buffer_index < gltf_scene.buffers_count; ++buffer_index) {
-            void* buffer = buffers_data[buffer_index];
-            resident_allocator->deallocate(buffer);
-        }
-        buffers_data.shutdown();
+        
 
         i64 end_creating_buffers = Time::now();
 
-        temp_allocator->free_marker(temp_allocator_initial_marker);
 
         // Init runtime meshes
         // TODO: Right now mesh node has a reference to the data in meshes, This data changes because
@@ -773,71 +760,9 @@ namespace Helix {
             Time::delta_seconds(start_scene_loading, end_loading), Time::delta_seconds(start_scene_loading, end_loading_file), Time::delta_seconds(end_loading_file, end_creating_textures),
             Time::delta_seconds(end_creating_textures, end_creating_samplers),
             Time::delta_seconds(end_creating_samplers, end_reading_buffers_data), Time::delta_seconds(end_reading_buffers_data, end_creating_buffers));
-    }
-
-    void glTFScene::free_gpu_resources(Renderer* renderer) {
-        GpuDevice& gpu = *renderer->gpu;
-
-        for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
-            Mesh& mesh = transparent_meshes[mesh_index];
-            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-            // TODO: Destroy the images.
-            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
-        }
-        for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
-            Mesh& mesh = opaque_meshes[mesh_index];
-            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-            // TODO: Destroy the images.
-            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
-        }
-
-        depth_pre_pass.free_gpu_resources();
-        gbuffer_pass.free_gpu_resources();
-        light_pass.free_gpu_resources();
-        transparent_pass.free_gpu_resources();
-        light_debug_pass.free_gpu_resources();
-
-        gpu.destroy_descriptor_set(fullscreen_ds);
-
-        transparent_meshes.shutdown();
-        opaque_meshes.shutdown();
-        //meshes.shutdown();
-    }
-
-    void glTFScene::unload(Renderer* renderer) {
-        GpuDevice& gpu = *renderer->gpu;
-
-        destroy_node(node_pool.root_node);
-
-        node_pool.shutdown();
-        // Free scene buffers
-        samplers.shutdown();
-        images.shutdown();
-        buffers.shutdown();
 
 
-        // NOTE(marco): we can't destroy this sooner as textures and buffers
-        // hold a pointer to the names stored here
-        gltf_free(gltf_scene);
-
-        names.shutdown();
-    }
-
-    void glTFScene::register_render_passes(FrameGraph* frame_graph_) {
-        frame_graph = frame_graph_;
-
-        frame_graph->builder->register_render_pass("depth_pre_pass", &depth_pre_pass);
-        frame_graph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
-        frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
-        frame_graph->builder->register_render_pass("transparent_pass", &transparent_pass);
-        frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
-
-        light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
-    }
-
-    void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
-
-        sizet cached_scratch_size = stack_allocator->get_marker();
+        ///////////////////////// Prepare Draws ///////////////////////////////
 
         const u64 hashed_name = hash_calculate("geometry");
         Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
@@ -846,17 +771,17 @@ namespace Helix {
 
 
         Array<i32> node_parents;
-        node_parents.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+        node_parents.init(temp_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         Array<glm::mat4> node_matrix;
-        node_matrix.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+        node_matrix.init(temp_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         Array<u32> node_stack;
         node_stack.init(&MemoryService::instance()->system_allocator, 8);
 
         // Create the node resources
         Array<NodeHandle> node_handles;
-        node_handles.init(stack_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
+        node_handles.init(temp_allocator, gltf_scene.nodes_count, gltf_scene.nodes_count);
 
         for (u32 node_index = 0; node_index < gltf_scene.nodes_count; ++node_index) {
             glTF::Node& node = gltf_scene.nodes[node_index];
@@ -925,13 +850,13 @@ namespace Helix {
 
             base_node->name = node.name.data ? node.name.data : node_name;
             base_node->local_transform = local_transform;
-            
+
             i32 node_parent = node_parents[node_index];
             // Nodes that don't have parents would already have their parent set to the root node
             if (node_parent != -1)
                 base_node->parent = node_handles[node_parent];
 
-            
+
             // Assuming nodes that contain meshes don't contain other glTF nodes
             if (node.mesh == glTF::INVALID_INT_VALUE) {
                 base_node->children.init(node_pool.allocator, node.children_count, node.children_count);
@@ -955,6 +880,11 @@ namespace Helix {
                 node_scale = glm::vec3{ node.scale[0], node.scale[1], node.scale[2] };
             }
 
+            // Meshlets
+            const sizet max_vertices = 64;
+            const sizet max_triangles = 124;
+            const f32 cone_weight = 0.0f;
+
             // Gltf primitives are conceptually submeshes.
             for (u32 primitive_index = 0; primitive_index < gltf_mesh.primitives_count; ++primitive_index) {
                 Mesh mesh{ };
@@ -974,6 +904,12 @@ namespace Helix {
                 get_mesh_vertex_buffer(*this, normal_accessor_index, mesh.normal_buffer, mesh.normal_offset);
                 get_mesh_vertex_buffer(*this, texcoord_accessor_index, mesh.texcoord_buffer, mesh.texcoord_offset);
 
+                // Vertex positions
+                glTF::Accessor& position_accessor = gltf_scene.accessors[position_accessor_index];
+                glTF::BufferView& position_buffer_view = gltf_scene.buffer_views[position_accessor.buffer_view];
+                i32 position_data_offset = glTF::get_data_offset(position_accessor.byte_offset, position_buffer_view.byte_offset);
+                f32* vertices = (f32*)((u8*)buffers_data[position_buffer_view.buffer] + position_data_offset);
+
                 // Create index buffer
                 glTF::Accessor& indices_accessor = gltf_scene.accessors[mesh_primitive.indices];
                 HASSERT(indices_accessor.component_type == glTF::Accessor::ComponentType::UNSIGNED_SHORT || indices_accessor.component_type == glTF::Accessor::ComponentType::UNSIGNED_INT);
@@ -985,10 +921,11 @@ namespace Helix {
                 mesh.index_offset = indices_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : indices_accessor.byte_offset;
                 mesh.primitive_count = indices_accessor.count;
 
+                i32 indicies_data_offset = glTF::get_data_offset(indices_accessor.byte_offset, indices_buffer_view.byte_offset);
+                u16* indices = (u16*)((u8*)buffers_data[indices_buffer_view.buffer] + indicies_data_offset);
+
                 // Create material
                 glTF::Material& material = gltf_scene.materials[mesh_primitive.material];
-
-                //bool transparent = get_mesh_material(*renderer, *this, material, mesh);
 
                 fill_pbr_material(*renderer, material, mesh.pbr_material);
 
@@ -1001,9 +938,28 @@ namespace Helix {
                 DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(geometry_program->passes[3].pipeline, k_material_descriptor_set_index);
                 ds_creation.buffer(local_constants_buffer, 0).buffer(mesh.pbr_material.material_buffer, 1).set_layout(layout);
                 mesh.pbr_material.descriptor_set = renderer->gpu->create_descriptor_set(ds_creation);
-
                 mesh.pbr_material.material = pbr_material;
 
+
+                // Meshlets
+                const sizet max_meshlets = meshopt_buildMeshletsBound(indices_accessor.count, max_vertices, max_triangles);
+                sizet temp_marker = temp_allocator->get_marker();
+                
+                Array<meshopt_Meshlet> local_meshlets;
+                local_meshlets.init(temp_allocator, max_meshlets, max_meshlets);
+                
+                Array<u32> meshlet_vertex_indices;
+                meshlet_vertex_indices.init(temp_allocator, max_meshlets* max_vertices, max_meshlets* max_vertices);
+                
+                Array<u8> meshlet_triangles;
+                meshlet_triangles.init(temp_allocator, max_meshlets* max_triangles * 3, max_meshlets* max_triangles * 3);
+
+                sizet meshlet_count = meshopt_buildMeshlets(local_meshlets.data, meshlet_vertex_indices.data, meshlet_triangles.data, indices,
+                    indices_accessor.count, vertices, position_accessor.count, sizeof(glm::vec3),
+                    max_vertices, max_triangles, cone_weight);
+
+
+                // Nodes
                 // TODO Make this a primitive struct. Not a MeshNode
                 NodeHandle mesh_handle = node_pool.obtain_node(NodeType::MeshNode);
                 MeshNode* mesh_node_primitive = (MeshNode*)node_pool.access_node(mesh_handle);
@@ -1043,8 +999,6 @@ namespace Helix {
         qsort(opaque_meshes.data, opaque_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
         node_pool.get_root_node()->update_transform(&node_pool);
 
-        stack_allocator->free_marker(cached_scratch_size);
-
         depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
@@ -1054,6 +1008,80 @@ namespace Helix {
         gbuffer_pass.double_sided_mesh_count += num_double_sided_meshes;
 
         node_stack.shutdown();
+
+        for (u32 buffer_index = 0; buffer_index < gltf_scene.buffers_count; ++buffer_index) {
+            void* buffer = buffers_data[buffer_index];
+            resident_allocator->deallocate(buffer); // TODO: NEEDED?
+        }
+
+        buffers_data.shutdown();
+
+        temp_allocator->free_marker(temp_allocator_initial_marker);
+    }
+
+    void glTFScene::free_gpu_resources(Renderer* renderer) {
+        GpuDevice& gpu = *renderer->gpu;
+
+        for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
+            Mesh& mesh = transparent_meshes[mesh_index];
+            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+            // TODO: Destroy the images.
+            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
+        }
+        for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
+            Mesh& mesh = opaque_meshes[mesh_index];
+            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+            // TODO: Destroy the images.
+            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
+        }
+
+        depth_pre_pass.free_gpu_resources();
+        gbuffer_pass.free_gpu_resources();
+        light_pass.free_gpu_resources();
+        transparent_pass.free_gpu_resources();
+        light_debug_pass.free_gpu_resources();
+
+        gpu.destroy_descriptor_set(fullscreen_ds);
+
+        transparent_meshes.shutdown();
+        opaque_meshes.shutdown();
+        //meshes.shutdown();
+    }
+
+    void glTFScene::unload(Renderer* renderer) {
+        GpuDevice& gpu = *renderer->gpu;
+
+        destroy_node(node_pool.root_node);
+
+        node_pool.shutdown();
+        // Free scene buffers
+        samplers.shutdown();
+        images.shutdown();
+        buffers.shutdown();
+
+
+        // NOTE(marco): we can't destroy this sooner as textures and buffers
+        // hold a pointer to the names stored here
+        gltf_free(gltf_scene);
+
+        names.shutdown();
+    }
+
+    void glTFScene::register_render_passes(FrameGraph* frame_graph_) {
+        frame_graph = frame_graph_;
+
+        frame_graph->builder->register_render_pass("depth_pre_pass", &depth_pre_pass);
+        frame_graph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
+        frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
+        frame_graph->builder->register_render_pass("transparent_pass", &transparent_pass);
+        frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
+
+        light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+    }
+
+    void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
+
+        
     }
 
     void glTFScene::fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material) {

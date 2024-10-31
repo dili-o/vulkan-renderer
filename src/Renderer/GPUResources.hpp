@@ -217,7 +217,7 @@ namespace Helix {
         u32                             device_only = 0;
         void*                           initial_data = nullptr;
 
-        cstring                     name = nullptr;
+        cstring                         name = nullptr;
 
         BufferCreation&                 reset();
         BufferCreation&                 set(VkBufferUsageFlags flags, ResourceUsageType::Enum usage, u32 size);

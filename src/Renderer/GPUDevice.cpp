@@ -367,7 +367,8 @@ namespace Helix {
         VkQueueFamilyProperties* queue_families = (VkQueueFamilyProperties*)halloca(sizeof(VkQueueFamilyProperties) * queue_family_count, temp_allocator);
         vkGetPhysicalDeviceQueueFamilyProperties(vulkan_physical_device, &queue_family_count, queue_families);
 
-        u32 main_queue_index = u32_max, transfer_queue_index = u32_max, compute_queue_index = u32_max, present_queue_index = u32_max;
+        u32 main_queue_family_index = u32_max, transfer_queue_family_index = u32_max, compute_queue_family_index = u32_max, present_queue_family_index = u32_max;
+        u32 compute_queue_index = u32_max;
         for (u32 fi = 0; fi < queue_family_count; ++fi) {
             VkQueueFamilyProperties queue_family = queue_families[fi];
 
@@ -380,17 +381,31 @@ namespace Helix {
 
             // Search for main queue that should be able to do all work (graphics, compute and transfer)
             if ((queue_family.queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) == (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) {
-                main_queue_index = fi;
+                main_queue_family_index = fi;
+                if (queue_family.queueCount > 1) {
+                    compute_queue_family_index = fi;
+                    compute_queue_index = 1;
+                }
+                continue;
             }
+
+            // Search for another compute queue if graphics queue exposes only one queue
+            if ((queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) && compute_queue_index == u32_max) {
+                compute_queue_family_index = fi;
+                compute_queue_index = 0;
+            }
+
             // Search for transfer queue
             if ((queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) == 0 && (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
-                transfer_queue_index = fi;
+                transfer_queue_family_index = fi;
+                continue;
             }
         }
 
         // Cache family indices
-        vulkan_main_queue_family = main_queue_index;
-        vulkan_transfer_queue_family = transfer_queue_index;
+        vulkan_main_queue_family = main_queue_family_index;
+        vulkan_compute_queue_family = compute_queue_family_index;
+        vulkan_transfer_queue_family = transfer_queue_family_index;
 
         Array<const char*> device_extensions;
         device_extensions.init(allocator, 2);
@@ -408,19 +423,29 @@ namespace Helix {
             device_extensions.push(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         }
 
-        const float queue_priority[] = { 1.0f };
-        VkDeviceQueueCreateInfo queue_info[2] = {};
+        const float queue_priority[] = { 1.0f, 1.0f };
+        VkDeviceQueueCreateInfo queue_info[3] = {};
 
-        VkDeviceQueueCreateInfo& main_queue = queue_info[0];
+        u32 queue_count = 0;
+
+        VkDeviceQueueCreateInfo& main_queue = queue_info[queue_count++];
         main_queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        main_queue.queueFamilyIndex = main_queue_index;
-        main_queue.queueCount = 1;
+        main_queue.queueFamilyIndex = main_queue_family_index;
+        main_queue.queueCount = compute_queue_family_index == main_queue_family_index ? 2 : 1;
         main_queue.pQueuePriorities = queue_priority;
 
+        if (compute_queue_family_index != main_queue_family_index) {
+            VkDeviceQueueCreateInfo& compute_queue = queue_info[queue_count++];
+            compute_queue.queueFamilyIndex = compute_queue_family_index;
+            compute_queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            compute_queue.queueCount = 1;
+            compute_queue.pQueuePriorities = queue_priority;
+        }
+
         if (vulkan_transfer_queue_family < queue_family_count) {
-            VkDeviceQueueCreateInfo& transfer_queue_info = queue_info[1];
+            VkDeviceQueueCreateInfo& transfer_queue_info = queue_info[queue_count++];
             transfer_queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            transfer_queue_info.queueFamilyIndex = transfer_queue_index;
+            transfer_queue_info.queueFamilyIndex = transfer_queue_family_index;
             transfer_queue_info.queueCount = 1;
             transfer_queue_info.pQueuePriorities = queue_priority;
         }
@@ -466,7 +491,7 @@ namespace Helix {
         vkGetPhysicalDeviceFeatures2(vulkan_physical_device, &physical_features2);
 
         VkDeviceCreateInfo device_create_info{ VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
-        device_create_info.queueCreateInfoCount = vulkan_transfer_queue_family < queue_family_count ? 2 : 1;
+        device_create_info.queueCreateInfoCount = queue_count;
         device_create_info.pQueueCreateInfos = queue_info;
         device_create_info.enabledExtensionCount = device_extensions.size;
         device_create_info.ppEnabledExtensionNames = device_extensions.data;
@@ -496,10 +521,14 @@ namespace Helix {
         }
 
         // Get main queue
-        vkGetDeviceQueue(vulkan_device, main_queue_index, 0, &vulkan_main_queue);
+        vkGetDeviceQueue(vulkan_device, main_queue_family_index, 0, &vulkan_main_queue);
+
+        // TODO(marco): handle case where we can't create a separate compute queue
+        vkGetDeviceQueue(vulkan_device, compute_queue_family_index, compute_queue_index, &vulkan_compute_queue);
+
         // Get transfer queue if present
         if (vulkan_transfer_queue_family < queue_family_count) {
-            vkGetDeviceQueue(vulkan_device, transfer_queue_index, 0, &vulkan_transfer_queue);
+            vkGetDeviceQueue(vulkan_device, transfer_queue_family_index, 0, &vulkan_transfer_queue);
         }
 
         // Create Framebuffers
@@ -703,7 +732,16 @@ namespace Helix {
             semaphore_info.pNext = &timelineCreateInfo;
             semaphore_info.flags = 0;
 
-            vkCreateSemaphore(vulkan_device, &semaphore_info, NULL, &vulkan_timeline_graphics_semaphore);
+            vkCreateSemaphore(vulkan_device, &semaphore_info, vulkan_allocation_callbacks, &vulkan_timeline_graphics_semaphore);
+            vkCreateSemaphore(vulkan_device, &semaphore_info, vulkan_allocation_callbacks, &vulkan_compute_semaphore);
+        }
+        else {
+            vkCreateSemaphore(vulkan_device, &semaphore_info, vulkan_allocation_callbacks, &vulkan_compute_semaphore);
+
+            VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+            fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+            vkCreateFence(vulkan_device, &fenceInfo, vulkan_allocation_callbacks, &vulkan_compute_fence);
         }
 
         gpu_timestamp_manager = (GPUTimestampManager*)(memory);
@@ -823,6 +861,8 @@ namespace Helix {
             if(!timeline_semaphore_extension_present)
                 vkDestroyFence(vulkan_device, vulkan_command_buffer_executed_fence[i], vulkan_allocation_callbacks);
         }
+
+        vkDestroySemaphore(vulkan_device, vulkan_compute_semaphore, vulkan_allocation_callbacks);
 
         if (timeline_semaphore_extension_present) {
             vkDestroySemaphore(vulkan_device, vulkan_timeline_graphics_semaphore, vulkan_allocation_callbacks);
@@ -2982,26 +3022,31 @@ namespace Helix {
             if(true/*absolute_frame >= k_max_frames*/) {
                 u64 graphics_timeline_value = absolute_frame;// -(k_max_frames - 1);
 
+                u64 wait_values[]{ graphics_timeline_value, last_compute_semaphore_value };
+
+                VkSemaphore semaphores[]{ vulkan_timeline_graphics_semaphore, vulkan_compute_semaphore };
+
                 VkSemaphoreWaitInfo waitInfo;
                 waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
                 waitInfo.pNext = NULL;
                 waitInfo.flags = 0;
-                waitInfo.semaphoreCount = 1;
-                waitInfo.pSemaphores = &vulkan_timeline_graphics_semaphore;
-                waitInfo.pValues = &graphics_timeline_value;
+                waitInfo.semaphoreCount = has_async_work ? 2 : 1;;
+                waitInfo.pSemaphores = semaphores;
+                waitInfo.pValues = wait_values;
 
                 vkWaitSemaphores(vulkan_device, &waitInfo, UINT64_MAX);
             }
         }
         else{
             // Fence wait and reset
-            VkFence* render_complete_fence = &vulkan_command_buffer_executed_fence[current_frame];
+            VkFence render_complete_fence = vulkan_command_buffer_executed_fence[current_frame];
 
-            if (vkGetFenceStatus(vulkan_device, *render_complete_fence) != VK_SUCCESS) {
-                vkWaitForFences(vulkan_device, 1, render_complete_fence, VK_TRUE, UINT64_MAX);
-            }
+            VkFence fences[]{ render_complete_fence, vulkan_compute_fence };
 
-            vkResetFences(vulkan_device, 1, render_complete_fence);
+            u32 fence_count = has_async_work ? 2 : 1;
+            vkWaitForFences(vulkan_device, fence_count, fences, VK_TRUE, UINT64_MAX);
+
+            vkResetFences(vulkan_device, fence_count, fences);
         }
 
         VkResult result = vkAcquireNextImageKHR(vulkan_device, vulkan_swapchain, UINT64_MAX, vulkan_image_acquired_semaphore[current_frame], VK_NULL_HANDLE, &vulkan_image_index);
@@ -3032,7 +3077,7 @@ namespace Helix {
         }
     }
 
-    void GpuDevice::present() {
+    void GpuDevice::present(CommandBuffer* async_compute_command_buffer) {
 
         VkSemaphore* render_complete_semaphore = &vulkan_render_complete_semaphore[current_frame];
 
@@ -3104,8 +3149,8 @@ namespace Helix {
         u32 wait_semaphore_count = 1;
 
         if (timeline_semaphore_extension_present) {
-            //bool wait_for_graphics_timeline_semaphore = absolute_frame >= k_max_frames;
-            //if (wait_for_graphics_timeline_semaphore) wait_semaphore_count++;
+
+            if (has_async_work) wait_semaphore_count++;
 
             if (synchronization2_extension_present) {
                 VkCommandBufferSubmitInfoKHR command_buffer_info[4]{ }; // TODO: Maybe have a max queue count for command buffers
@@ -3116,7 +3161,7 @@ namespace Helix {
 
                 VkSemaphoreSubmitInfoKHR wait_semaphores[]{
                     { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_image_acquired_semaphore[current_frame], 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, 0},
-                    //{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_timeline_graphics_semaphore, absolute_frame - (k_max_frames - 1), VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR , 0 },
+                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, last_compute_semaphore_value, VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT_KHR, 0 },
                 };
 
                 VkSemaphoreSubmitInfoKHR signal_semaphores[]{
@@ -3135,8 +3180,8 @@ namespace Helix {
                 queue_submit2(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
             }
             else {
-                VkSemaphore wait_semaphores[] = { vulkan_image_acquired_semaphore[current_frame]};
-                VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT };
+                VkSemaphore wait_semaphores[] = { vulkan_image_acquired_semaphore[current_frame], vulkan_compute_semaphore };
+                VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT };
 
                 VkSemaphore signal_semaphores[] = { *render_complete_semaphore, vulkan_timeline_graphics_semaphore };
 
@@ -3147,7 +3192,7 @@ namespace Helix {
                 semaphore_info.signalSemaphoreValueCount = 2;
                 semaphore_info.pSignalSemaphoreValues = signal_values;
 
-                u64 wait_values[] = { 0 };
+                u64 wait_values[] = { 0, last_compute_semaphore_value };
                 semaphore_info.waitSemaphoreValueCount = wait_semaphore_count;
                 semaphore_info.pWaitSemaphoreValues = wait_values;
 
@@ -3168,6 +3213,8 @@ namespace Helix {
         else {
             VkFence render_complete_fence = vulkan_command_buffer_executed_fence[current_frame];
 
+            if (has_async_work) wait_semaphore_count++;
+
             if (synchronization2_extension_present) {
                 VkCommandBufferSubmitInfoKHR command_buffer_info[4]{ };
                 for (u32 c = 0; c < num_queued_command_buffers; c++) {
@@ -3176,7 +3223,8 @@ namespace Helix {
                 }
 
                 VkSemaphoreSubmitInfoKHR wait_semaphores[]{
-                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_image_acquired_semaphore[current_frame], 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, 0}
+                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_image_acquired_semaphore[current_frame], 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, 0},
+                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, 0, VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT_KHR, 0 }
                 };
 
                 VkSemaphoreSubmitInfoKHR signal_semaphores[]{
@@ -3193,22 +3241,28 @@ namespace Helix {
 
                 queue_submit2(vulkan_main_queue, 1, &submit_info, render_complete_fence);
             }
+            else {
+                VkSemaphore wait_semaphores[] = { vulkan_image_acquired_semaphore[current_frame] };
+                VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
-            VkSemaphore wait_semaphores[] = { vulkan_image_acquired_semaphore[current_frame] };
-            VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+                VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+                submit_info.waitSemaphoreCount = wait_semaphore_count;
+                submit_info.pWaitSemaphores = wait_semaphores;
+                submit_info.pWaitDstStageMask = wait_stages;
+                submit_info.commandBufferCount = num_queued_command_buffers;
+                submit_info.pCommandBuffers = enqueued_command_buffers;
+                submit_info.signalSemaphoreCount = 1;
+                submit_info.pSignalSemaphores = render_complete_semaphore;
 
-            VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-            submit_info.waitSemaphoreCount = wait_semaphore_count;
-            submit_info.pWaitSemaphores = wait_semaphores;
-            submit_info.pWaitDstStageMask = wait_stages;
-            submit_info.commandBufferCount = num_queued_command_buffers;
-            submit_info.pCommandBuffers = enqueued_command_buffers;
-            submit_info.signalSemaphoreCount = 1;
-            submit_info.pSignalSemaphores = render_complete_semaphore;
-
-            vkQueueSubmit(vulkan_main_queue, 1, &submit_info, render_complete_fence);
+                vkQueueSubmit(vulkan_main_queue, 1, &submit_info, render_complete_fence);
+            }
         }
 
+        has_async_work = false;
+
+        if (async_compute_command_buffer != nullptr) {
+            submit_compute_load(async_compute_command_buffer);
+        }
        
 
         VkPresentInfoKHR present_info{ VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
@@ -3349,6 +3403,106 @@ namespace Helix {
                     // Swap element
                     resource_deletion_queue.delete_swap(i);
                 }
+            }
+        }
+    }
+
+    void GpuDevice::submit_compute_load(CommandBuffer* command_buffer) {
+        has_async_work = true;
+
+        if (timeline_semaphore_extension_present) {
+            if (synchronization2_extension_present) {
+                VkSemaphoreSubmitInfoKHR wait_semaphores[]{
+                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, last_compute_semaphore_value, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR, 0 }
+                };
+
+                ++last_compute_semaphore_value;
+
+                VkSemaphoreSubmitInfoKHR signal_semaphores[]{
+                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, last_compute_semaphore_value, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR, 0 },
+                };
+
+                VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+                command_buffer_info.commandBuffer = command_buffer->vk_handle;
+
+                VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+                submit_info.waitSemaphoreInfoCount = 1;
+                submit_info.pWaitSemaphoreInfos = wait_semaphores;
+                submit_info.commandBufferInfoCount = 1;
+                submit_info.pCommandBufferInfos = &command_buffer_info;
+                submit_info.signalSemaphoreInfoCount = 1;
+                submit_info.pSignalSemaphoreInfos = signal_semaphores;
+
+                queue_submit2(vulkan_compute_queue, 1, &submit_info, VK_NULL_HANDLE);
+            }
+            else {
+                VkSemaphore wait_semaphores[] = { vulkan_compute_semaphore };
+                VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
+
+                VkSemaphore signal_semaphores[] = { vulkan_compute_semaphore };
+
+                VkTimelineSemaphoreSubmitInfo semaphore_info{ VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
+
+                u64 wait_values[] = { last_compute_semaphore_value };
+                semaphore_info.waitSemaphoreValueCount = 1;
+                semaphore_info.pWaitSemaphoreValues = wait_values;
+
+                last_compute_semaphore_value++;
+
+                u64 signal_values[] = { last_compute_semaphore_value };
+                semaphore_info.signalSemaphoreValueCount = 1;
+                semaphore_info.pSignalSemaphoreValues = signal_values;
+
+                VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+                submit_info.waitSemaphoreCount = 1;
+                submit_info.pWaitSemaphores = wait_semaphores;
+                submit_info.pWaitDstStageMask = wait_stages;
+                submit_info.commandBufferCount = 1;
+                submit_info.pCommandBuffers = &command_buffer->vk_handle;
+                submit_info.signalSemaphoreCount = 1;
+                submit_info.pSignalSemaphores = signal_semaphores;
+
+                submit_info.pNext = &semaphore_info;
+
+                vkQueueSubmit(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+            }
+        }
+        else {
+            if (vkGetFenceStatus(vulkan_device, vulkan_compute_fence) != VK_SUCCESS) {
+                vkWaitForFences(vulkan_device, 1, &vulkan_compute_fence, VK_TRUE, UINT64_MAX);
+            }
+
+            vkResetFences(vulkan_device, 1, &vulkan_compute_fence);
+
+            if (synchronization2_extension_present) {
+                VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+                command_buffer_info.commandBuffer = command_buffer->vk_handle;
+
+                VkSemaphoreSubmitInfoKHR signal_semaphores[]{
+                    { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, 0 },
+                };
+
+                VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+                submit_info.waitSemaphoreInfoCount = 0;
+                submit_info.pWaitSemaphoreInfos = nullptr;
+                submit_info.commandBufferInfoCount = 1;
+                submit_info.pCommandBufferInfos = &command_buffer_info;
+                submit_info.signalSemaphoreInfoCount = 1;
+                submit_info.pSignalSemaphoreInfos = signal_semaphores;
+
+                queue_submit2(vulkan_compute_queue, 1, &submit_info, vulkan_compute_fence);
+            }
+            else {
+                VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+                submit_info.waitSemaphoreCount = 0;
+                submit_info.pWaitSemaphores = nullptr;
+                submit_info.pWaitDstStageMask = nullptr;
+                submit_info.commandBufferCount = 1;
+                submit_info.pCommandBuffers = &command_buffer->vk_handle;
+                submit_info.signalSemaphoreCount = 1;
+                submit_info.pSignalSemaphores = &vulkan_compute_semaphore;
+
+                vkQueueSubmit(vulkan_compute_queue, 1, &submit_info, vulkan_compute_fence);
             }
         }
     }

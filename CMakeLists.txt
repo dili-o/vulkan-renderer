@@ -17,6 +17,7 @@ file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp"
     "vendor/imgui/*.h"
     "vendor/enkiTS/TaskScheduler.cpp"
     "vendor/tlsf.c"
+    "vendor/meshoptimizer/*.cpp"
     "${SPIRV_REFLECT_INCLUDE_DIR}/spirv_reflect.c"
 )
 
