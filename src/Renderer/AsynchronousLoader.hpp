@@ -67,8 +67,8 @@ namespace Helix
         BufferHandle                            gpu_buffer_ready;
         u32*                                    completed;
 
-        VkCommandPool                           command_pools[GpuDevice::k_max_frames];
-        CommandBuffer                           command_buffers[GpuDevice::k_max_frames];
+        VkCommandPool                           command_pools[k_max_frames];
+        CommandBuffer                           command_buffers[k_max_frames];
         VkSemaphore                             transfer_complete_semaphore;
         VkFence                                 transfer_fence;
 

@@ -1,4 +1,7 @@
 #include "GPUResources.hpp"
+
+#include "GPUDevice.hpp"
+
 #include <Core/Assert.hpp>
 
 namespace Helix {
@@ -160,6 +163,12 @@ namespace Helix {
         return *this;
     }
 
+    SamplerCreation& SamplerCreation::set_reduction_mode(VkSamplerReductionMode mode) {
+        reduction_mode = mode;
+
+        return *this;
+    }
+
     SamplerCreation& SamplerCreation::set_name(cstring name_) {
         name = name_;
 
@@ -223,6 +232,25 @@ namespace Helix {
         return *this;
     }
 
+    void DescriptorSetLayoutCreation::sort_bindings_by_index() {
+        auto compare_function = [](void const* a, void const* b) -> int {
+            const Binding* binding_a = (Binding*)a;
+            const Binding* binding_b = (Binding*)b;
+
+            if (binding_a->index < binding_b->index)
+                return -1;
+            if (binding_a->index > binding_b->index)
+                return 1;
+            return 0;
+        };
+
+        qsort(
+            bindings,
+            num_bindings,
+            sizeof(DescriptorSetLayoutCreation::Binding),
+            compare_function);
+    }
+
     // DescriptorSetCreation //////////////////////////////////////////////////
     DescriptorSetCreation& DescriptorSetCreation::reset() {
         num_resources = 0;
@@ -259,6 +287,32 @@ namespace Helix {
     DescriptorSetCreation& DescriptorSetCreation::set_name(cstring name_) {
         name = name_;
         return *this;
+    }
+
+    void DescriptorSetCreation::sort_bindings_by_index() {
+        std::vector<u16> indices(num_resources);
+
+        for (int i = 0; i < num_resources; ++i) {
+            indices[i] = i;
+        }
+
+        std::sort(indices.begin(), indices.end(), [&](u16 i, u16 j) {
+            return bindings[i] < bindings[j];
+        });
+
+        ResourceHandle sorted_resources[k_max_descriptors_per_set];
+        SamplerHandle  sorted_samplers[k_max_descriptors_per_set];
+        u16 sorted_bindings[k_max_descriptors_per_set];
+
+        for (u32 i = 0; i < num_resources; ++i) {
+            sorted_resources[i] = resources[indices[i]];
+            sorted_samplers[i] = samplers[indices[i]];
+            sorted_bindings[i] = bindings[indices[i]];
+        }
+
+        memcpy(resources, sorted_resources, num_resources * sizeof(ResourceHandle));
+        memcpy(samplers, sorted_samplers, num_resources * sizeof(SamplerHandle));
+        memcpy(bindings, sorted_bindings, num_resources * sizeof(u16));
     }
 
     // VertexInputCreation /////////////////////////////////////
@@ -448,52 +502,109 @@ namespace Helix {
         return *this;
     }
 
+    //
     // Utils
 
-    void util_add_image_barrier(VkCommandBuffer command_buffer, VkImage image, ResourceState old_state, ResourceState new_state,
+
+    void util_add_image_barrier(GpuDevice* gpu, VkCommandBuffer command_buffer, Texture* texture, ResourceState new_state,
+        u32 base_mip_level, u32 mip_count, bool is_depth, u32 source_family, u32 destination_family,
+        QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type){
+        util_add_image_barrier(gpu, command_buffer, texture->vk_image, texture->state, new_state, base_mip_level, mip_count, is_depth, source_family,
+            destination_family, source_queue_type, destination_queue_type);
+        texture->state = new_state;
+    }
+
+    void util_add_image_barrier(GpuDevice* gpu, VkCommandBuffer command_buffer, VkImage image, ResourceState old_state, ResourceState new_state,
         u32 base_mip_level, u32 mip_count, bool is_depth, u32 source_family, u32 destination_family,
         QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type) {
 
-        VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-        barrier.image = image;
-        barrier.srcQueueFamilyIndex = source_family;
-        barrier.dstQueueFamilyIndex = destination_family;
-        barrier.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        barrier.subresourceRange.levelCount = mip_count;
+        if (gpu->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
+            VkImageMemoryBarrier2KHR barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR };
+            barrier.srcAccessMask = util_to_vk_access_flags2(old_state);
+            barrier.srcStageMask = util_determine_pipeline_stage_flags2(barrier.srcAccessMask, source_queue_type);
+            barrier.dstAccessMask = util_to_vk_access_flags2(new_state);
+            barrier.dstStageMask = util_determine_pipeline_stage_flags2(barrier.dstAccessMask, destination_queue_type);
+            barrier.oldLayout = util_to_vk_image_layout2(old_state);
+            barrier.newLayout = util_to_vk_image_layout2(new_state);
+            barrier.srcQueueFamilyIndex = source_family;
+            barrier.dstQueueFamilyIndex = destination_family;
+            barrier.image = image;
+            barrier.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            barrier.subresourceRange.baseMipLevel = base_mip_level;
+            barrier.subresourceRange.levelCount = mip_count;
 
-        barrier.subresourceRange.baseMipLevel = base_mip_level;
-        barrier.oldLayout = util_to_vk_image_layout(old_state);
-        barrier.newLayout = util_to_vk_image_layout(new_state);
-        barrier.srcAccessMask = util_to_vk_access_flags(old_state);
-        barrier.dstAccessMask = util_to_vk_access_flags(new_state);
+            VkDependencyInfoKHR dependency_info{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+            dependency_info.imageMemoryBarrierCount = 1;
+            dependency_info.pImageMemoryBarriers = &barrier;
 
-        const VkPipelineStageFlags source_stage_mask = util_determine_pipeline_stage_flags(barrier.srcAccessMask, source_queue_type);
-        const VkPipelineStageFlags destination_stage_mask = util_determine_pipeline_stage_flags(barrier.dstAccessMask, destination_queue_type);
+            gpu->cmd_pipeline_barrier2(command_buffer, &dependency_info);
+        } else{
+            VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+            barrier.image = image;
+            barrier.srcQueueFamilyIndex = source_family;
+            barrier.dstQueueFamilyIndex = destination_family;
+            barrier.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            barrier.subresourceRange.levelCount = mip_count;
 
-        vkCmdPipelineBarrier(command_buffer, source_stage_mask, destination_stage_mask, 0,
-            0, nullptr, 0, nullptr, 1, &barrier);
+            barrier.subresourceRange.baseMipLevel = base_mip_level;
+            barrier.oldLayout = util_to_vk_image_layout(old_state);
+            barrier.newLayout = util_to_vk_image_layout(new_state);
+            barrier.srcAccessMask = util_to_vk_access_flags(old_state);
+            barrier.dstAccessMask = util_to_vk_access_flags(new_state);
+
+            const VkPipelineStageFlags source_stage_mask = util_determine_pipeline_stage_flags(barrier.srcAccessMask, source_queue_type);
+            const VkPipelineStageFlags destination_stage_mask = util_determine_pipeline_stage_flags(barrier.dstAccessMask, destination_queue_type);
+
+            vkCmdPipelineBarrier(command_buffer, source_stage_mask, destination_stage_mask, 0,
+                0, nullptr, 0, nullptr, 1, &barrier);
+        }
     }
 
-    void util_add_buffer_barrier_ext(VkCommandBuffer command_buffer, VkBuffer buffer, ResourceState old_state, ResourceState new_state,
+    void util_add_buffer_barrier(GpuDevice* gpu, VkCommandBuffer command_buffer, VkBuffer buffer, ResourceState old_state, ResourceState new_state, u32 buffer_size) {
+
+        util_add_buffer_barrier_ext(gpu, command_buffer, buffer, old_state, new_state, buffer_size,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, QueueType::Graphics, QueueType::Graphics);
+    }
+
+    void util_add_buffer_barrier_ext(GpuDevice* gpu, VkCommandBuffer command_buffer, VkBuffer buffer, ResourceState old_state, ResourceState new_state,
         u32 buffer_size, u32 source_family, u32 destination_family,
         QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type) {
 
-        VkBufferMemoryBarrier barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
-        barrier.buffer = buffer;
-        barrier.srcQueueFamilyIndex = source_family;
-        barrier.dstQueueFamilyIndex = destination_family;
-        barrier.offset = 0;
-        barrier.size = buffer_size;
-        barrier.srcAccessMask = util_to_vk_access_flags(old_state);
-        barrier.dstAccessMask = util_to_vk_access_flags(new_state);
+        if (gpu->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
+            VkBufferMemoryBarrier2KHR barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR };
+            barrier.srcAccessMask = util_to_vk_access_flags2(old_state);
+            barrier.srcStageMask = util_determine_pipeline_stage_flags2(barrier.srcAccessMask, source_queue_type);
+            barrier.dstAccessMask = util_to_vk_access_flags2(new_state);
+            barrier.dstStageMask = util_determine_pipeline_stage_flags2(barrier.dstAccessMask, destination_queue_type);
+            barrier.buffer = buffer;
+            barrier.offset = 0;
+            barrier.size = buffer_size;
 
-        const VkPipelineStageFlags source_stage_mask = util_determine_pipeline_stage_flags(barrier.srcAccessMask, source_queue_type);
-        const VkPipelineStageFlags destination_stage_mask = util_determine_pipeline_stage_flags(barrier.dstAccessMask, destination_queue_type);
+            VkDependencyInfoKHR dependency_info{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+            dependency_info.bufferMemoryBarrierCount = 1;
+            dependency_info.pBufferMemoryBarriers = &barrier;
 
-        vkCmdPipelineBarrier(command_buffer, source_stage_mask, destination_stage_mask, 0,
-            0, nullptr, 1, &barrier, 0, nullptr);
+            gpu->cmd_pipeline_barrier2(command_buffer, &dependency_info);
+        } else{
+            VkBufferMemoryBarrier barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
+            barrier.buffer = buffer;
+            barrier.srcQueueFamilyIndex = source_family;
+            barrier.dstQueueFamilyIndex = destination_family;
+            barrier.offset = 0;
+            barrier.size = buffer_size;
+            barrier.srcAccessMask = util_to_vk_access_flags(old_state);
+            barrier.dstAccessMask = util_to_vk_access_flags(new_state);
+
+            const VkPipelineStageFlags source_stage_mask = util_determine_pipeline_stage_flags(barrier.srcAccessMask, source_queue_type);
+            const VkPipelineStageFlags destination_stage_mask = util_determine_pipeline_stage_flags(barrier.dstAccessMask, destination_queue_type);
+
+            vkCmdPipelineBarrier(command_buffer, source_stage_mask, destination_stage_mask, 0,
+                    0, nullptr, 1, &barrier, 0, nullptr);
+        }
     }
 
     VkFormat util_string_to_vk_format(cstring format) {
@@ -1239,4 +1350,258 @@ namespace Helix {
         HASSERT_MSG(false, "Invalid VkFormat string");
         return VK_FORMAT_UNDEFINED;
     }
+
+    //
+    //
+    VkAccessFlags util_to_vk_access_flags2(ResourceState state) {
+        VkAccessFlags ret = 0;
+        if (state & RESOURCE_STATE_COPY_SOURCE) {
+            ret |= VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_COPY_DEST) {
+            ret |= VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER) {
+            ret |= VK_ACCESS_2_UNIFORM_READ_BIT_KHR | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_INDEX_BUFFER) {
+            ret |= VK_ACCESS_2_INDEX_READ_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_UNORDERED_ACCESS) {
+            ret |= VK_ACCESS_2_SHADER_READ_BIT_KHR | VK_ACCESS_2_SHADER_WRITE_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_INDIRECT_ARGUMENT) {
+            ret |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_RENDER_TARGET) {
+            ret |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT_KHR | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_DEPTH_WRITE) {
+            ret |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_SHADER_RESOURCE) {
+            ret |= VK_ACCESS_2_SHADER_READ_BIT_KHR;
+        }
+        if (state & RESOURCE_STATE_PRESENT) {
+            ret |= VK_ACCESS_2_MEMORY_READ_BIT_KHR;
+        }
+#ifdef ENABLE_RAYTRACING
+        if (state & RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE) {
+            ret |= VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
+        }
+#endif
+
+        return ret;
+    }
+
+    //
+    //
+    static VkImageLayout util_to_vk_image_layout(ResourceState usage) {
+        if (usage & RESOURCE_STATE_COPY_SOURCE)
+            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_COPY_DEST)
+            return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_RENDER_TARGET)
+            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_DEPTH_WRITE)
+            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_DEPTH_READ)
+            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_UNORDERED_ACCESS)
+            return VK_IMAGE_LAYOUT_GENERAL;
+
+        if (usage & RESOURCE_STATE_SHADER_RESOURCE)
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_PRESENT)
+            return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        if (usage == RESOURCE_STATE_COMMON)
+            return VK_IMAGE_LAYOUT_GENERAL;
+
+        return VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+
+    //
+    //
+    VkImageLayout util_to_vk_image_layout2(ResourceState usage) {
+        if (usage & RESOURCE_STATE_COPY_SOURCE)
+            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_COPY_DEST)
+            return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+        if (usage & RESOURCE_STATE_RENDER_TARGET)
+            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+
+        if (usage & RESOURCE_STATE_DEPTH_WRITE)
+            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+
+        if (usage & RESOURCE_STATE_DEPTH_READ)
+            return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
+
+        if (usage & RESOURCE_STATE_UNORDERED_ACCESS)
+            return VK_IMAGE_LAYOUT_GENERAL;
+
+        if (usage & RESOURCE_STATE_SHADER_RESOURCE)
+            return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
+
+        if (usage & RESOURCE_STATE_PRESENT)
+            return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        if (usage == RESOURCE_STATE_COMMON)
+            return VK_IMAGE_LAYOUT_GENERAL;
+
+        return VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+
+    //
+    //
+    static VkPipelineStageFlags util_determine_pipeline_stage_flags(VkAccessFlags accessFlags, QueueType::Enum queueType) {
+        VkPipelineStageFlags flags = 0;
+
+        switch (queueType) {
+        case QueueType::Graphics:
+        {
+            if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+
+            if ((accessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0) {
+                flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+                flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                /*if ( pRenderer->pActiveGpuSettings->mGeometryShaderSupported ) {
+                    flags |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
+                }
+                if ( pRenderer->pActiveGpuSettings->mTessellationSupported ) {
+                    flags |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
+                    flags |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
+                }*/
+                flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+#ifdef ENABLE_RAYTRACING
+                if (pRenderer->mVulkan.mRaytracingExtension) {
+                    flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV;
+                }
+#endif
+            }
+
+            if ((accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0)
+                flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+            if ((accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+            if ((accessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+
+            break;
+        }
+        case QueueType::Compute:
+        {
+            if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0 ||
+                (accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
+                (accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
+                (accessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+                return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
+            if ((accessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
+            break;
+        }
+        case QueueType::CopyTransfer: return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        default: break;
+        }
+
+        // Compatible with both compute and graphics queues
+        if ((accessFlags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) != 0)
+            flags |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+
+        if ((accessFlags & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)
+            flags |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+        if ((accessFlags & (VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT)) != 0)
+            flags |= VK_PIPELINE_STAGE_HOST_BIT;
+
+        if (flags == 0)
+            flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+        return flags;
+    }
+
+    VkPipelineStageFlags2KHR util_determine_pipeline_stage_flags2(VkAccessFlags2KHR access_flags, QueueType::Enum queue_type) {
+        VkPipelineStageFlags2KHR flags = 0;
+
+        switch (queue_type) {
+        case QueueType::Graphics:
+        {
+            if ((access_flags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT_KHR;
+
+            if ((access_flags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0) {
+                flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+                /*if ( pRenderer->pActiveGpuSettings->mGeometryShaderSupported ) {
+                    flags |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
+                }
+                if ( pRenderer->pActiveGpuSettings->mTessellationSupported ) {
+                    flags |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
+                    flags |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
+                }*/
+                flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+#ifdef ENABLE_RAYTRACING
+                if (pRenderer->mVulkan.mRaytracingExtension) {
+                    flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV;
+                }
+#endif
+            }
+
+            if ((access_flags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0)
+                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+
+            if ((access_flags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+
+            if ((access_flags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;
+
+            break;
+        }
+        case QueueType::Compute:
+        {
+            if ((access_flags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0 ||
+                (access_flags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
+                (access_flags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
+                (access_flags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+                return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+
+            if ((access_flags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0)
+                flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+
+            break;
+        }
+        case QueueType::CopyTransfer: return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+        default: break;
+        }
+
+        // Compatible with both compute and graphics queues
+        if ((access_flags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) != 0)
+            flags |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT_KHR;
+
+        if ((access_flags & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)
+            flags |= VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+
+        if ((access_flags & (VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT)) != 0)
+            flags |= VK_PIPELINE_STAGE_2_HOST_BIT_KHR;
+
+        if (flags == 0)
+            flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+
+        return flags;
+    }
+
 } // namespace Helix

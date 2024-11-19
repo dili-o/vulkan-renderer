@@ -9,13 +9,15 @@
 
 namespace Helix {
 
+    struct GpuDevice;
+
     namespace spirv {
         struct ParseResult;
     } // namespace spirv
 
     struct Allocator;
 
-    static const u32                    k_invalid_index = 0xffffffff;
+    
 
     static const u32                    k_buffers_pool_size = 16384;
     static const u32                    k_textures_pool_size = 512;
@@ -26,54 +28,76 @@ namespace Helix {
     static const u32                    k_descriptor_sets_pool_size = 4096;
     static const u32                    k_samplers_pool_size = 32;
 
+    //struct ResourceHandle {
+    //    u32 index       : 20;
+    //    u32 generation  : 12;
+
+    //    bool operator==(const ResourceHandle& handle) const {
+    //        return index == handle.index; // Can't think of a reason why we want to check if generations match.
+    //    }
+    //};
+
+    /*static const ResourceHandle k_invalid_index = { 0xffffffff };
+
+    typedef ResourceHandle BufferHandle;
+    typedef ResourceHandle TextureHandle;
+    typedef ResourceHandle ShaderStateHandle;
+    typedef ResourceHandle SamplerHandle;
+    typedef ResourceHandle DescriptorSetLayoutHandle;
+    typedef ResourceHandle DescriptorSetHandle;
+    typedef ResourceHandle PipelineHandle;
+    typedef ResourceHandle RenderPassHandle;
+    typedef ResourceHandle FramebufferHandle;*/
     typedef u32                         ResourceHandle;
 
+    static const u32                    k_invalid_index = 0xffffffff;
+
     struct BufferHandle {
-        ResourceHandle                  index = k_invalid_index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct BufferHandle
 
     struct TextureHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct TextureHandle
 
     struct ShaderStateHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct ShaderStateHandle
 
     struct SamplerHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct SamplerHandle
 
     struct DescriptorSetLayoutHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct DescriptorSetLayoutHandle
 
     struct DescriptorSetHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct DescriptorSetHandle
 
     struct PipelineHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct PipelineHandle
 
     struct RenderPassHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct RenderPassHandle
 
     struct FramebufferHandle {
-        ResourceHandle                  index;
+        ResourceHandle                  index = { k_invalid_index };
     }; // struct Pipeline
 
     // Invalid handles
-    static BufferHandle                 k_invalid_buffer{ k_invalid_index };
-    static TextureHandle                k_invalid_texture{ k_invalid_index };
-    static ShaderStateHandle            k_invalid_shader{ k_invalid_index };
-    static SamplerHandle                k_invalid_sampler{ k_invalid_index };
-    static DescriptorSetLayoutHandle    k_invalid_layout{ k_invalid_index };
-    static DescriptorSetHandle          k_invalid_set{ k_invalid_index };
-    static PipelineHandle               k_invalid_pipeline{ k_invalid_index };
-    static RenderPassHandle             k_invalid_pass{ k_invalid_index };
-    static FramebufferHandle            k_invalid_framebuffer{ k_invalid_index };
+    static const BufferHandle                 k_invalid_buffer = {k_invalid_index};
+    static const TextureHandle                k_invalid_texture = {k_invalid_index};
+    static const ShaderStateHandle            k_invalid_shader = {k_invalid_index};
+    static const SamplerHandle                k_invalid_sampler = {k_invalid_index};
+    static const DescriptorSetLayoutHandle    k_invalid_layout = {k_invalid_index};
+    static const DescriptorSetHandle          k_invalid_set = {k_invalid_index};
+    static const PipelineHandle               k_invalid_pipeline = {k_invalid_index};
+    static const RenderPassHandle             k_invalid_pass = {k_invalid_index};
+    static const FramebufferHandle            k_invalid_framebuffer = { k_invalid_index };
 
 
     // Consts /////////////////////////////////////////////////////////////////
@@ -267,12 +291,15 @@ namespace Helix {
         VkSamplerAddressMode            address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         VkSamplerAddressMode            address_mode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-        cstring                     name = nullptr;
+        VkSamplerReductionMode          reduction_mode = VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE;
+
+        cstring                         name = nullptr;
 
         SamplerCreation&                set_min_mag_mip(VkFilter min, VkFilter mag, VkSamplerMipmapMode mip);
         SamplerCreation&                set_address_mode_u(VkSamplerAddressMode u);
         SamplerCreation&                set_address_mode_uv(VkSamplerAddressMode u, VkSamplerAddressMode v);
         SamplerCreation&                set_address_mode_uvw(VkSamplerAddressMode u, VkSamplerAddressMode v, VkSamplerAddressMode w);
+        SamplerCreation&                set_reduction_mode(VkSamplerReductionMode mode);
         SamplerCreation&                set_name(cstring name);
 
     }; // struct SamplerCreation
@@ -334,6 +361,8 @@ namespace Helix {
         DescriptorSetLayoutCreation&    set_name(cstring name);
         DescriptorSetLayoutCreation&    set_set_index(u32 index);
 
+        void                            sort_bindings_by_index();
+
     }; // struct DescriptorSetLayoutCreation
 
     //
@@ -356,6 +385,8 @@ namespace Helix {
         DescriptorSetCreation&          buffer(BufferHandle buffer, u16 binding);
         DescriptorSetCreation&          texture_sampler(TextureHandle texture, SamplerHandle sampler, u16 binding);   // TODO: separate samplers from textures
         DescriptorSetCreation&          set_name(cstring name);
+
+        void                            sort_bindings_by_index();
 
     }; // struct DescriptorSetCreation
 
@@ -736,7 +767,9 @@ namespace Helix {
         VkSamplerAddressMode            address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         VkSamplerAddressMode            address_mode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-        cstring                     name = nullptr;
+        VkSamplerReductionMode          reduction_mode = VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE;
+
+        cstring                         name = nullptr;
 
     }; // struct SamplerVulkan
 
@@ -747,8 +780,8 @@ namespace Helix {
         VkImage                         vk_image;
         VkImageView                     vk_image_view;
         VkFormat                        vk_format;
-        VkImageLayout                   vk_image_layout;
         VmaAllocation                   vma_allocation;
+        ResourceState                   state = RESOURCE_STATE_UNDEFINED;
 
         u16                             width = 1;
         u16                             height = 1;
@@ -761,7 +794,7 @@ namespace Helix {
 
         Sampler*                        sampler = nullptr;
 
-        cstring name = nullptr;
+        cstring                         name = nullptr;
     }; // struct TextureVulkan
 
     //
@@ -841,6 +874,8 @@ namespace Helix {
         PipelineHandle                  handle;
         bool                            graphics_pipeline = true;
 
+        cstring                         name = nullptr;
+
     }; // struct PipelineVulkan
 
 
@@ -898,6 +933,10 @@ namespace Helix {
             return "comp";
         case VK_SHADER_STAGE_GEOMETRY_BIT:
             return "geom";
+        case VK_SHADER_STAGE_MESH_BIT_NV:
+            return "mesh";
+        case VK_SHADER_STAGE_TASK_BIT_NV:
+            return "task";
         default:
             return "";
         }
@@ -914,6 +953,10 @@ namespace Helix {
             return "COMPUTE";
         case VK_SHADER_STAGE_GEOMETRY_BIT:
             return "GEOMETRY";
+        case VK_SHADER_STAGE_MESH_BIT_NV:
+            return "MESH";
+        case VK_SHADER_STAGE_TASK_BIT_NV:
+            return "TASK";
         default:
             return "";
         }
@@ -993,114 +1036,30 @@ namespace Helix {
         return ret;
     }
 
-    static VkImageLayout util_to_vk_image_layout(ResourceState usage) {
-        if (usage & RESOURCE_STATE_COPY_SOURCE)
-            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    //
+    //
+    VkAccessFlags util_to_vk_access_flags2(ResourceState state);
 
-        if (usage & RESOURCE_STATE_COPY_DEST)
-            return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    static VkImageLayout util_to_vk_image_layout(ResourceState usage);
 
-        if (usage & RESOURCE_STATE_RENDER_TARGET)
-            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        if (usage & RESOURCE_STATE_DEPTH_WRITE)
-            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        if (usage & RESOURCE_STATE_DEPTH_READ)
-            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-
-        if (usage & RESOURCE_STATE_UNORDERED_ACCESS)
-            return VK_IMAGE_LAYOUT_GENERAL;
-
-        if (usage & RESOURCE_STATE_SHADER_RESOURCE)
-            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        if (usage & RESOURCE_STATE_PRESENT)
-            return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        if (usage == RESOURCE_STATE_COMMON)
-            return VK_IMAGE_LAYOUT_GENERAL;
-
-        return VK_IMAGE_LAYOUT_UNDEFINED;
-    }
+    VkImageLayout util_to_vk_image_layout2(ResourceState usage);
 
     // Determines pipeline stages involved for given accesses
-    static VkPipelineStageFlags util_determine_pipeline_stage_flags(VkAccessFlags accessFlags, QueueType::Enum queueType) {
-        VkPipelineStageFlags flags = 0;
+    static VkPipelineStageFlags util_determine_pipeline_stage_flags(VkAccessFlags accessFlags, QueueType::Enum queueType);
 
-        switch (queueType) {
-        case QueueType::Graphics:
-        {
-            if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+    VkPipelineStageFlags2KHR util_determine_pipeline_stage_flags2(VkAccessFlags2KHR access_flags, QueueType::Enum queue_type);
 
-            if ((accessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0) {
-                flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-                flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                /*if ( pRenderer->pActiveGpuSettings->mGeometryShaderSupported ) {
-                    flags |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
-                }
-                if ( pRenderer->pActiveGpuSettings->mTessellationSupported ) {
-                    flags |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
-                    flags |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
-                }*/
-                flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-#ifdef ENABLE_RAYTRACING
-                if (pRenderer->mVulkan.mRaytracingExtension) {
-                    flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV;
-                }
-#endif
-            }
+    void util_add_image_barrier(GpuDevice* gpu, VkCommandBuffer command_buffer, Texture* texture,
+        ResourceState new_state, u32 base_mip_level, u32 mip_count, bool is_depth, u32 source_family = VK_QUEUE_FAMILY_IGNORED, u32 destination_family = VK_QUEUE_FAMILY_IGNORED,
+        QueueType::Enum source_queue_type = QueueType::Graphics, QueueType::Enum destination_queue_type = QueueType::Graphics);
 
-            if ((accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0)
-                flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-            if ((accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-            if ((accessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-
-            break;
-        }
-        case QueueType::Compute:
-        {
-            if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0 ||
-                (accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
-                (accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
-                (accessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
-                return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-
-            if ((accessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-
-            break;
-        }
-        case QueueType::CopyTransfer: return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        default: break;
-        }
-
-        // Compatible with both compute and graphics queues
-        if ((accessFlags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) != 0)
-            flags |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
-
-        if ((accessFlags & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)
-            flags |= VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-        if ((accessFlags & (VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT)) != 0)
-            flags |= VK_PIPELINE_STAGE_HOST_BIT;
-
-        if (flags == 0)
-            flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-
-        return flags;
-    }
-
-    void util_add_image_barrier(VkCommandBuffer command_buffer, VkImage image, ResourceState old_state, ResourceState new_state,
+    void util_add_image_barrier(GpuDevice* gpu, VkCommandBuffer command_buffer, VkImage image, ResourceState old_state, ResourceState new_state,
         u32 base_mip_level, u32 mip_count, bool is_depth, u32 source_family = VK_QUEUE_FAMILY_IGNORED, u32 destination_family = VK_QUEUE_FAMILY_IGNORED,
         QueueType::Enum source_queue_type = QueueType::Graphics, QueueType::Enum destination_queue_type = QueueType::Graphics);
 
-    void util_add_buffer_barrier_ext(VkCommandBuffer command_buffer, VkBuffer buffer, ResourceState old_state, ResourceState new_state,
+    void util_add_buffer_barrier(GpuDevice* gpu, VkCommandBuffer command_buffer, VkBuffer buffer, ResourceState old_state, ResourceState new_state, u32 buffer_size);
+
+    void util_add_buffer_barrier_ext(GpuDevice* gpu, VkCommandBuffer command_buffer, VkBuffer buffer, ResourceState old_state, ResourceState new_state,
         u32 buffer_size, u32 source_family, u32 destination_family,
         QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type);
 

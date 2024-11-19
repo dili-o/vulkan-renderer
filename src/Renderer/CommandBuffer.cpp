@@ -174,7 +174,7 @@ namespace Helix {
 
     void CommandBuffer::end_current_render_pass() {
         if (is_recording && current_render_pass != nullptr) {
-            if (device->dynamic_rendering_extension_present) {
+            if (device->gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
                 device->cmd_end_rendering(vk_handle);
             }
             else {
@@ -200,12 +200,14 @@ namespace Helix {
             Framebuffer* framebuffer = device->access_framebuffer(framebuffer_);
 
             if (render_pass != current_render_pass) {
-                if (device->dynamic_rendering_extension_present) {
+                if (device->gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
                     VkRenderingAttachmentInfoKHR color_attachments_info[8]; // max_number of attachments is 8
                     memset(color_attachments_info, 0, sizeof(VkRenderingAttachmentInfoKHR) * framebuffer->num_color_attachments);
 
                     for (u32 a = 0; a < framebuffer->num_color_attachments; ++a) {
                         Texture* texture = device->access_texture(framebuffer->color_attachments[a]);
+
+                        texture->state = RESOURCE_STATE_RENDER_TARGET;
 
                         VkAttachmentLoadOp color_op;
                         switch (render_pass->output.color_operations[a]) {
@@ -223,7 +225,7 @@ namespace Helix {
                         VkRenderingAttachmentInfoKHR& color_attachment_info = color_attachments_info[a];
                         color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
                         color_attachment_info.imageView = texture->vk_image_view;
-                        color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                        color_attachment_info.imageLayout = device->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2 ? VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                         color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
                         color_attachment_info.loadOp = color_op;
                         color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -250,8 +252,10 @@ namespace Helix {
                             break;
                         }
 
+                        texture->state = RESOURCE_STATE_DEPTH_WRITE;
+
                         depth_attachment_info.imageView = texture->vk_image_view;
-                        depth_attachment_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                        depth_attachment_info.imageLayout = device->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2 ? VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                         depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
                         depth_attachment_info.loadOp = depth_op;
                         depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -374,7 +378,7 @@ namespace Helix {
         vkCmdBindDescriptorSets(vk_handle, current_pipeline->vk_bind_point, current_pipeline->vk_pipeline_layout, k_first_set,
             num_lists, vk_descriptor_sets, num_offsets, offsets_cache);
 
-        if (device->bindless_supported) {
+        if (device->gpu_device_features & GpuDeviceFeature_BINDLESS) {
             vkCmdBindDescriptorSets(vk_handle, current_pipeline->vk_bind_point, current_pipeline->vk_pipeline_layout, 0,
                 1, &device->vulkan_bindless_descriptor_set, 0, nullptr);
         }
@@ -410,7 +414,7 @@ namespace Helix {
         vkCmdBindDescriptorSets(vk_handle, current_pipeline->vk_bind_point, current_pipeline->vk_pipeline_layout, k_first_set,
             num_lists, vk_descriptor_sets, num_offsets, offsets_cache);
 
-        if (device->bindless_supported) {
+        if (device->gpu_device_features & GpuDeviceFeature_BINDLESS) {
             vkCmdBindDescriptorSets(vk_handle, current_pipeline->vk_bind_point, current_pipeline->vk_pipeline_layout, 1,
                 1, &device->vulkan_bindless_descriptor_set, 0, nullptr);
         }
@@ -511,6 +515,18 @@ namespace Helix {
         vkCmdDrawIndexedIndirect(vk_handle, vk_buffer, vk_offset, 1, sizeof(VkDrawIndirectCommand));
     }
 
+    void CommandBuffer::draw_mesh_task(u32 task_count, u32 first_task) {
+
+        device->cmd_draw_mesh_tasks(vk_handle, task_count, first_task);
+    }
+
+    void CommandBuffer::draw_mesh_task_indirect_count(BufferHandle command_buffer, u32 command_offset, BufferHandle count_buffer, u32 count_offset, u32 max_draws, u32 stride) {
+        Buffer* command_buffer_ = device->access_buffer(command_buffer);
+        Buffer* count_buffer_ = device->access_buffer(count_buffer);
+
+        device->cmd_draw_mesh_tasks_indirect_count(vk_handle, command_buffer_->vk_handle, command_offset, count_buffer_->vk_handle, count_offset, max_draws, stride);
+    }
+
     void CommandBuffer::dispatch_indirect(BufferHandle buffer_handle, u32 offset) {
         Buffer* buffer = device->access_buffer(buffer_handle);
 
@@ -576,16 +592,14 @@ namespace Helix {
         region.imageExtent = { texture->width, texture->height, texture->depth };
 
         // Pre copy memory barrier to perform layout transition
-        util_add_image_barrier(vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, 0, 1, false);
+        util_add_image_barrier(device, vk_handle, texture, RESOURCE_STATE_COPY_DEST, 0, 1, false);
         // Copy from the staging buffer to the image
         vkCmdCopyBufferToImage(vk_handle, staging_buffer->vk_handle, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         // Post copy memory barrier
-        util_add_image_barrier(vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE,
+        util_add_image_barrier(device, vk_handle, texture, RESOURCE_STATE_COPY_SOURCE,
             0, 1, false, device->vulkan_transfer_queue_family, device->vulkan_main_queue_family,
             QueueType::CopyTransfer, QueueType::Graphics);
-
-        texture->vk_image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     }
 
     void CommandBuffer::upload_buffer_data(BufferHandle buffer_handle, void* buffer_data, BufferHandle staging_buffer_handle, sizet staging_buffer_offset) {
@@ -604,7 +618,7 @@ namespace Helix {
 
         vkCmdCopyBuffer(vk_handle, staging_buffer->vk_handle, buffer->vk_handle, 1, &region);
 
-        util_add_buffer_barrier_ext(vk_handle, buffer->vk_handle, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_UNDEFINED,
+        util_add_buffer_barrier_ext(device, vk_handle, buffer->vk_handle, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_UNDEFINED,
             copy_size, device->vulkan_transfer_queue_family, device->vulkan_main_queue_family,
             QueueType::CopyTransfer, QueueType::Graphics);
     }
@@ -632,7 +646,7 @@ namespace Helix {
         num_pools_per_frame = num_threads;
 
         // Create pools: num frames * num threads;
-        const u32 total_pools = num_pools_per_frame * gpu->k_max_frames;
+        const u32 total_pools = num_pools_per_frame * k_max_frames;
         vulkan_command_pools.init(gpu->allocator, total_pools, total_pools);
         // Init per thread-frame used buffers
         used_buffers.init(gpu->allocator, total_pools, total_pools);
@@ -704,7 +718,7 @@ namespace Helix {
     }
 
     void CommandBufferManager::shutdown() {
-        const u32 total_pools = num_pools_per_frame * gpu->k_max_frames;
+        const u32 total_pools = num_pools_per_frame * k_max_frames;
         for (u32 i = 0; i < total_pools; i++) {
             vkDestroyCommandPool(gpu->vulkan_device, vulkan_command_pools[i], gpu->vulkan_allocation_callbacks);
         }

@@ -6,7 +6,6 @@
 
 #include "Renderer/CommandBuffer.hpp"
 #include "Renderer/GPUDevice.hpp"
-#include "Renderer/GPUResources.hpp"
 
 #include <vendor/json.hpp>
 
@@ -38,10 +37,10 @@ namespace Helix {
     }
 
     RenderPassOperation::Enum string_to_render_pass_operation(cstring op) {
-        if (strcmp(op, "VK_ATTACHMENT_LOAD_OP_CLEAR") == 0) {
+        if (strcmp(op, "clear") == 0) {
             return RenderPassOperation::Clear;
         }
-        else if (strcmp(op, "VK_ATTACHMENT_LOAD_OP_LOAD") == 0) {
+        else if (strcmp(op, "load") == 0) {
             return RenderPassOperation::Load;
         }
 
@@ -77,18 +76,21 @@ namespace Helix {
 
         u32 width = 0;
         u32 height = 0;
+        f32 scale_width = 0.f;
+        f32 scale_height = 0.f;
 
         for (u32 r = 0; r < node->outputs.size; ++r) {
             FrameGraphResource* resource = frame_graph->access_resource(node->outputs[r]);
 
             FrameGraphResourceInfo& info = resource->resource_info;
 
-            if (resource->type == FrameGraphResourceType_Buffer || resource->type == FrameGraphResourceType_Reference) {
+            if (resource->type != FrameGraphResourceType_Attachment) {
                 continue;
             }
 
             if (width == 0) {
                 width = info.texture.width;
+                scale_width = info.texture.scale_width > 0.f ? info.texture.scale_width : 1.f;
             }
             else {
                 HASSERT(width == info.texture.width);
@@ -96,23 +98,24 @@ namespace Helix {
 
             if (height == 0) {
                 height = info.texture.height;
+                scale_height = info.texture.scale_height > 0.f ? info.texture.scale_height : 1.f;
             }
             else {
                 HASSERT(height == info.texture.height);
             }
 
             if (info.texture.format == VK_FORMAT_D32_SFLOAT) {
-                framebuffer_creation.set_depth_stencil_texture(info.texture.texture);
+                framebuffer_creation.set_depth_stencil_texture(info.texture.handle);
             }
             else {
-                framebuffer_creation.add_render_texture(info.texture.texture);
+                framebuffer_creation.add_render_texture(info.texture.handle);
             }
         }
 
         for (u32 r = 0; r < node->inputs.size; ++r) {
             FrameGraphResource* input_resource = frame_graph->access_resource(node->inputs[r]);
 
-            if (input_resource->type == FrameGraphResourceType_Buffer || input_resource->type == FrameGraphResourceType_Reference) {
+            if (input_resource->type != FrameGraphResourceType_Attachment) {
                 continue;
             }
 
@@ -120,7 +123,7 @@ namespace Helix {
 
             FrameGraphResourceInfo& info = resource->resource_info;
 
-            input_resource->resource_info.texture.texture = info.texture.texture;
+            input_resource->resource_info.texture.handle = info.texture.handle;
 
             if (width == 0) {
                 width = info.texture.width;
@@ -136,21 +139,20 @@ namespace Helix {
                 HASSERT(height == info.texture.height);
             }
 
-            if (input_resource->type == FrameGraphResourceType_Texture) {
-                continue;
-            }
-
             if (info.texture.format == VK_FORMAT_D32_SFLOAT) {
-                framebuffer_creation.set_depth_stencil_texture(info.texture.texture);
+                framebuffer_creation.set_depth_stencil_texture(info.texture.handle);
             }
             else {
-                framebuffer_creation.add_render_texture(info.texture.texture);
+                framebuffer_creation.add_render_texture(info.texture.handle);
             }
         }
 
         framebuffer_creation.width = width;
         framebuffer_creation.height = height;
+        framebuffer_creation.set_scaling(scale_width, scale_height, 1);
+
         node->framebuffer = frame_graph->builder->device->create_framebuffer(framebuffer_creation);
+
     }
 
     static void create_render_pass(FrameGraph* frame_graph, FrameGraphNode* node) {
@@ -228,12 +230,13 @@ namespace Helix {
             FrameGraphResource* resource = resources.get(resource_index);
 
             if (resource->type == FrameGraphResourceType_Texture || resource->type == FrameGraphResourceType_Attachment) {
-                Texture* texture = device->access_texture(resource->resource_info.texture.texture);
+                Texture* texture = device->access_texture(resource->resource_info.texture.handle);
                 device->destroy_texture(texture->handle);
             }
             else if (resource->type == FrameGraphResourceType_Buffer) {
-                Buffer* buffer = device->access_buffer(resource->resource_info.buffer.buffer);
-                device->destroy_buffer(buffer->handle);
+                // TODO: Right now buffer resources in framegraphs are handled separately by the Scene class
+                //Buffer* buffer = device->access_buffer(resource->resource_info.buffer.handle);
+                //device->destroy_buffer(buffer->handle);
             }
 
             resource_map.iterator_advance(it);
@@ -356,6 +359,7 @@ namespace Helix {
         FrameGraphNode* node = (FrameGraphNode*)node_cache.nodes.access_resource(node_handle.index);
         node->name = creation.name;
         node->enabled = creation.enabled;
+        node->compute = creation.compute;
         node->inputs.init(allocator, creation.inputs.size);
         node->outputs.init(allocator, creation.outputs.size);
         node->edges.init(allocator, creation.outputs.size);
@@ -436,9 +440,10 @@ namespace Helix {
             FrameGraphNodeHandle handle = nodes[i];
             FrameGraphNode* node = builder->access_node(handle);
 
-            builder->device->destroy_render_pass(node->render_pass);
-            builder->device->destroy_framebuffer(node->framebuffer);
-
+            if (!node->compute) {
+                builder->device->destroy_render_pass(node->render_pass);
+                builder->device->destroy_framebuffer(node->framebuffer);
+            }
             node->inputs.shutdown();
             node->outputs.shutdown();
             node->edges.shutdown();
@@ -480,6 +485,8 @@ namespace Helix {
             node_creation.inputs.init(temp_allocator, pass_inputs.size());
             node_creation.outputs.init(temp_allocator, pass_outputs.size());
 
+            node_creation.compute = pass.value("type", "").compare("compute") == 0;
+
             for (sizet ii = 0; ii < pass_inputs.size(); ++ii) {
                 json pass_input = pass_inputs[ii];
 
@@ -511,33 +518,57 @@ namespace Helix {
                 HASSERT(!output_name.empty());
 
                 output_creation.type = string_to_resource_type(output_type.c_str());
-
                 output_creation.name = string_buffer.append_use_f("%s", output_name.c_str());
 
                 switch (output_creation.type) {
-                case FrameGraphResourceType_Attachment:
                 case FrameGraphResourceType_Texture:
+                {
+
+                }break;
+                case FrameGraphResourceType_Attachment:
                 {
                     std::string format = pass_output.value("format", "");
                     HASSERT(!format.empty());
 
                     output_creation.resource_info.texture.format = util_string_to_vk_format(format.c_str());
 
-                    std::string load_op = pass_output.value("op", "");
+                    std::string load_op = pass_output.value("load_operation", "");
                     HASSERT(!load_op.empty());
 
                     output_creation.resource_info.texture.load_op = string_to_render_pass_operation(load_op.c_str());
 
                     json resolution = pass_output["resolution"];
+                    json scaling = pass_output["resolution_scale"];
 
-                    output_creation.resource_info.texture.width = resolution[0];
-                    output_creation.resource_info.texture.height = resolution[1];
-                    output_creation.resource_info.texture.depth = 1;
+                    if (resolution.is_array()) {
+                        output_creation.resource_info.texture.width = resolution[0];
+                        output_creation.resource_info.texture.height = resolution[1];
+                        output_creation.resource_info.texture.depth = 1;
+                        output_creation.resource_info.texture.scale_width = 0.f;
+                        output_creation.resource_info.texture.scale_height = 0.f;
+                    }
+                    else if (scaling.is_array()) {
+                        output_creation.resource_info.texture.width = 0;
+                        output_creation.resource_info.texture.height = 0;
+                        output_creation.resource_info.texture.depth = 1;
+                        output_creation.resource_info.texture.scale_width = scaling[0];
+                        output_creation.resource_info.texture.scale_height = scaling[1];
+                    }
+                    else {
+                        output_creation.resource_info.texture.width = 0;
+                        output_creation.resource_info.texture.height = 0;
+                        output_creation.resource_info.texture.depth = 1;
+                        output_creation.resource_info.texture.scale_width = 1.f;
+                        output_creation.resource_info.texture.scale_height = 1.f;
+                    }
+
+                    output_creation.resource_info.texture.compute = node_creation.compute;
+
                 } break;
                 case FrameGraphResourceType_Buffer:
                 {
                     // TODO(marco)
-                    HASSERT_MSG(false, "ResourceType_Buffer not currently supported");
+                    //HASSERT_MSG(false, "ResourceType_Buffer not currently supported");
                 } break;
                 }
 
@@ -710,6 +741,14 @@ namespace Helix {
                     if (resource->type == FrameGraphResourceType_Attachment) {
                         FrameGraphResourceInfo& info = resource->resource_info;
 
+                        // Resolve texture size if needed
+                        if (info.texture.width == 0 || info.texture.height == 0) {
+                            info.texture.width = builder->device->swapchain_width * info.texture.scale_width;
+                            info.texture.height = builder->device->swapchain_height * info.texture.scale_height;
+                        }
+
+                        TextureFlags::Mask texture_creation_flags = info.texture.compute ? (TextureFlags::Mask)(TextureFlags::RenderTarget_mask | TextureFlags::Compute_mask) : TextureFlags::RenderTarget_mask;
+
                         if (free_list.size > 0) {
                             // TODO(marco): find best fit
                             TextureHandle alias_texture = free_list.back();
@@ -719,14 +758,14 @@ namespace Helix {
                             texture_creation.set_data(nullptr).set_alias(alias_texture).set_name(resource->name).set_format_type(info.texture.format, TextureType::Enum::Texture2D).set_size(info.texture.width, info.texture.height, info.texture.depth).set_flags(1, TextureFlags::RenderTarget_mask);
                             TextureHandle handle = builder->device->create_texture(texture_creation);
 
-                            info.texture.texture = handle;
+                            info.texture.handle = handle;
                         }
                         else {
                             TextureCreation texture_creation{ };
                             texture_creation.set_data(nullptr).set_name(resource->name).set_format_type(info.texture.format, TextureType::Enum::Texture2D).set_size(info.texture.width, info.texture.height, info.texture.depth).set_flags(1, TextureFlags::RenderTarget_mask);
                             TextureHandle handle = builder->device->create_texture(texture_creation);
 
-                            info.texture.texture = handle;
+                            info.texture.handle = handle;
                         }
                     }
 
@@ -747,7 +786,7 @@ namespace Helix {
                     deallocations[resource_index] = nodes[i];
 
                     if (resource->type == FrameGraphResourceType_Attachment || resource->type == FrameGraphResourceType_Texture) {
-                        free_list.push(resource->resource_info.texture.texture);
+                        free_list.push(resource->resource_info.texture.handle);
                     }
 
                     HDEBUG("Output {} deallocated on node {}", resource->name, nodes[i].index);
@@ -762,6 +801,10 @@ namespace Helix {
         for (u32 i = 0; i < nodes.size; ++i) {
             FrameGraphNode* node = builder->access_node(nodes[i]);
             if (!node->enabled) {
+                continue;
+            }
+
+            if (node->compute) {
                 continue;
             }
 
@@ -786,7 +829,7 @@ namespace Helix {
         }
     }
 
-    void FrameGraph::render(CommandBuffer* gpu_commands, Scene* render_scene)
+    void FrameGraph::render(u32 current_frame_index, CommandBuffer* gpu_commands, Scene* scene)
     {
         gpu_commands->push_marker("Frame");
 
@@ -796,66 +839,127 @@ namespace Helix {
                 continue;
             }
 
-            gpu_commands->push_marker(node->name);
-            // TODO(marco): add clear colour to json
-            gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
-            gpu_commands->clear_depth_stencil(1.0f, 0);
+            if (node->compute) {
+                gpu_commands->push_marker(node->name);
 
-            u32 width = 0;
-            u32 height = 0;
+                for (u32 i = 0; i < node->inputs.size; ++i) {
+                    FrameGraphResource* input_resource = builder->access_resource(node->inputs[i]);
+                    FrameGraphResource* resource = builder->access_resource(input_resource->output_handle);
 
-            for (u32 i = 0; i < node->inputs.size; ++i) {
-                FrameGraphResource* resource = builder->access_resource(node->inputs[i]);
-
-                if (resource->type == FrameGraphResourceType_Texture) {
-                    Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.texture);
-
-                    util_add_image_barrier(gpu_commands->vk_handle, texture->vk_image, RESOURCE_STATE_RENDER_TARGET, RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0, 1, resource->resource_info.texture.format == VK_FORMAT_D32_SFLOAT);
-                }
-                else if (resource->type == FrameGraphResourceType_Attachment) {
-                    Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.texture);
-
-                    width = texture->width;
-                    height = texture->height;
-                }
-            }
-
-            for (u32 o = 0; o < node->outputs.size; ++o) {
-                FrameGraphResource* resource = builder->access_resource(node->outputs[o]);
-
-                if (resource->type == FrameGraphResourceType_Attachment) {
-                    Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.texture);
-
-                    width = texture->width;
-                    height = texture->height;
-
-                    if (texture->vk_format == VK_FORMAT_D32_SFLOAT) {
-                        util_add_image_barrier(gpu_commands->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_DEPTH_WRITE, 0, 1, resource->resource_info.texture.format == VK_FORMAT_D32_SFLOAT);
+                    if (resource == nullptr || resource->resource_info.external) {
+                        continue;
                     }
-                    else {
-                        util_add_image_barrier(gpu_commands->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_RENDER_TARGET, 0, 1, resource->resource_info.texture.format == VK_FORMAT_D32_SFLOAT);
+
+                    if (input_resource->type == FrameGraphResourceType_Texture) {
+                        Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
+
+                        util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_SHADER_RESOURCE, 0, 1, TextureFormat::has_depth(texture->vk_format));
+                    }
+                    else if (input_resource->type == FrameGraphResourceType_Attachment) {
+                        // TODO: what to do with attachments ?
+                        Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
+                        texture = texture;
                     }
                 }
+
+                for (u32 o = 0; o < node->outputs.size; ++o) {
+                    FrameGraphResource* resource = builder->access_resource(node->outputs[o]);
+
+                    if (resource->type == FrameGraphResourceType_Attachment) {
+                        Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
+
+                        if (TextureFormat::has_depth(texture->vk_format)) {
+                            // Is this supported even ?
+                            HASSERT(false);
+                        }
+                        else {
+                            util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_UNORDERED_ACCESS, 0, 1, false);
+                        }
+                    }
+                }
+
+                node->graph_render_pass->pre_render(gpu_commands, scene);
+                node->graph_render_pass->render(gpu_commands, scene);
+                node->graph_render_pass->post_render(current_frame_index, gpu_commands, this);
+
+                gpu_commands->pop_marker();
+            }
+            else {
+                gpu_commands->push_marker(node->name);
+                // TODO(marco): add clear colour to json
+                gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
+                gpu_commands->clear_depth_stencil(1.0f, 0);
+
+                u32 width = 0;
+                u32 height = 0;
+
+                for (u32 i = 0; i < node->inputs.size; ++i) {
+                    FrameGraphResource* input_resource = builder->access_resource(node->inputs[i]);
+                    FrameGraphResource* resource = builder->access_resource(input_resource->output_handle);
+
+                    if (input_resource->type == FrameGraphResourceType_Texture) {
+                        Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
+
+                        util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0, 1, TextureFormat::has_depth(texture->vk_format));
+                    }
+                    else if (input_resource->type == FrameGraphResourceType_Attachment) {
+                        Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
+
+                        width = texture->width;
+                        height = texture->height;
+
+                        // For textures that are read-write check if a transition is needed.
+                        if (!TextureFormat::has_depth_or_stencil(texture->vk_format)) {
+                            util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
+                        }
+                        else {
+                            util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_DEPTH_WRITE, 0, 1, true);
+                        }
+                    }
+                }
+
+                for (u32 o = 0; o < node->outputs.size; ++o) {
+                    FrameGraphResource* resource = builder->access_resource(node->outputs[o]);
+
+                    if (resource->type == FrameGraphResourceType_Attachment) {
+                        Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
+
+                        width = texture->width;
+                        height = texture->height;
+
+                        if (TextureFormat::has_depth(texture->vk_format)) {
+                            util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_DEPTH_WRITE, 0, 1, true);
+                        }
+                        else {
+                            util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
+                        }
+                    }
+                }
+
+                Rect2DInt scissor{ 0, 0,(u16)width, (u16)height };
+                gpu_commands->set_scissor(&scissor);
+
+                Viewport viewport{ };
+                viewport.rect = { 0, 0, (u16)width, (u16)height };
+                viewport.min_depth = 0.0f;
+                viewport.max_depth = 1.0f;
+
+                gpu_commands->set_viewport(&viewport);
+
+                node->graph_render_pass->pre_render(gpu_commands, scene);
+
+                gpu_commands->bind_pass(node->render_pass, node->framebuffer, false);
+
+                node->graph_render_pass->render(gpu_commands, scene);
+
+                gpu_commands->end_current_render_pass();
+
+                node->graph_render_pass->post_render(current_frame_index, gpu_commands, this);
+
+                gpu_commands->pop_marker();
             }
 
-            Rect2DInt scissor{ 0, 0,(u16)width, (u16)height };
-            gpu_commands->set_scissor(&scissor);
-
-            Viewport viewport{ };
-            viewport.rect = { 0, 0, (u16)width, (u16)height };
-            viewport.min_depth = 0.0f;
-            viewport.max_depth = 1.0f;
-
-            gpu_commands->set_viewport(&viewport);
-
-            node->graph_render_pass->pre_render(gpu_commands, render_scene);
-
-            gpu_commands->bind_pass(node->render_pass, node->framebuffer, false);
-
-            node->graph_render_pass->render(gpu_commands, render_scene);
-
-            gpu_commands->end_current_render_pass();
-            gpu_commands->pop_marker();
+            
         }
     }
 
@@ -866,7 +970,7 @@ namespace Helix {
                 continue;
             }
 
-            node->graph_render_pass->on_resize(gpu, new_width, new_height);
+            node->graph_render_pass->on_resize(gpu, this, new_width, new_height);
 
             gpu.resize_output_textures(node->framebuffer, new_width, new_height);
         }

@@ -93,6 +93,10 @@ namespace Helix {
 
     void ResourcePool::release_resource(u32 index) {
         // TODO: add bits for checking if resource is alive and use bitmasks.
+        if (index == k_invalid_index) {
+            HWARN("Attempting to free an invalid index");
+            return;
+        }
         free_indices[--free_indices_head] = index;
         --used_indices;
     }

@@ -73,16 +73,18 @@ namespace Helix {
         }
 
         static void add_binding_if_unique(DescriptorSetLayoutCreation& creation, DescriptorSetLayoutCreation::Binding& binding) {
-
-            const DescriptorSetLayoutCreation::Binding& set_binding = creation.bindings[binding.index];
-
-            if (set_binding.type == binding.type && set_binding.index == binding.index) {
-                return;
+            bool found = false;
+            for (u32 i = 0; i < creation.num_bindings; ++i) {
+                const DescriptorSetLayoutCreation::Binding& b = creation.bindings[i];
+                if (b.type == binding.type && b.index == binding.index) {
+                    found = true;
+                    break;
+                }
             }
 
-            // TODO: Figure out how to differentiate between normal bindings and the bindless binding.
-
-            creation.add_binding(binding);
+            if (!found) {
+                creation.add_binding(binding);
+            }
         }
 
         void parse_binary(const u32* data, size_t data_size, StringBuffer& name_buffer, ParseResult* parse_result) {

@@ -135,7 +135,7 @@ namespace Helix {
         // Manual code. Used to remove dependency from that.
         ShaderStateCreation shader_creation{};
 
-        if (gpu->bindless_supported) {
+        if (gpu->gpu_device_features & GpuDeviceFeature_BINDLESS) {
             shader_creation.set_name("ImGui").add_stage(g_vertex_shader_code_bindless, (uint32_t)strlen(g_vertex_shader_code_bindless), VK_SHADER_STAGE_VERTEX_BIT)
                 .add_stage(g_fragment_shader_code_bindless, (uint32_t)strlen(g_fragment_shader_code_bindless), VK_SHADER_STAGE_FRAGMENT_BIT);
         }
@@ -161,7 +161,7 @@ namespace Helix {
 
         DescriptorSetLayoutCreation descriptor_set_layout_creation{};
         descriptor_set_layout_creation.set_set_index(1);
-        if (!gpu->bindless_supported) {
+        if (!gpu->gpu_device_features & GpuDeviceFeature_BINDLESS) {
             descriptor_set_layout_creation.add_binding({ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants" }).add_binding({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, 1, "Texture" }).set_name("RLL_ImGui");
         }
         else {
@@ -182,7 +182,7 @@ namespace Helix {
 
         // Create descriptor set
         DescriptorSetCreation ds_creation{};
-        if (!gpu->bindless_supported) {
+        if (!gpu->gpu_device_features & GpuDeviceFeature_BINDLESS) {
             ds_creation.set_layout(pipeline_creation.descriptor_set_layout[0]).buffer(g_ui_cb, 0).texture(g_font_texture, 1).set_name("RL_ImGui");
         }
         else {
@@ -384,7 +384,7 @@ namespace Helix {
 
                         // Retrieve
                         TextureHandle new_texture = *(TextureHandle*)(pcmd->TextureId);
-                        if (!gpu->bindless_supported) {
+                        if (!gpu->gpu_device_features & GpuDeviceFeature_BINDLESS) {
                             if (new_texture.index != last_texture.index && new_texture.index != k_invalid_texture.index) {
                                 last_texture = new_texture;
                                 FlatHashMapIterator it = g_texture_to_descriptor_set.find(last_texture.index);

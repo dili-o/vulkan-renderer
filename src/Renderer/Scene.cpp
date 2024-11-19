@@ -10,6 +10,7 @@
 #include <vendor/meshoptimizer/meshoptimizer.h>
 
 #include <imgui/imgui.h>
+#include <Core/Numerics.hpp>
 
 namespace Helix {
 
@@ -43,7 +44,7 @@ namespace Helix {
     // Light
     Helix::PipelineHandle                  light_pipeline;
 
-    
+
     void get_mesh_vertex_buffer(glTFScene& scene, i32 accessor_index, BufferHandle& out_buffer_handle, u32& out_buffer_offset) {
 
         if (accessor_index != -1) {
@@ -51,7 +52,7 @@ namespace Helix {
             glTF::BufferView& buffer_view = scene.gltf_scene.buffer_views[buffer_accessor.buffer_view];
             BufferResource& buffer_gpu = scene.buffers[buffer_accessor.buffer_view + scene.current_buffers_count];
 
-            
+
             out_buffer_handle = buffer_gpu.handle;
             out_buffer_offset = buffer_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : buffer_accessor.byte_offset;
         }
@@ -84,15 +85,38 @@ namespace Helix {
         return 0; // both are the same (both double-sided or both not double-sided)
     }
 
-    static void copy_gpu_material_data(GPUMeshData& gpu_mesh_data, const Mesh& mesh) {
+    static void copy_gpu_material_data(GPUMaterialData& gpu_mesh_data, const Mesh& mesh) {
         gpu_mesh_data.textures[0] = mesh.pbr_material.diffuse_texture_index;
         gpu_mesh_data.textures[1] = mesh.pbr_material.roughness_texture_index;
         gpu_mesh_data.textures[2] = mesh.pbr_material.normal_texture_index;
         gpu_mesh_data.textures[3] = mesh.pbr_material.occlusion_texture_index;
+
+        //gpu_mesh_data.emissive = { mesh.pbr_material.emissive_factor.x, mesh.pbr_material.emissive_factor.y, mesh.pbr_material.emissive_factor.z, (float)mesh.pbr_material.emissive_texture_index };
+
         gpu_mesh_data.base_color_factor = mesh.pbr_material.base_color_factor;
         gpu_mesh_data.metallic_roughness_occlusion_factor = mesh.pbr_material.metallic_roughness_occlusion_factor;
         gpu_mesh_data.alpha_cutoff = mesh.pbr_material.alpha_cutoff;
+
+        //gpu_mesh_data.diffuse_colour = mesh.pbr_material.diffuse_colour;
+        //gpu_mesh_data.specular_colour = mesh.pbr_material.specular_colour;
+        //gpu_mesh_data.specular_exp = mesh.pbr_material.specular_exp;
+        //gpu_mesh_data.ambient_colour = mesh.pbr_material.ambient_colour;
+
         gpu_mesh_data.flags = mesh.pbr_material.flags;
+
+        gpu_mesh_data.mesh_index = mesh.gpu_mesh_index;
+        gpu_mesh_data.meshlet_offset = mesh.meshlet_offset;
+        gpu_mesh_data.meshlet_count = mesh.meshlet_count;
+    }
+    //
+    //
+    static FrameGraphResource* get_output_texture(FrameGraph* frame_graph, FrameGraphResourceHandle input) {
+        FrameGraphResource* input_resource = frame_graph->access_resource(input);
+
+        FrameGraphResource* output_resource = frame_graph->access_resource(input_resource->output_handle);
+        HASSERT(output_resource != nullptr);
+
+        return output_resource;
     }
 
     //
@@ -108,9 +132,119 @@ namespace Helix {
     }
 
     //
+    // MeshCullingPass /////////////////////////////////////////////////////////
+    void MeshCullingPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+
+        if (!enabled)
+            return;
+
+        glTFScene* scene = (glTFScene*)scene_;
+
+        Renderer* renderer = scene->renderer;
+
+        // Frustum cull meshes
+        GPUMeshDrawCounts& mesh_draw_counts = scene->mesh_draw_counts;
+        mesh_draw_counts.opaque_mesh_visible_count = 0;
+        mesh_draw_counts.opaque_mesh_culled_count = 0;
+        mesh_draw_counts.transparent_mesh_visible_count = 0;
+        mesh_draw_counts.transparent_mesh_culled_count = 0;
+
+        mesh_draw_counts.total_count = scene->opaque_meshes.size + scene->transparent_meshes.size;
+        mesh_draw_counts.depth_pyramid_texture_index = depth_pyramid_texture_index;
+        mesh_draw_counts.late_flag = 0;
+
+        u32 buffer_frame_index = renderer->gpu->current_frame;
+        // Reset mesh draw counts
+        MapBufferParameters cb_map{ scene->mesh_draw_count_buffers[buffer_frame_index], 0, 0 };
+        GPUMeshDrawCounts* count_data = (GPUMeshDrawCounts*)renderer->gpu->map_buffer(cb_map);
+        if (count_data) {
+            *count_data = mesh_draw_counts;
+
+            renderer->gpu->unmap_buffer(cb_map);
+        }
+
+        // Reset debug draw counts
+        cb_map.buffer = scene->debug_line_count_buffer;
+        f32* debug_line_count = (f32*)renderer->gpu->map_buffer(cb_map);
+        if (debug_line_count) {
+
+            debug_line_count[0] = 0;
+            debug_line_count[1] = 0;
+            debug_line_count[2] = renderer->gpu->current_frame;
+            debug_line_count[3] = 0;
+
+            renderer->gpu->unmap_buffer(cb_map);
+        }
+
+        gpu_commands->bind_pipeline(frustum_cull_pipeline);
+
+        const Buffer* indirect_draw_commands_sb = renderer->gpu->access_buffer(scene->mesh_indirect_draw_command_buffers[buffer_frame_index]);
+        util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, indirect_draw_commands_sb->vk_handle,
+            RESOURCE_STATE_INDIRECT_ARGUMENT, RESOURCE_STATE_UNORDERED_ACCESS, indirect_draw_commands_sb->size);
+
+        const Buffer* count_sb = renderer->gpu->access_buffer(scene->mesh_draw_count_buffers[buffer_frame_index]);
+        util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, count_sb->vk_handle,
+            RESOURCE_STATE_INDIRECT_ARGUMENT, RESOURCE_STATE_UNORDERED_ACCESS, count_sb->size);
+
+        gpu_commands->bind_descriptor_set(&frustum_cull_descriptor_set[buffer_frame_index], 1, nullptr, 0);
+
+        u32 group_x = Helix::ceilu32(scene->mesh_draw_counts.total_count / 64.0f);
+        gpu_commands->dispatch(group_x, 1, 1);
+
+        util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, indirect_draw_commands_sb->vk_handle,
+            RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, indirect_draw_commands_sb->size);
+
+        util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, count_sb->vk_handle,
+            RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, count_sb->size);
+    }
+
+    void MeshCullingPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+
+        FrameGraphNode* node = frame_graph->get_node("mesh_cull_pass");
+        if (node == nullptr) {
+            enabled = false;
+
+            return;
+        }
+
+        enabled = node->enabled;
+
+        renderer = scene.renderer;
+        GpuDevice& gpu = *renderer->gpu;
+
+        // Cache frustum cull shader
+        Program* culling_program = renderer->resource_cache.programs.get(hash_calculate("culling"));
+        {
+            u32 pipeline_index = culling_program->get_pass_index("gpu_culling");
+            frustum_cull_pipeline = culling_program->passes[pipeline_index].pipeline;
+            DescriptorSetLayoutHandle layout = gpu.get_descriptor_set_layout(frustum_cull_pipeline, k_material_descriptor_set_index);
+
+            for (u32 i = 0; i < k_max_frames; ++i) {
+                DescriptorSetCreation ds_creation{};
+                ds_creation
+                    .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_command_buffers[i], 1)
+                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_instances_buffer, 10)
+                    .buffer(scene.mesh_draw_count_buffers[i], 11).buffer(scene.mesh_bounds_buffer, 12)
+                    .buffer(scene.debug_line_buffer, 20).buffer(scene.debug_line_count_buffer, 21)
+                    .buffer(scene.debug_line_indirect_command_buffer, 22).set_layout(layout);
+
+                frustum_cull_descriptor_set[i] = gpu.create_descriptor_set(ds_creation);
+            }
+        }
+    }
+
+    void MeshCullingPass::free_gpu_resources() {
+        GpuDevice& gpu = *renderer->gpu;
+
+        for (u32 i = 0; i < k_max_frames; ++i) {
+            gpu.destroy_descriptor_set(frustum_cull_descriptor_set[i]);
+        }
+    }
+
+    //
     // DepthPrePass ///////////////////////////////////////////////////////
-    void DepthPrePass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
-        glTFScene* scene = (glTFScene*)render_scene;
+    void DepthPrePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        glTFScene* scene = (glTFScene*)scene;
 
         Material* last_material = nullptr;
         for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
@@ -125,11 +259,11 @@ namespace Helix {
                 last_material = mesh.pbr_material.material;
             }
 
-            scene->draw_mesh(gpu_commands, mesh);
+            //scene->draw_mesh(gpu_commands, mesh);
         }
     }
 
-    void DepthPrePass::init(){
+    void DepthPrePass::init() {
         renderer = nullptr;
         //mesh_instances.size = 0;
         meshes = nullptr;
@@ -137,7 +271,7 @@ namespace Helix {
     }
 
     void DepthPrePass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
-        
+
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("depth_pre_pass");
@@ -164,43 +298,57 @@ namespace Helix {
 
     //
     // GBufferPass ////////////////////////////////////////////////////////
-    void GBufferPass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
-        glTFScene* scene = (glTFScene*)render_scene;
+    void GBufferPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        if (!enabled)
+            return;
+
+        glTFScene* scene = (glTFScene*)scene_;
 
         Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < double_sided_mesh_count; ++mesh_index) {
-            Mesh& mesh = meshes[mesh_index];
-            bool db = mesh.is_double_sided();
-            if (mesh.pbr_material.material != last_material) {
-                // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
-                //       Make more configurable
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 1);
 
-                gpu_commands->bind_pipeline(pipeline);
+        
+        Renderer* renderer = scene->renderer;
 
-                last_material = mesh.pbr_material.material;
-            }
+        const u64 meshlet_hashed_name = hash_calculate("meshlet");
+        Program* meshlet_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
 
-            scene->draw_mesh(gpu_commands, mesh);
-        }
-        for (u32 mesh_index = double_sided_mesh_count; mesh_index < mesh_count; ++mesh_index) {
-            Mesh& mesh = meshes[mesh_index];
-            bool db = mesh.is_double_sided();
-            if (mesh.pbr_material.material != last_material) {
-                // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
-                //       Make more configurable
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 2);
+        PipelineHandle pipeline = meshlet_program->passes[meshlet_program_index].pipeline;
 
-                gpu_commands->bind_pipeline(pipeline);
+        gpu_commands->bind_pipeline(pipeline);
 
-                last_material = mesh.pbr_material.material;
-            }
+        u32 buffer_frame_index = renderer->gpu->current_frame;
+        gpu_commands->bind_descriptor_set(&scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-            scene->draw_mesh(gpu_commands, mesh);
-        }
+        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], 0, scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
+        
+
+        //for (u32 mesh_index = 0; mesh_index < double_sided_mesh_count; ++mesh_index) {
+        //    Mesh& mesh = meshes[mesh_index];
+        //    if (mesh.pbr_material.material != last_material) {
+        //        PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 1);
+
+        //        gpu_commands->bind_pipeline(pipeline);
+
+        //        last_material = mesh.pbr_material.material;
+        //    }
+
+        //    //scene->draw_mesh(gpu_commands, mesh);
+        //}
+        //for (u32 mesh_index = double_sided_mesh_count; mesh_index < mesh_count; ++mesh_index) {
+        //    Mesh& mesh = meshes[mesh_index];
+        //    if (mesh.pbr_material.material != last_material) {
+        //        PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 2);
+
+        //        gpu_commands->bind_pipeline(pipeline);
+
+        //        last_material = mesh.pbr_material.material;
+        //    }
+
+        //    //scene->draw_mesh(gpu_commands, mesh);
+        //}
     }
 
-    void GBufferPass::init(){
+    void GBufferPass::init() {
         renderer = nullptr;
         double_sided_mesh_count = 0;
         mesh_count = 0;
@@ -210,12 +358,19 @@ namespace Helix {
     void GBufferPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
         renderer = scene.renderer;
 
+        enabled = true;
+
         FrameGraphNode* node = frame_graph->get_node("gbuffer_pass");
         HASSERT(node);
 
         if (scene.opaque_meshes.size) {
             meshes = &scene.opaque_meshes[0];
             mesh_count = scene.opaque_meshes.size;
+        }
+
+        if (renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet"));
+            meshlet_program_index = main_program->get_pass_index("gbuffer_culling");
         }
     }
 
@@ -224,22 +379,193 @@ namespace Helix {
     }
 
     //
-    // LightPass //////////////////////////////////////////////////////////
-    void LightPass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
-        glTFScene* scene = (glTFScene*)render_scene;
+    // DepthPrePass ///////////////////////////////////////////////////////
+    void DepthPyramidPass::render(CommandBuffer* gpu_commands, Scene* scene) {
+        if (!enabled)
+            return;
 
-        if (renderer) {
-            PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 0);
+        update_depth_pyramid = false;// (scene->scene_data.freeze_occlusion_camera == 0);
+    }
 
-            gpu_commands->bind_pipeline(pipeline);
-            gpu_commands->bind_vertex_buffer(mesh.position_buffer, 0, 0);
-            gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
+    void DepthPyramidPass::post_render(u32 current_frame_index, CommandBuffer* gpu_commands, FrameGraph* frame_graph) {
+        if (!enabled)
+            return;
 
-            gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
+        GpuDevice* gpu = renderer->gpu;
+
+        Texture* depth_pyramid_texture = gpu->access_texture(depth_pyramid);
+
+        if (update_depth_pyramid) {
+            gpu_commands->bind_pipeline(depth_pyramid_pipeline);
+
+            u32 width = depth_pyramid_texture->width;
+            u32 height = depth_pyramid_texture->height;
+
+            FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
+            TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
+            Texture* depth_texture = gpu->access_texture(depth_handle);
+
+            util_add_image_barrier(gpu, gpu_commands->vk_handle, depth_texture->vk_image, RESOURCE_STATE_SHADER_RESOURCE, RESOURCE_STATE_SHADER_RESOURCE, 0, 1, true);
+
+            for (u32 mip_index = 0; mip_index < depth_pyramid_texture->mipmaps; ++mip_index) {
+                util_add_image_barrier(gpu, gpu_commands->vk_handle, depth_pyramid_texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_UNORDERED_ACCESS, mip_index, 1, false);
+
+                gpu_commands->bind_descriptor_set(&depth_hierarchy_descriptor_set[mip_index], 1, nullptr, 0);
+
+                // NOTE(marco): local workgroup is 8 x 8
+                u32 group_x = (width + 7) / 8;
+                u32 group_y = (height + 7) / 8;
+
+                gpu_commands->dispatch(group_x, group_y, 1);
+
+                util_add_image_barrier(gpu, gpu_commands->vk_handle, depth_pyramid_texture->vk_image, RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_SHADER_RESOURCE, mip_index, 1, false);
+
+                width /= 2;
+                height /= 2;
+            }
         }
     }
 
-    void LightPass::init(){
+    void DepthPyramidPass::on_resize(GpuDevice& gpu, FrameGraph* frame_graph, u32 new_width, u32 new_height) {
+
+        // Destroy old resources
+        gpu.destroy_texture(depth_pyramid);
+        // Use old depth pyramid levels value
+        for (u32 i = 0; i < depth_pyramid_levels; ++i) {
+            gpu.destroy_descriptor_set(depth_hierarchy_descriptor_set[i]);
+            gpu.destroy_texture(depth_pyramid_views[i]);
+        }
+
+        FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
+        TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
+        Texture* depth_texture = gpu.access_texture(depth_handle);
+
+        create_depth_pyramid_resource(depth_texture);
+    }
+
+    void DepthPyramidPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator) {
+        renderer = scene.renderer;
+
+        FrameGraphNode* node = frame_graph->get_node("depth_pyramid_pass");
+        if (node == nullptr) {
+            enabled = false;
+
+            return;
+        }
+
+        enabled = node->enabled;
+        if (!enabled)
+            return;
+
+        GpuDevice& gpu = *renderer->gpu;
+
+        FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
+        TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
+        Texture* depth_texture = gpu.access_texture(depth_handle);
+
+        // Sampler does not need to be recreated
+        SamplerCreation sc;
+        sc.set_address_mode_uvw(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+            .set_min_mag_mip(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST).set_reduction_mode(VK_SAMPLER_REDUCTION_MODE_MAX).set_name("depth_pyramid_sampler");
+        depth_pyramid_sampler = gpu.create_sampler(sc);
+
+        create_depth_pyramid_resource(depth_texture);
+
+        gpu.link_texture_sampler(depth_pyramid, depth_pyramid_sampler);
+    }
+
+    void DepthPyramidPass::free_gpu_resources() {
+        if (!enabled)
+            return;
+
+        GpuDevice& gpu = *renderer->gpu;
+
+        gpu.destroy_sampler(depth_pyramid_sampler);
+        gpu.destroy_texture(depth_pyramid);
+
+        for (u32 i = 0; i < depth_pyramid_levels; ++i) {
+            gpu.destroy_texture(depth_pyramid_views[i]);
+            gpu.destroy_descriptor_set(depth_hierarchy_descriptor_set[i]);
+        }
+    }
+
+    void DepthPyramidPass::create_depth_pyramid_resource(Texture* depth_texture) {
+
+        // TODO(marco): this assumes a pot depth resolution
+        u32 width = depth_texture->width / 2;
+        u32 height = depth_texture->height / 2;
+
+        GpuDevice& gpu = *renderer->gpu;
+
+        depth_pyramid_levels = 0;
+        while (width >= 2 && height >= 2) {
+            depth_pyramid_levels++;
+
+            width /= 2;
+            height /= 2;
+        }
+
+        //TextureCreation depth_hierarchy_creation{ };
+        //depth_hierarchy_creation.set_format_type(VK_FORMAT_R32_SFLOAT, TextureType::Enum::Texture2D).set_flags(TextureFlags::Compute_mask).set_size(depth_texture->width / 2, depth_texture->height / 2, 1).set_name("depth_hierarchy").set_mips(depth_pyramid_levels);
+        //
+        //depth_pyramid = gpu.create_texture(depth_hierarchy_creation);
+
+        /*TextureViewCreation depth_pyramid_view_creation;
+        depth_pyramid_view_creation.parent_texture = depth_pyramid;
+        depth_pyramid_view_creation.array_base_layer = 0;
+        depth_pyramid_view_creation.array_layer_count = 1;
+        depth_pyramid_view_creation.mip_level_count = 1;
+        depth_pyramid_view_creation.name = "depth_pyramid_view";
+
+        DescriptorSetCreation descriptor_set_creation{ };
+
+        GpuTechnique* culling_technique = renderer->resource_cache.techniques.get(hash_calculate("culling"));
+        depth_pyramid_pipeline = culling_technique->passes[1].pipeline;
+        DescriptorSetLayoutHandle depth_pyramid_layout = gpu.get_descriptor_set_layout(depth_pyramid_pipeline, k_material_descriptor_set_index);
+
+        for (u32 i = 0; i < depth_pyramid_levels; ++i) {
+            depth_pyramid_view_creation.mip_base_level = i;
+
+            depth_pyramid_views[i] = gpu.create_texture_view(depth_pyramid_view_creation);
+
+            if (i == 0) {
+                descriptor_set_creation.reset().texture(depth_texture->handle, 0).texture(depth_pyramid_views[i], 1).set_layout(depth_pyramid_layout);
+            }
+            else {
+                descriptor_set_creation.reset().texture(depth_pyramid_views[i - 1], 0).texture(depth_pyramid_views[i], 1).set_layout(depth_pyramid_layout);
+            }
+
+            depth_hierarchy_descriptor_set[i] = gpu.create_descriptor_set(descriptor_set_creation);
+        }*/
+    }
+
+    //
+    // LightPass //////////////////////////////////////////////////////////
+    void LightPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        glTFScene* scene = (glTFScene*)scene_;
+
+        if (renderer) {
+
+            if (/*use_compute*/false) {
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 1);
+                gpu_commands->bind_pipeline(pipeline);
+                gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
+
+                gpu_commands->dispatch(ceilu32(renderer->gpu->swapchain_width * 1.f / 8), ceilu32(renderer->gpu->swapchain_height * 1.f / 8), 1);
+            }
+            else {
+                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 0);
+
+                gpu_commands->bind_pipeline(pipeline);
+                gpu_commands->bind_vertex_buffer(mesh.position_buffer, 0, 0);
+                gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
+
+                gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
+            }
+        }
+    }
+
+    void LightPass::init() {
         renderer = nullptr;
     }
 
@@ -251,6 +577,12 @@ namespace Helix {
         FrameGraphNode* node = frame_graph->get_node("lighting_pass");
         HASSERT(node);
 
+        enabled = node->enabled;
+        if (!enabled)
+            return;
+
+
+
         const u64 hashed_name = hash_calculate("pbr_lighting");
         Program* lighting_program = renderer->resource_cache.programs.get(hashed_name);
 
@@ -260,54 +592,65 @@ namespace Helix {
         Material* material_pbr = renderer->create_material(material_creation);
 
         BufferCreation buffer_creation;
-        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData)).set_name("mesh_data");
-        mesh.pbr_material.material_buffer = renderer->gpu->create_buffer(buffer_creation);
+        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData)).set_name("light_mesh_data");
+        mesh.pbr_material.material_buffer = renderer->create_buffer(buffer_creation)->handle;
 
         DescriptorSetCreation ds_creation{};
         DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(lighting_program->passes[0].pipeline, k_material_descriptor_set_index);
-        ds_creation.buffer(scene.local_constants_buffer, 0).buffer(mesh.pbr_material.material_buffer, 1).set_layout(layout);
+        ds_creation.buffer(scene.scene_constant_buffer, 0).buffer(mesh.pbr_material.material_buffer, 1).set_layout(layout);
         mesh.pbr_material.descriptor_set = renderer->gpu->create_descriptor_set(ds_creation);
 
         BufferHandle fs_vb = renderer->gpu->get_fullscreen_vertex_buffer();
         mesh.position_buffer = fs_vb;
 
-        FrameGraphResource* color_texture = frame_graph->access_resource(node->inputs[0]);
-        FrameGraphResource* normal_texture = frame_graph->access_resource(node->inputs[1]);
-        FrameGraphResource* roughness_texture = frame_graph->access_resource(node->inputs[2]);
-        FrameGraphResource* position_texture = frame_graph->access_resource(node->inputs[3]);
+        FrameGraphResource* color_texture = get_output_texture(frame_graph, node->inputs[0]);
+        FrameGraphResource* normal_texture = get_output_texture(frame_graph, node->inputs[1]);
+        FrameGraphResource* roughness_texture = get_output_texture(frame_graph, node->inputs[2]);
+        FrameGraphResource* position_texture = get_output_texture(frame_graph, node->inputs[3]);
+        depth_texture = get_output_texture(frame_graph, node->inputs[4]);
 
-        mesh.pbr_material.diffuse_texture_index = color_texture->resource_info.texture.texture.index;
-        mesh.pbr_material.normal_texture_index = normal_texture->resource_info.texture.texture.index;
-        mesh.pbr_material.roughness_texture_index = roughness_texture->resource_info.texture.texture.index;
-        mesh.pbr_material.occlusion_texture_index = position_texture->resource_info.texture.texture.index;
+        mesh.pbr_material.diffuse_texture_index = color_texture->resource_info.texture.handle.index;
+        mesh.pbr_material.normal_texture_index = normal_texture->resource_info.texture.handle.index;
+        mesh.pbr_material.roughness_texture_index = roughness_texture->resource_info.texture.handle.index;
+        mesh.pbr_material.occlusion_texture_index = position_texture->resource_info.texture.handle.index;
         mesh.pbr_material.material = material_pbr;
     }
 
     void LightPass::fill_gpu_material_buffer() {
 
-        if(renderer){
+        if (renderer) {
             MapBufferParameters cb_map = { mesh.pbr_material.material_buffer, 0, 0 };
             GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(cb_map);
             if (mesh_data) {
-                copy_gpu_material_data(*mesh_data, mesh);
+                //copy_gpu_material_data(*mesh_data, mesh);
+                mesh_data->textures[0] = mesh.pbr_material.diffuse_texture_index;
+                mesh_data->textures[1] = mesh.pbr_material.roughness_texture_index;
+                mesh_data->textures[2] = mesh.pbr_material.normal_texture_index;
+                mesh_data->textures[3] = mesh.pbr_material.occlusion_texture_index;
+
+                mesh_data->base_color_factor = mesh.pbr_material.base_color_factor;
+                mesh_data->metallic_roughness_occlusion_factor = mesh.pbr_material.metallic_roughness_occlusion_factor;
+                mesh_data->alpha_cutoff = mesh.pbr_material.alpha_cutoff;
+                mesh_data->flags = mesh.pbr_material.flags;
+
                 renderer->gpu->unmap_buffer(cb_map);
             }
         }
     }
 
     void LightPass::free_gpu_resources() {
-        if(renderer){
+        if (renderer) {
             GpuDevice& gpu = *renderer->gpu;
 
-            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+            //gpu.destroy_buffer(mesh.pbr_material.material_buffer);
             gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
         }
     }
 
     //
     // TransparentPass ////////////////////////////////////////////////////////
-    void TransparentPass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
-        glTFScene* scene = (glTFScene*)render_scene;
+    void TransparentPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        glTFScene* scene = (glTFScene*)scene_;
 
         Material* last_material = nullptr;
         for (u32 mesh_index = 0; mesh_index < double_sided_mesh_count; ++mesh_index) {
@@ -324,7 +667,7 @@ namespace Helix {
                 last_material = mesh.pbr_material.material;
             }
 
-            scene->draw_mesh(gpu_commands, mesh);
+            //scene->draw_mesh(gpu_commands, mesh);
         }
         for (u32 mesh_index = double_sided_mesh_count; mesh_index < mesh_count; ++mesh_index) {
             Mesh& mesh = meshes[mesh_index];
@@ -339,12 +682,12 @@ namespace Helix {
                 last_material = mesh.pbr_material.material;
             }
 
-            scene->draw_mesh(gpu_commands, mesh);
+            //scene->draw_mesh(gpu_commands, mesh);
         }
 
     }
 
-    void TransparentPass::init(){
+    void TransparentPass::init() {
         renderer = nullptr;
         double_sided_mesh_count = 0;
         meshes = nullptr;
@@ -369,7 +712,7 @@ namespace Helix {
 
         // Copy all mesh draws and change only material.
 
-        if(scene.transparent_meshes.size){
+        if (scene.transparent_meshes.size) {
             meshes = &scene.transparent_meshes[0];
             mesh_count = scene.transparent_meshes.size;
         }
@@ -399,15 +742,15 @@ namespace Helix {
 
     //
     // LightDebugPass ////////////////////////////////////////////////////////
-    void LightDebugPass::render(CommandBuffer* gpu_commands, Scene* render_scene) {
-        glTFScene* scene = (glTFScene*)render_scene;
+    void LightDebugPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        glTFScene* scene = (glTFScene*)scene;
 
         gpu_commands->bind_pipeline(light_pipeline);
         gpu_commands->bind_descriptor_set(&light_descriptor_set, 1, nullptr, 0);
         gpu_commands->draw(TopologyType::Triangle, 0, 3, 0, 1);
     }
 
-    void LightDebugPass::init(){
+    void LightDebugPass::init() {
         renderer = nullptr;
     }
 
@@ -454,7 +797,7 @@ namespace Helix {
         // TODO: improve getting a command buffer/pool
         CommandBuffer* gpu_commands = gpu->get_command_buffer(threadnum_, true);
 
-        frame_graph->render(gpu_commands, scene);
+        frame_graph->render(gpu->current_frame, gpu_commands, scene);
 
 
         gpu_commands->push_marker("Fullscreen");
@@ -485,7 +828,7 @@ namespace Helix {
 
     // gltfScene //////////////////////////////////////////////////
 
-    void glTFScene::init(Renderer* _renderer, Allocator* resident_allocator, FrameGraph* _frame_graph, StackAllocator* stack_allocator, AsynchronousLoader* async_loader){
+    void glTFScene::init(Renderer* _renderer, Allocator* resident_allocator, FrameGraph* _frame_graph, StackAllocator* stack_allocator, AsynchronousLoader* async_loader) {
         u32 k_num_meshes = 200;
         renderer = _renderer;
         frame_graph = _frame_graph;
@@ -503,17 +846,15 @@ namespace Helix {
         buffers.init(resident_allocator, k_num_meshes);
 
         // Create material
-        u64 hashed_name = hash_calculate("geometry");
-        Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
+        //u64 hashed_name = hash_calculate("geometry");
+        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
 
-        MaterialCreation material_creation;
-        material_creation.set_name("material_no_cull_opaque").set_program(geometry_program).set_render_index(0);
+        //MaterialCreation material_creation;
+        //material_creation.set_name("material_no_cull_opaque").set_program(geometry_program).set_render_index(0);
 
-        pbr_material = renderer->create_material(material_creation);
+        //pbr_material = renderer->create_material(material_creation);
 
         names.init(4024, main_allocator);
-
-        local_constants_buffer = k_invalid_buffer;
 
         // Creating the light image
         stbi_set_flip_vertically_on_load(true);
@@ -522,46 +863,46 @@ namespace Helix {
         HASSERT(tr != nullptr);
         light_texture = *tr;
 
-        hashed_name = hash_calculate("light_debug");
-        Program* light_program = renderer->resource_cache.programs.get(hashed_name);
+        //hashed_name = hash_calculate("light_debug");
+        //Program* light_program = renderer->resource_cache.programs.get(hashed_name);
 
-        light_pipeline = light_program->passes[0].pipeline;
+        //light_pipeline = light_program->passes[0].pipeline;
 
         BufferCreation buffer_creation;
-        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
-        light_cb = renderer->gpu->create_buffer(buffer_creation);
+        //buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
+        //light_cb = renderer->create_buffer(buffer_creation);
 
-        NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
+        //NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
 
-        LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
-        light_node->name = "Point Light";
-        light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
-        light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
-        light_node->world_transform.translation.y = 1.0f;
+        //LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
+        //light_node->name = "Point Light";
+        //light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
+        //light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
+        //light_node->world_transform.translation.y = 1.0f;
 
-        node_pool.get_root_node()->add_child(light_node);
+        //node_pool.get_root_node()->add_child(light_node);
 
         // Constant buffer
-        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(UniformData)).set_name("local_constants_buffer");
-        local_constants_buffer = renderer->gpu->create_buffer(buffer_creation);
+        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUSceneData)).set_name("scene_constant_buffer");
+        scene_constant_buffer = renderer->create_buffer(buffer_creation)->handle;
 
 
-        depth_pre_pass.init();
+        //depth_pre_pass.init();
         gbuffer_pass.init();
         transparent_pass.init();
         light_pass.init();
-        light_debug_pass.init();
+        //light_debug_pass.init();
 
         fullscreen_program = renderer->resource_cache.programs.get(hash_calculate("fullscreen"));
 
         DescriptorSetCreation dsc;
         DescriptorSetLayoutHandle descriptor_set_layout = renderer->gpu->get_descriptor_set_layout(fullscreen_program->passes[0].pipeline, k_material_descriptor_set_index);
-        dsc.reset().buffer(local_constants_buffer, 0).set_layout(descriptor_set_layout);
+        dsc.reset().buffer(scene_constant_buffer, 0).set_layout(descriptor_set_layout);
         fullscreen_ds = renderer->gpu->create_descriptor_set(dsc);
 
         FrameGraphResource* texture = frame_graph->get_resource("final");
         if (texture != nullptr) {
-            fullscreen_texture_index = texture->resource_info.texture.texture.index;
+            fullscreen_texture_index = texture->resource_info.texture.handle.index;
         }
     }
 
@@ -743,7 +1084,7 @@ namespace Helix {
             buffers.push(*br);
         }
 
-        
+
 
         i64 end_creating_buffers = Time::now();
 
@@ -885,12 +1226,18 @@ namespace Helix {
             const sizet max_triangles = 124;
             const f32 cone_weight = 0.0f;
 
+            //meshes.init(resident_allocator_, 16);
+            meshlets.init(resident_allocator, 16);
+            meshlet_vertex_and_index_indices.init(resident_allocator, 16);
+            meshlets_vertex_positions.init(resident_allocator, 16);
+            meshlets_vertex_data.init(resident_allocator, 16);
+            //gltf_mesh_to_mesh_offset.init(resident_allocator_, 16);
+
             // Gltf primitives are conceptually submeshes.
             for (u32 primitive_index = 0; primitive_index < gltf_mesh.primitives_count; ++primitive_index) {
                 Mesh mesh{ };
 
-                //mesh.scale = node_scale;
-
+                mesh.gpu_mesh_index = opaque_meshes.size;
 
                 glTF::MeshPrimitive& mesh_primitive = gltf_mesh.primitives[primitive_index];
 
@@ -910,6 +1257,48 @@ namespace Helix {
                 i32 position_data_offset = glTF::get_data_offset(position_accessor.byte_offset, position_buffer_view.byte_offset);
                 f32* vertices = (f32*)((u8*)buffers_data[position_buffer_view.buffer] + position_data_offset);
 
+                // Calculate bounding sphere center
+                glm::vec3 position_min{ position_accessor.min[0], position_accessor.min[1], position_accessor.min[2] };
+                glm::vec3 position_max{ position_accessor.max[0], position_accessor.max[1], position_accessor.max[2] };
+                glm::vec3 bounding_center = position_min + position_max;
+                bounding_center = bounding_center / 2.0f;
+
+                // Calculate bounding sphere radius
+                f32 radius = Helix::max(glm::distance(position_max, bounding_center), glm::distance(position_min, bounding_center));
+                mesh.bounding_sphere = { bounding_center.x, bounding_center.y, bounding_center.z, radius };
+
+
+                // Vertex normals
+                f32* normals = nullptr;
+                if (normal_accessor_index != -1) {
+                    glTF::Accessor& normal_buffer_accessor = gltf_scene.accessors[normal_accessor_index];
+                    glTF::BufferView& normal_buffer_view = gltf_scene.buffer_views[normal_buffer_accessor.buffer_view];
+                    i32 normal_data_offset = glTF::get_data_offset(normal_buffer_accessor.byte_offset, normal_buffer_view.byte_offset);
+                    normals = (f32*)((u8*)buffers_data[normal_buffer_view.buffer] + normal_data_offset);
+                    mesh.pbr_material.flags |= DrawFlags_HasNormals;
+                }
+
+                // Vertex texture coords
+                f32* tex_coords = nullptr;
+                if (texcoord_accessor_index != -1) {
+                    glTF::Accessor& tex_coord_buffer_accessor = gltf_scene.accessors[texcoord_accessor_index];
+                    glTF::BufferView& tex_coord_buffer_view = gltf_scene.buffer_views[tex_coord_buffer_accessor.buffer_view];
+                    i32 tex_coord_data_offset = glTF::get_data_offset(tex_coord_buffer_accessor.byte_offset, tex_coord_buffer_view.byte_offset);
+                    tex_coords = (f32*)((u8*)buffers_data[tex_coord_buffer_view.buffer] + tex_coord_data_offset);
+                    mesh.pbr_material.flags |= DrawFlags_HasTexCoords;
+                }
+
+                // Vertex tangents
+                f32* tangents = nullptr;
+                if (tangent_accessor_index != -1) {
+                    glTF::Accessor& tangent_buffer_accessor = gltf_scene.accessors[tangent_accessor_index];
+                    glTF::BufferView& tangent_buffer_view = gltf_scene.buffer_views[tangent_buffer_accessor.buffer_view];
+                    i32 tangent_data_offset = glTF::get_data_offset(tangent_buffer_accessor.byte_offset, tangent_buffer_view.byte_offset);
+                    tangents = (f32*)((u8*)buffers_data[tangent_buffer_view.buffer] + tangent_data_offset);
+                    mesh.pbr_material.flags |= DrawFlags_HasTangents;
+                }
+
+
                 // Create index buffer
                 glTF::Accessor& indices_accessor = gltf_scene.accessors[mesh_primitive.indices];
                 HASSERT(indices_accessor.component_type == glTF::Accessor::ComponentType::UNSIGNED_SHORT || indices_accessor.component_type == glTF::Accessor::ComponentType::UNSIGNED_INT);
@@ -925,39 +1314,67 @@ namespace Helix {
                 u16* indices = (u16*)((u8*)buffers_data[indices_buffer_view.buffer] + indicies_data_offset);
 
                 // Create material
-                glTF::Material& material = gltf_scene.materials[mesh_primitive.material];
-
-                fill_pbr_material(*renderer, material, mesh.pbr_material);
-
+                if (mesh_primitive.material != glTF::INVALID_INT_VALUE) {
+                    glTF::Material& material = gltf_scene.materials[mesh_primitive.material];
+                    fill_pbr_material(*renderer, material, mesh.pbr_material);
+                }
                 // Create material buffer
                 BufferCreation buffer_creation;
-                buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData)).set_name("mesh_data");
-                mesh.pbr_material.material_buffer = renderer->gpu->create_buffer(buffer_creation);
-
-                DescriptorSetCreation ds_creation{};
-                DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(geometry_program->passes[3].pipeline, k_material_descriptor_set_index);
-                ds_creation.buffer(local_constants_buffer, 0).buffer(mesh.pbr_material.material_buffer, 1).set_layout(layout);
-                mesh.pbr_material.descriptor_set = renderer->gpu->create_descriptor_set(ds_creation);
-                mesh.pbr_material.material = pbr_material;
-
+                cstring mesh_data_name = renderer->resource_name_buffer.append_use_f("mesh_data_%u", opaque_meshes.size + transparent_meshes.size);
+                buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData)).set_name(mesh_data_name);
+                mesh.pbr_material.material_buffer = renderer->create_buffer(buffer_creation)->handle;
 
                 // Meshlets
                 const sizet max_meshlets = meshopt_buildMeshletsBound(indices_accessor.count, max_vertices, max_triangles);
                 sizet temp_marker = temp_allocator->get_marker();
-                
+
                 Array<meshopt_Meshlet> local_meshlets;
                 local_meshlets.init(temp_allocator, max_meshlets, max_meshlets);
-                
+
                 Array<u32> meshlet_vertex_indices;
-                meshlet_vertex_indices.init(temp_allocator, max_meshlets* max_vertices, max_meshlets* max_vertices);
-                
+                meshlet_vertex_indices.init(temp_allocator, max_meshlets * max_vertices, max_meshlets * max_vertices);
+
                 Array<u8> meshlet_triangles;
-                meshlet_triangles.init(temp_allocator, max_meshlets* max_triangles * 3, max_meshlets* max_triangles * 3);
+                meshlet_triangles.init(temp_allocator, max_meshlets * max_triangles * 3, max_meshlets * max_triangles * 3);
 
                 sizet meshlet_count = meshopt_buildMeshlets(local_meshlets.data, meshlet_vertex_indices.data, meshlet_triangles.data, indices,
                     indices_accessor.count, vertices, position_accessor.count, sizeof(glm::vec3),
                     max_vertices, max_triangles, cone_weight);
 
+                u32 meshlet_vertex_offset = meshlets_vertex_positions.size;
+                for (u32 v = 0; v < position_accessor.count; ++v) {
+                    GPUMeshletVertexPosition meshlet_vertex_pos{ };
+
+                    meshlet_vertex_pos.position[0] = vertices[v * 3 + 0];
+                    meshlet_vertex_pos.position[1] = vertices[v * 3 + 1];
+                    meshlet_vertex_pos.position[2] = vertices[v * 3 + 2];
+
+                    meshlets_vertex_positions.push(meshlet_vertex_pos);
+
+                    GPUMeshletVertexData meshlet_vertex_data{ };
+
+                    if (normals != nullptr) {
+                        meshlet_vertex_data.normal[0] = (normals[v * 3 + 0] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.normal[1] = (normals[v * 3 + 1] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.normal[2] = (normals[v * 3 + 2] + 1.0f) * 127.0f;
+                    }
+
+                    if (tangents != nullptr) {
+                        meshlet_vertex_data.tangent[0] = (tangents[v * 3 + 0] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.tangent[1] = (tangents[v * 3 + 1] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.tangent[2] = (tangents[v * 3 + 2] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.tangent[3] = (tangents[v * 3 + 3] + 1.0f) * 127.0f;
+                    }
+
+                    meshlet_vertex_data.uv_coords[0] = meshopt_quantizeHalf(tex_coords[v * 2 + 0]);
+                    meshlet_vertex_data.uv_coords[1] = meshopt_quantizeHalf(tex_coords[v * 2 + 1]);
+
+                    meshlets_vertex_data.push(meshlet_vertex_data);
+                }
+
+                // Cache meshlet offset
+                mesh.meshlet_offset = meshlets.size;
+                mesh.meshlet_count = meshlet_count;
 
                 // Nodes
                 // TODO Make this a primitive struct. Not a MeshNode
@@ -982,11 +1399,57 @@ namespace Helix {
                         num_double_sided_meshes_t++;
                 }
                 else {
+
                     opaque_meshes.push(mesh);
                     mesh_node_primitive->mesh = &opaque_meshes[opaque_meshes.size - 1];
                     if (mesh.is_double_sided())
                         num_double_sided_meshes++;
                 }
+
+                for (u32 m = 0; m < meshlet_count; ++m) {
+                    meshopt_Meshlet& local_meshlet = local_meshlets[m];
+
+                    meshopt_Bounds meshlet_bounds = meshopt_computeMeshletBounds(meshlet_vertex_indices.data + local_meshlet.vertex_offset,
+                        meshlet_triangles.data + local_meshlet.triangle_offset, local_meshlet.triangle_count,
+                        vertices, position_accessor.count, sizeof(glm::vec3));
+
+                        GPUMeshlet meshlet{};
+                        meshlet.data_offset = meshlet_vertex_and_index_indices.size;
+                        meshlet.vertex_count = local_meshlet.vertex_count;
+                        meshlet.triangle_count = local_meshlet.triangle_count;
+
+                        meshlet.center = glm::vec3(meshlet_bounds.center[0], meshlet_bounds.center[1], meshlet_bounds.center[2]);
+                        meshlet.radius = meshlet_bounds.radius;
+
+                        meshlet.cone_axis[0] = meshlet_bounds.cone_axis_s8[0];
+                        meshlet.cone_axis[1] = meshlet_bounds.cone_axis_s8[1];
+                        meshlet.cone_axis[2] = meshlet_bounds.cone_axis_s8[2];
+
+                        meshlet.cone_cutoff = meshlet_bounds.cone_cutoff_s8;
+                        meshlet.mesh_index = opaque_meshes.size - 1; // TODO: What about transparent meshes?
+
+                        // Resize data array
+                        const u32 index_group_count = (local_meshlet.triangle_count * 3 + 3) / 4;
+                        meshlet_vertex_and_index_indices.set_capacity(meshlet_vertex_and_index_indices.size + local_meshlet.vertex_count + index_group_count);
+
+                        for (u32 i = 0; i < meshlet.vertex_count; ++i) {
+                            u32 vertex_index = meshlet_vertex_offset + meshlet_vertex_indices[local_meshlet.vertex_offset + i];
+                            meshlet_vertex_and_index_indices.push(vertex_index);
+                        }
+
+                        // Store indices as uint32
+                        // NOTE(marco): we write 4 indices at at time, it will come in handy in the mesh shader
+                        const u32* index_groups = reinterpret_cast<const u32*>(meshlet_triangles.data + local_meshlet.triangle_offset);
+                        for (u32 i = 0; i < index_group_count; ++i) {
+                            const u32 index_group = index_groups[i];
+                            meshlet_vertex_and_index_indices.push(index_group);
+                        }
+
+                        meshlets.push(meshlet);
+                }
+                // 
+                while (meshlets.size % 32)
+                    meshlets.push(GPUMeshlet());
             }
         }
 
@@ -999,10 +1462,7 @@ namespace Helix {
         qsort(opaque_meshes.data, opaque_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
         node_pool.get_root_node()->update_transform(&node_pool);
 
-        depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
-        gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
-        light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
-        transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        
 
         transparent_pass.double_sided_mesh_count += num_double_sided_meshes_t;
         gbuffer_pass.double_sided_mesh_count += num_double_sided_meshes;
@@ -1022,30 +1482,32 @@ namespace Helix {
     void glTFScene::free_gpu_resources(Renderer* renderer) {
         GpuDevice& gpu = *renderer->gpu;
 
-        for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
-            Mesh& mesh = transparent_meshes[mesh_index];
-            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-            // TODO: Destroy the images.
-            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
-        }
-        for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
-            Mesh& mesh = opaque_meshes[mesh_index];
-            gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-            // TODO: Destroy the images.
-            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
-        }
+        //for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
+        //    Mesh& mesh = transparent_meshes[mesh_index];
+        //    gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+        //    // TODO: Destroy the images.
+        //}
+        //for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
+        //    Mesh& mesh = opaque_meshes[mesh_index];
+        //    gpu.destroy_buffer(mesh.pbr_material.material_buffer);
+        //    // TODO: Destroy the images.
+        //}
 
-        depth_pre_pass.free_gpu_resources();
+        //depth_pre_pass.free_gpu_resources();
+        mesh_cull_pass.free_gpu_resources();
         gbuffer_pass.free_gpu_resources();
         light_pass.free_gpu_resources();
         transparent_pass.free_gpu_resources();
-        light_debug_pass.free_gpu_resources();
+        //light_debug_pass.free_gpu_resources();
 
+        for (u32 i = 0; i < k_max_frames; ++i) {
+            gpu.destroy_descriptor_set(mesh_shader_descriptor_set[i]);
+        }
         gpu.destroy_descriptor_set(fullscreen_ds);
 
+        
         transparent_meshes.shutdown();
         opaque_meshes.shutdown();
-        //meshes.shutdown();
     }
 
     void glTFScene::unload(Renderer* renderer) {
@@ -1059,6 +1521,12 @@ namespace Helix {
         images.shutdown();
         buffers.shutdown();
 
+        meshlets.shutdown();
+        meshlets_vertex_positions.shutdown();
+        meshlets_vertex_data.shutdown();
+        meshlet_vertex_and_index_indices.shutdown();
+
+        
 
         // NOTE(marco): we can't destroy this sooner as textures and buffers
         // hold a pointer to the names stored here
@@ -1070,18 +1538,93 @@ namespace Helix {
     void glTFScene::register_render_passes(FrameGraph* frame_graph_) {
         frame_graph = frame_graph_;
 
-        frame_graph->builder->register_render_pass("depth_pre_pass", &depth_pre_pass);
+        //frame_graph->builder->register_render_pass("depth_pre_pass", &depth_pre_pass);
+        frame_graph->builder->register_render_pass("mesh_cull_pass", &mesh_cull_pass);
         frame_graph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
         frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
         frame_graph->builder->register_render_pass("transparent_pass", &transparent_pass);
-        frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
+        //frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
 
-        light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        //light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
+        BufferCreation buffer_creation;
 
+        u32 total_meshes = opaque_meshes.size + transparent_meshes.size;
+
+        // Meshlets buffers
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Immutable, sizeof(GPUMeshlet) * meshlets.size).set_name("meshlets_buffer").set_data(meshlets.data);
+        meshlets_buffer = renderer->create_buffer(buffer_creation)->handle;
         
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMaterialData) * total_meshes).set_name("material_data_buffer");
+        material_data_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshInstanceData) * total_meshes).set_name("mesh_instances_buffer");
+        mesh_instances_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+        // Create mesh bound ssbo
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(glm::vec4) * total_meshes).set_name("mesh_bounds_buffer");
+        mesh_bounds_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Immutable, sizeof(u32) * meshlet_vertex_and_index_indices.size).set_name("meshlet_vertex_and_index_indices_buffer").set_data(meshlet_vertex_and_index_indices.data);
+        meshlet_vertex_and_index_indices_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Immutable, sizeof(GPUMeshletVertexPosition) * meshlets_vertex_positions.size).set_name("meshlets_vertex_pos_buffer").set_data(meshlets_vertex_positions.data);
+        meshlets_vertex_pos_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Immutable, sizeof(GPUMeshletVertexData) * meshlets_vertex_data.size).set_name("meshlets_vertex_data_buffer").set_data(meshlets_vertex_data.data);
+        meshlets_vertex_data_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+        // Create indirect buffers, dynamic so need multiple buffering.
+        for (u32 i = 0; i < k_max_frames; ++i) {
+            char* name = renderer->resource_name_buffer.append_use_f("mesh_indirect_draw_command_buffer_%d", i);
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, total_meshes * sizeof(GPUMeshDrawCommand)).set_name(name);
+            mesh_indirect_draw_command_buffers[i] = renderer->create_buffer(buffer_creation)->handle;
+
+            name = renderer->resource_name_buffer.append_use_f("mesh_draw_count_buffer_%d", i);
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshDrawCounts)).set_name(name);
+            mesh_draw_count_buffers[i] = renderer->create_buffer(buffer_creation)->handle;
+
+            // TODO(marco): create buffer to track meshlet visibility
+        }
+        
+        // Create debug draw buffers
+        {
+            static constexpr u32 k_max_lines = 64000 + 64000;   // 3D + 2D lines in the same buffer
+            buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, k_max_lines * sizeof(glm::vec4) * 2).set_name("debug_lines_buffer");
+            debug_line_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(glm::vec4)).set_name("debug_line_count_buffer");
+            debug_line_count_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+            // Gather 3D and 2D gpu drawing commands
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(VkDrawIndirectCommand) * 2).set_name("debug_line_commands_sb");
+            debug_line_indirect_command_buffer = renderer->create_buffer(buffer_creation)->handle;
+        }
+
+        if (renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            const u64 meshlet_hashed_name = hash_calculate("meshlet");
+            Program* meshlet_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
+
+            DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(meshlet_program->passes[1].pipeline, k_material_descriptor_set_index);
+
+            for (u32 i = 0; i < k_max_frames; ++i) {
+                DescriptorSetCreation ds_creation{};
+                ds_creation.buffer(scene_constant_buffer, 0).buffer(meshlets_buffer, 1).buffer(material_data_buffer, 2)
+                    .buffer(meshlet_vertex_and_index_indices_buffer, 3).buffer(meshlets_vertex_pos_buffer, 4).buffer(meshlets_vertex_data_buffer, 5)
+                    .buffer(mesh_indirect_draw_command_buffers[i], 6).buffer(mesh_draw_count_buffers[i], 7).buffer(mesh_instances_buffer, 10)
+                    .buffer(mesh_bounds_buffer, 12).buffer(debug_line_buffer, 20).buffer(debug_line_count_buffer, 21).buffer(debug_line_indirect_command_buffer, 22).set_layout(layout);
+
+                mesh_shader_descriptor_set[i] = renderer->gpu->create_descriptor_set(ds_creation);
+            }
+        }
+
+        //depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        mesh_cull_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
     }
 
     void glTFScene::fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material) {
@@ -1167,9 +1710,36 @@ namespace Helix {
         }
     }
 
-    void glTFScene::fill_gpu_material_buffer(float model_scale) {
+    void glTFScene::fill_gpu_data_buffers(float model_scale) {
         // Update per mesh material buffer
-        for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
+
+        MapBufferParameters cb_map = { material_data_buffer, 0, 0 };
+        GPUMaterialData* gpu_mesh_data = (GPUMaterialData*)renderer->gpu->map_buffer(cb_map);
+        MapBufferParameters mesh_instance_map = { mesh_instances_buffer, 0, 0 };
+        GPUMeshInstanceData* gpu_mesh_instance_data = (GPUMeshInstanceData*)renderer->gpu->map_buffer(mesh_instance_map);
+        if (gpu_mesh_data) {
+            for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
+                copy_gpu_material_data(gpu_mesh_data[mesh_index], opaque_meshes[mesh_index]);
+                Mesh& mesh = opaque_meshes[mesh_index];
+
+                MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
+                GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(material_buffer_map);
+                if (mesh_data) {
+                    copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
+                    gpu_mesh_instance_data[mesh_index].world = mesh_data->model;
+                    gpu_mesh_instance_data[mesh_index].inverse_world = mesh_data->inverse_model;
+                    gpu_mesh_instance_data[mesh_index].mesh_index = mesh_index;
+                    renderer->gpu->unmap_buffer(material_buffer_map);
+                }
+            }
+            for (u32 mesh_index = opaque_meshes.size; mesh_index < (opaque_meshes.size + transparent_meshes.size); ++mesh_index) {
+                copy_gpu_material_data(gpu_mesh_data[mesh_index], transparent_meshes[mesh_index - opaque_meshes.size]);
+            }
+            renderer->gpu->unmap_buffer(cb_map);
+            renderer->gpu->unmap_buffer(mesh_instance_map);
+        }
+
+        /*for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
             Mesh& mesh = opaque_meshes[mesh_index];
 
             MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
@@ -1192,7 +1762,7 @@ namespace Helix {
 
                 renderer->gpu->unmap_buffer(material_buffer_map);
             }
-        }
+        }*/
 
         light_pass.fill_gpu_material_buffer();
     }
@@ -1380,7 +1950,7 @@ namespace Helix {
         }
     }
 
-    Node* NodePool::get_root_node(){
+    Node* NodePool::get_root_node() {
         Node* root = (Node*)access_node(root_node);
         HASSERT(root);
         return root;

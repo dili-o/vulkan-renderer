@@ -1,64 +1,17 @@
 
+#ifndef RAPTOR_GLSL_LIGHTING_H
+#define RAPTOR_GLSL_LIGHTING_H
 
-#if defined(VERTEX_PBR)
-
-layout(location=0) in vec3 position;
-
-layout (location = 0) out vec2 vTexcoord0;
-
-void main() {
-
-    vTexcoord0.xy = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
-    gl_Position = vec4(vTexcoord0.xy * 2.0f - 1.0f, 0.0f, 1.0f);
-    gl_Position.y = -gl_Position.y;
-}
-
-#endif // VERTEX
-
-#if defined (FRAGMENT_PBR)
-
-layout ( std140, set = MATERIAL_SET, binding = 0 ) uniform LocalConstants {
-    mat4        view_projection;
-    vec4        eye;
-    vec4        light;
-    float       light_range;
-    float       light_intensity;
-};
-
-uint DrawFlags_AlphaMask = 1 << 0;
-
-layout ( std140, set = MATERIAL_SET, binding = 1 ) uniform Mesh {
-
-    mat4        model;
-    mat4        model_inverse;
-
-    // x = diffuse index, y = roughness index, z = normal index, w = occlusion index.
-    // Occlusion and roughness are encoded in the same texture
-    uvec4       textures;
-    vec4        base_color_factor;
-    vec4        metallic_roughness_occlusion_factor;
-    float       alpha_cutoff;
-    uint        flags;
-};
-
-layout (location = 0) in vec2 vTexcoord0;
-
-layout (location = 0) out vec4 frag_color;
-
-void main() {
-    vec4 base_colour = texture(global_textures[nonuniformEXT(textures.x)], vTexcoord0);
-    vec3 rmo = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0).rgb;
-    vec3 normal = texture(global_textures[nonuniformEXT(textures.z)], vTexcoord0).rgb;
-    vec3 vPosition = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0).rgb;
+vec4 calculate_lighting(vec4 base_colour, vec3 orm, vec3 normal, vec3 emissive, vec3 vPosition) {
 
     vec3 V = normalize( eye.xyz - vPosition );
     vec3 L = normalize( light.xyz - vPosition );
     vec3 N = normal;
     vec3 H = normalize( L + V );
 
-    float occlusion = rmo.r;
-    float roughness = rmo.g;
-    float metalness = rmo.b;
+    float occlusion = orm.r;
+    float roughness = orm.g;
+    float metalness = orm.b;
 
     float alpha = pow(roughness, 2.0);
 
@@ -74,7 +27,7 @@ void main() {
     float HdotV = clamp(dot(H, V), 0, 1);
 
     float distance = length(light.xyz - vPosition);
-    float intensity = 80.0f * max(min(1.0 - pow(distance / 20.0f, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+    float intensity = light_intensity * max(min(1.0 - pow(distance / light_range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
 
     vec3 material_colour = vec3(0, 0, 0);
     if (NdotL > 0.0 || NdotV > 0.0)
@@ -96,8 +49,9 @@ void main() {
         material_colour = mix( fresnel_mix, conductor_fresnel, metalness );
     }
 
-    //frag_color = vec4( encode_srgb( material_colour ), base_colour.a );
-    frag_color = base_colour;
+    material_colour += emissive;
+
+    return vec4( encode_srgb( material_colour ), base_colour.a );
 }
 
-#endif // FRAGMENT
+#endif // RAPTOR_GLSL_LIGHTING_H

@@ -10491,6 +10491,24 @@ void VmaDeviceMemoryBlock::Destroy(VmaAllocator allocator)
         m_pMetadata->DebugLogAllAllocations();
     // This is the most important assert in the entire library.
     // Hitting it means you have some memory leak - unreleased VmaAllocation objects.
+
+
+    if (!m_pMetadata->IsEmpty()) {
+        char* statsString = nullptr;
+        // Build the stats string with detailed information
+        char* stats = nullptr;
+        vmaBuildStatsString(allocator, &stats, false);
+        if (stats != nullptr) {
+            printf("=========================================================================\n%s\n", stats);
+            if (statsString)
+                vmaFreeStatsString(allocator, stats); // Properly free the stats string
+            else {
+                int test = 6;
+                test++;
+            }
+        }
+    }
+
     VMA_ASSERT_LEAK(m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!");
 
     VMA_ASSERT_LEAK(m_hMemory != VK_NULL_HANDLE);

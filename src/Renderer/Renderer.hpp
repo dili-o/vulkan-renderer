@@ -78,8 +78,11 @@ namespace Helix {
     struct Program : public Helix::Resource {
 
         Array<ProgramPass>              passes;
+        FlatHashMap<u64, u16>           name_hash_to_index;
 
         u32                             pool_index;
+
+        u32                             get_pass_index(cstring name);
 
         static constexpr cstring        k_type = "helix_program_type";
         static u64                      k_type_hash;

@@ -13,6 +13,12 @@
 #include <vulkan/vk_enum_string_helper.h>
 
 namespace Helix {
+    // Program ////////////////////////////////////////////////////////////////
+    u32 Program::get_pass_index(cstring name) {
+        const u64 name_hash = hash_calculate(name);
+        return name_hash_to_index.get(name_hash);
+    }
+
     // MaterialCreation ///////////////////////////////////////////////////////
     MaterialCreation& MaterialCreation::reset() {
         program = nullptr;
@@ -142,8 +148,8 @@ namespace Helix {
 
     void Renderer::shutdown() {
 
-        resource_name_buffer.shutdown();
         resource_cache.shutdown(this);
+        resource_name_buffer.shutdown();
         gpu_heap_budgets.shutdown();
 
         textures.shutdown();
@@ -248,7 +254,10 @@ namespace Helix {
                     while (it.is_valid()) {
                         Helix::Program* program = resource_cache.programs.get(it);
                         if (ImGui::TreeNode(program->name)) {
-                            ImGui::Text("Num of passes: %d", program->passes.size);
+                            for (u32 i = 0; i < program->passes.size; ++i) {
+                                Pipeline* pipeline = gpu->access_pipeline(program->passes[i].pipeline);
+                                ImGui::Text("%s", pipeline->name);
+                            }
                             ImGui::TreePop();
                         }
                         resource_cache.programs.iterator_advance(it);
@@ -362,6 +371,7 @@ namespace Helix {
         Program* program = programs.obtain();
         if (program) {
             program->passes.init(gpu->allocator, creation.num_creations, creation.num_creations);
+            program->name_hash_to_index.init(gpu->allocator, creation.num_creations);
             program->name = creation.name;
 
             StringBuffer pipeline_cache_path;
@@ -369,18 +379,19 @@ namespace Helix {
 
             for (uint32_t i = 0; i < creation.num_creations; ++i) {
                 ProgramPass& pass = program->passes[i];
-
-                if (creation.name != nullptr) {
-                    char* cache_path = pipeline_cache_path.append_use_f("%s%s.cache", HELIX_SHADER_FOLDER"cache/", creation.name);
-                    pass.pipeline = gpu->create_pipeline(creation.creations[i], cache_path);
+                const PipelineCreation& pass_creation = creation.creations[i];
+                if (pass_creation.name != nullptr) {
+                    char* cache_path = pipeline_cache_path.append_use_f("%s%s.cache", HELIX_SHADER_FOLDER"cache/", pass_creation.name);
+                    pass.pipeline = gpu->create_pipeline(pass_creation, cache_path);
 
                     resource_cache.programs.insert(hash_calculate(creation.name), program);
                 }
                 else {
                     HWARN("Pipeline Creation does not have a name");
-                    pass.pipeline = gpu->create_pipeline(creation.creations[i]);
+                    pass.pipeline = gpu->create_pipeline(pass_creation);
                 }
 
+                program->name_hash_to_index.insert(hash_calculate(pass_creation.name), (u32)i);
                 pass.descriptor_set_layout = gpu->get_descriptor_set_layout(pass.pipeline, 0);
             }
 
@@ -489,7 +500,9 @@ namespace Helix {
         for (u32 i = 0; i < program->passes.size; i++) {
             gpu->destroy_pipeline(program->passes[i].pipeline);
         }
+
         program->passes.shutdown();
+        program->name_hash_to_index.shutdown();
 
         programs.release(program);
     }
@@ -533,14 +546,14 @@ namespace Helix {
         using namespace Helix;
 
         if (texture->mipmaps > 1) {
-            util_add_image_barrier(cb->vk_handle, texture->vk_image, from_transfer_queue ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_SOURCE, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, from_transfer_queue ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_SOURCE, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
         }
 
         i32 w = texture->width;
         i32 h = texture->height;
 
         for (int mip_index = 1; mip_index < texture->mipmaps; ++mip_index) {
-            util_add_image_barrier(cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, mip_index, 1, false);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, mip_index, 1, false);
 
             VkImageBlit blit_region{ };
             blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -565,19 +578,16 @@ namespace Helix {
             vkCmdBlitImage(cb->vk_handle, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit_region, VK_FILTER_LINEAR);
 
             // Prepare current mip for next level
-            util_add_image_barrier(cb->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, mip_index, 1, false);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, mip_index, 1, false);
         }
 
         // Transition
-        if (from_transfer_queue && false) {
-            util_add_image_barrier(cb->vk_handle, texture->vk_image, (texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+        if (from_transfer_queue) {
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, (texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
         }
         else {
-            util_add_image_barrier(cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
         }
-
-
-        texture->vk_image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
 
@@ -596,9 +606,8 @@ namespace Helix {
             Texture* texture = gpu->access_texture(textures_to_update[i]);
 
             // TODO set the vk_image_layout of the texture
-            texture->vk_image_layout;
-            util_add_image_barrier(cb->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE,
-                0, 1, false, gpu->vulkan_transfer_queue_family, gpu->vulkan_main_queue_family, QueueType::Graphics, QueueType::Graphics);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE,
+                0, 1, false, gpu->vulkan_transfer_queue_family, gpu->vulkan_main_queue_family, QueueType::CopyTransfer, QueueType::Graphics);
 
             generate_mipmaps(texture, cb, true);
         }

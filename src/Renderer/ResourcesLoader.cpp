@@ -22,7 +22,8 @@ namespace Helix {
 		StringBuffer& shader_buffer,
 		Allocator* temp_allocator,
 		Renderer* renderer,
-		FrameGraph* frame_graph);
+		FrameGraph* frame_graph,
+		StringBuffer& path_name_buffer);
 
 	// ResourcesLoader //////////////////////////////////////////////////
 	void ResourcesLoader::init(Helix::Renderer* renderer_, Helix::StackAllocator* temp_allocator_, Helix::FrameGraph* frame_graph_) {
@@ -46,7 +47,10 @@ namespace Helix {
 		path_buffer.init(1024, temp_allocator);
 
 		StringBuffer shader_code_buffer;
-		shader_code_buffer.init(hkilo(64), temp_allocator);
+		shader_code_buffer.init(hmega(2), temp_allocator);
+
+		StringBuffer pass_name_buffer;
+		pass_name_buffer.init(hkilo(2), temp_allocator);
 
 		using json = nlohmann::json;
 
@@ -86,13 +90,13 @@ namespace Helix {
 						pipeline_i["name"].get_to(name);
 
 						if (name == inherited_name) {
-							parse_gpu_pipeline(resource_name_buffer, pipeline_i, pipeline_creation, path_buffer, shader_code_buffer, temp_allocator, renderer, frame_graph);
+							parse_gpu_pipeline(resource_name_buffer, pipeline_i, pipeline_creation, path_buffer, shader_code_buffer, temp_allocator, renderer, frame_graph, pass_name_buffer);
 							break;
 						}
 					}
 				}
 				// TODO: Properly get the name of each shader
-				parse_gpu_pipeline(resource_name_buffer, pipeline, pipeline_creation, path_buffer, shader_code_buffer, temp_allocator, renderer, frame_graph);
+				parse_gpu_pipeline(resource_name_buffer, pipeline, pipeline_creation, path_buffer, shader_code_buffer, temp_allocator, renderer, frame_graph, pass_name_buffer);
 
 				program_creation.add_pipeline(pipeline_creation);
 			}
@@ -111,9 +115,20 @@ namespace Helix {
 		StringBuffer& shader_code_buffer,
 		Allocator* temp_allocator,
 		Renderer* renderer,
-		FrameGraph* frame_graph) {
+		FrameGraph* frame_graph,
+		StringBuffer& pass_name_buffer) {
 
 		using json = nlohmann::json;
+
+		json json_name = pipeline["name"];
+		if (json_name.is_string()) {
+			std::string name;
+			json_name.get_to(name);
+
+			pc.name = pass_name_buffer.append_use_f("%s", name.c_str());
+		}
+
+		bool compute_shader_pass = false;
 
 		// Parse Shaders
 		json shaders = pipeline["shaders"];
@@ -139,9 +154,9 @@ namespace Helix {
 				shader["shader"].get_to(name);
 				shader_concatenate(name.c_str(), path_buffer, shader_code_buffer, temp_allocator);
 
-				size_t pos = name.find(".");
-				std::string res = name.substr(0, pos);
-				pc.shader_state_creation.name = resource_name_buffer.append_use_f("%s", res.c_str());
+				//size_t pos = name.find(".");
+				//std::string res = name.substr(0, pos);
+				pc.shader_state_creation.name = pc.name;
 
 				shader_code_buffer.close_current_string();
 
@@ -153,8 +168,20 @@ namespace Helix {
 					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_FRAGMENT_BIT);
 				else if (name == "geometry")
 					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_GEOMETRY_BIT);
-				else if (name == "compute")
+				else if (name == "compute") {
 					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_COMPUTE_BIT);
+					compute_shader_pass = true;
+				}
+				else if (name == "mesh") {
+					if (!renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER)
+						HASSERT_MSG(false, "No mesh shader support");
+					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_MESH_BIT_NV);
+				}else if (name == "task") {
+					if (!renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER)
+						HASSERT_MSG(false, "No task shader support");
+					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_TASK_BIT_NV);
+				}
+
 				else
 					HASSERT_MSG(false, "Unknown shader stage");
 			}
@@ -298,8 +325,9 @@ namespace Helix {
 				// TODO: handle better
 				if (name == "swapchain") {
 					pc.render_pass = renderer->gpu->get_swapchain_output();
-				}
-				else {
+				} else if (compute_shader_pass) {
+					pc.render_pass = renderer->gpu->get_swapchain_output();
+				} else {
 					const RenderPass* render_pass = renderer->gpu->access_render_pass(node->render_pass);
 
 					pc.render_pass = render_pass->output;

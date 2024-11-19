@@ -2,7 +2,7 @@
 	"name" : "pbr_lighting",
 	"pipelines" : [
 		{
-			"name" : "main",
+			"name" : "pbr",
 			"vertex_input" : [
 				{
 					"attribute_location" : 0,

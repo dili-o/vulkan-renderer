@@ -35,7 +35,7 @@ namespace Helix
 
         staging_buffer_offset = 0;
 
-        for (u32 i = 0; i < GpuDevice::k_max_frames; ++i) {
+        for (u32 i = 0; i < k_max_frames; ++i) {
             VkCommandPoolCreateInfo cmd_pool_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr };
             cmd_pool_info.queueFamilyIndex = renderer->gpu->vulkan_transfer_queue_family;
             cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -68,7 +68,7 @@ namespace Helix
         file_load_requests.shutdown();
         upload_requests.shutdown();
 
-        for (u32 i = 0; i < GpuDevice::k_max_frames; ++i) {
+        for (u32 i = 0; i < k_max_frames; ++i) {
             vkDestroyCommandPool(renderer->gpu->vulkan_device, command_pools[i], renderer->gpu->vulkan_allocation_callbacks);
             // Command buffers are destroyed with the pool associated.
         }

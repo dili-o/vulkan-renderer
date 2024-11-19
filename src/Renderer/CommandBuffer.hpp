@@ -40,6 +40,10 @@ namespace Helix {
         void                            draw_indirect(BufferHandle handle, u32 offset, u32 stride);
         void                            draw_indexed_indirect(BufferHandle handle, u32 offset, u32 stride);
 
+        void                            draw_mesh_task(u32 task_count, u32 first_task);
+        //void                            draw_mesh_task_indirect(BufferHandle command_buffer, u32 command_offset, BufferHandle count_buffer, u32 count_offset, u32 max_draws, u32 stride);
+        void                            draw_mesh_task_indirect_count(BufferHandle command_buffer, u32 command_offset, BufferHandle count_buffer, u32 count_offset, u32 max_draws, u32 stride);
+
         void                            dispatch(u32 group_x, u32 group_y, u32 group_z);
         void                            dispatch_indirect(BufferHandle handle, u32 offset);
 

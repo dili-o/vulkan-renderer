@@ -1,0 +1,16 @@
+{
+	"name" : "culling",
+	"pipelines" : [
+		{
+			"name" : "gpu_culling",
+			"render_pass" : "mesh_cull_pass",
+			"shaders" : [
+				{
+					"stage" : "compute",
+					"shader" : "culling.glsl",
+					"includes" : [ "platform.h", "scene.h", "mesh.h", "debug_rendering.h" ]
+				}
+			]
+		}
+	]
+}

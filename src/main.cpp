@@ -86,6 +86,11 @@ struct AsynchronousLoadTask : enki::IPinnedTask {
     bool                    execute = true;
 }; // struct AsynchronousLoadTask
 
+glm::vec4 normalize_plane(glm::vec4 plane) {
+    glm::vec3 normal( plane.x, plane.y, plane.z);
+    return (plane / glm::length(normal));
+}
+
 int main(int argc, char** argv)
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -107,7 +112,7 @@ int main(int argc, char** argv)
 	Allocator* allocator = &MemoryService::instance()->system_allocator;
 
 	StackAllocator stack_allocator;
-	stack_allocator.init(hmega(8));
+	stack_allocator.init(hmega(200));
 
     // [TAG: MULTITHREADING]
     enki::TaskSchedulerConfig config;
@@ -163,7 +168,7 @@ int main(int argc, char** argv)
 
             StringBuffer temporary_name_buffer;
             temporary_name_buffer.init(1024, &stack_allocator);
-            cstring frame_graph_path = temporary_name_buffer.append_use_f(HELIX_FRAMEGRAPH_FOLDER"main.hgraph"); // TODO: Use MACRO
+            cstring frame_graph_path = temporary_name_buffer.append_use_f(HELIX_FRAMEGRAPH_FOLDER"cull_graph.json");
 
             frame_graph.parse(frame_graph_path, &stack_allocator);
             frame_graph.compile();
@@ -176,15 +181,19 @@ int main(int argc, char** argv)
             resources_loader.load_program(full_screen_pipeline_path);
 
             temporary_name_buffer.clear();
-            cstring geometry_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/geometry.json");
-            resources_loader.load_program(geometry_pipeline_path);
+            cstring meshlet_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/meshlet.json");
+            resources_loader.load_program(meshlet_pipeline_path);
 
             temporary_name_buffer.clear();
             cstring pbr_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/pbr_lighting.json");
             resources_loader.load_program(pbr_pipeline_path);
 
             temporary_name_buffer.clear();
-            cstring light_debug_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/light_debug.json");
+            cstring culling_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/culling.json");
+            resources_loader.load_program(culling_pipeline_path);
+
+            temporary_name_buffer.clear();
+            cstring light_debug_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/debug.json");
             resources_loader.load_program(light_debug_pipeline_path);
 
             stack_allocator.free_marker(scratch_marker);
@@ -249,7 +258,7 @@ int main(int argc, char** argv)
     f32 pitch = 0.0f;
 
     float model_scale = 1.0f;
-    float light_range = 20.0f;
+    float light_range = 300.0f;
     float light_intensity = 1000.f;
 
     int frame_count = 0;
@@ -264,6 +273,7 @@ int main(int argc, char** argv)
 
         const i64 current_tick = Time::now();
         
+        static glm::mat4 projection_transpose;
 
         // New frame
         if (!window.minimized) {
@@ -331,10 +341,10 @@ int main(int argc, char** argv)
             }
 
             {
-                MapBufferParameters cb_map = { scene->local_constants_buffer, 0, 0 };
-                UniformData* cb_data = (UniformData*)gpu.map_buffer(cb_map);
+                MapBufferParameters cb_map = { scene->scene_constant_buffer, 0, 0 };
+                GPUSceneData* cb_data = (GPUSceneData*)gpu.map_buffer(cb_map);
                 MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
-                LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
+                //LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
                 if (cb_data) {
                     if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
                         pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
@@ -392,27 +402,69 @@ int main(int argc, char** argv)
 
 
                     // TODO: Fix Hard coded the light node handle
-                    LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
+                    //LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
 
-                    cb_data->light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
+                    //cb_data->light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
+                    GPUSceneData& scene_data = scene->scene_data;
+                    scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
+                    scene_data.view_projection = view_projection;
+                    scene_data.inverse_view_projection = glm::inverse(view_projection);
+                    scene_data.world_to_camera = view;
+                    scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
+                    scene_data.light_position = glm::vec4(0, 10, 0, 1.0f);
+                    scene_data.light_range = light_range;
+                    scene_data.light_intensity = light_intensity;
+                    scene_data.dither_texture_index = k_invalid_index;
+
+                    //scene_data.z_near = game_camera.camera.near_plane;
+                    //scene_data.z_far = game_camera.camera.far_plane;
+                    //scene_data.projection_00 = game_camera.camera.projection.m00;
+                    //scene_data.projection_11 = game_camera.camera.projection.m11;
+                    scene_data.frustum_cull_meshes = 1;
+                    scene_data.frustum_cull_meshlets = 1;
+                    scene_data.occlusion_cull_meshes = 1;
+                    scene_data.occlusion_cull_meshlets = 1;
+                    scene_data.freeze_occlusion_camera = 0;
+
+                    scene_data.resolution_x = gpu.swapchain_width * 1.f;
+                    scene_data.resolution_y = gpu.swapchain_height * 1.f;
+                    scene_data.aspect_ratio = gpu.swapchain_width * 1.f / gpu.swapchain_height;
+
+                    // Frustum computations
+                    scene_data.camera_position_debug = scene_data.camera_position;
+                    scene_data.world_to_camera_debug = scene_data.world_to_camera;
+                    scene_data.view_projection_debug = scene_data.view_projection;
+                    projection_transpose = glm::transpose(projection);
+
+                    scene_data.frustum_planes[0] = normalize_plane(projection_transpose[3] + projection_transpose[0]); // x + w  < 0;
+                    scene_data.frustum_planes[1] = normalize_plane(projection_transpose[3] - projection_transpose[0]); // x - w  < 0;
+                    scene_data.frustum_planes[2] = normalize_plane(projection_transpose[3] + projection_transpose[1]); // y + w  < 0;
+                    scene_data.frustum_planes[3] = normalize_plane(projection_transpose[3] - projection_transpose[1]); // y - w  < 0;
+                    scene_data.frustum_planes[4] = normalize_plane(projection_transpose[3] + projection_transpose[2]); // z + w  < 0;
+                    scene_data.frustum_planes[5] = normalize_plane(projection_transpose[3] - projection_transpose[2]); // z - w  < 0;
+
 
                     cb_data->view_projection = view_projection;
+                    cb_data->view_projection_debug = view_projection;
                     cb_data->camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
+                    cb_data->light_position = glm::vec4(0, 10, 0, 1.0f);
                     cb_data->light_intensity = light_intensity;
                     cb_data->light_range = light_range;
 
+                    cb_data->freeze_occlusion_camera = 1;
+
                     gpu.unmap_buffer(cb_map);
                     
-                    light_cb_data->view_projection = view_projection;
-                    light_cb_data->camera_position_texture_index = glm::vec4(eye.x, eye.y, eye.z, scene->light_texture.handle.index);
+                    //light_cb_data->view_projection = view_projection;
+                    //light_cb_data->camera_position_texture_index = glm::vec4(eye.x, eye.y, eye.z, scene->light_texture.handle.index);
 
                     glm::mat4 model = glm::mat4(1.0f);
-                    model = glm::translate(model, light_node->world_transform.translation);
-                    light_cb_data->model = model;
+                    //model = glm::translate(model, light_node->world_transform.translation);
+                    //light_cb_data->model = model;
 
                     gpu.unmap_buffer(light_cb_map);
                 }
-                scene->fill_gpu_material_buffer(model_scale);
+                scene->fill_gpu_data_buffers(model_scale);
             }
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
 
@@ -439,8 +491,8 @@ int main(int argc, char** argv)
 
     async_loader.shutdown();
 
-    gpu.destroy_buffer(scene->local_constants_buffer);
-    gpu.destroy_buffer(scene->light_cb);
+    //gpu.destroy_buffer(scene->scene_constant_buffer);
+    //gpu.destroy_buffer(scene->light_cb);
 
     imgui->shutdown();
 

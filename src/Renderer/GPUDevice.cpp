@@ -325,17 +325,22 @@ namespace Helix {
             for (size_t i = 0; i < device_extension_count; i++) {
 
                 if (!strcmp(extensions[i].extensionName, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)) {
-                    dynamic_rendering_extension_present = true;
+                    gpu_device_features |= GpuDeviceFeature_DYNAMIC_RENDERING;
                     continue;
                 }
 
                 if (!strcmp(extensions[i].extensionName, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
-                    timeline_semaphore_extension_present = true;
+                    gpu_device_features |= GpuDeviceFeature_TIMELINE_SEMAPHORE;
                     continue;
                 }
 
                 if (!strcmp(extensions[i].extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
-                    synchronization2_extension_present = true;
+                    gpu_device_features |= GpuDeviceFeature_TIMELINE_SEMAPHORE;
+                    continue;
+                }
+
+                if (!strcmp(extensions[i].extensionName, VK_NV_MESH_SHADER_EXTENSION_NAME)) {
+                    gpu_device_features |= GpuDeviceFeature_MESH_SHADER;
                     continue;
                 }
             }
@@ -358,7 +363,9 @@ namespace Helix {
         vkGetPhysicalDeviceFeatures2(vulkan_physical_device, &device_features);
         // For the feature to be correctly working, we need both the possibility to partially bind a descriptor,
         // as some entries in the bindless array will be empty, and SpirV runtime descriptors.
-        bindless_supported = indexing_features.descriptorBindingPartiallyBound && indexing_features.runtimeDescriptorArray;
+        if (indexing_features.descriptorBindingPartiallyBound && indexing_features.runtimeDescriptorArray)
+            gpu_device_features |= GpuDeviceFeature_BINDLESS;
+        //bindless_supported = indexing_features.descriptorBindingPartiallyBound && indexing_features.runtimeDescriptorArray;
 
         //////// Create logical device
         u32 queue_family_count = 0;
@@ -410,17 +417,22 @@ namespace Helix {
         Array<const char*> device_extensions;
         device_extensions.init(allocator, 2);
         device_extensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        device_extensions.push(VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME);
 
-        if (dynamic_rendering_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
             device_extensions.push(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         }
 
-        if (timeline_semaphore_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
             device_extensions.push(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
         }
 
-        if (synchronization2_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
             device_extensions.push(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+        }
+
+        if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            device_extensions.push(VK_NV_MESH_SHADER_EXTENSION_NAME);
         }
 
         const float queue_priority[] = { 1.0f, 1.0f };
@@ -452,43 +464,40 @@ namespace Helix {
 
         // Enable all features: just pass the physical features 2 struct.
         VkPhysicalDeviceFeatures2 physical_features2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        VkPhysicalDeviceVulkan11Features vulkan_11_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
 
-        void* current_pnext = nullptr;
+        void* current_pnext = &vulkan_11_features;
+
+        VkPhysicalDeviceVulkan12Features vulkan_12_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        vulkan_12_features.pNext = current_pnext;
+        current_pnext = &vulkan_12_features;
 
         VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR };
-        if (dynamic_rendering_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
             dynamic_rendering_features.pNext = current_pnext;
             current_pnext = &dynamic_rendering_features;
         }
 
-        VkPhysicalDeviceTimelineSemaphoreFeatures timeline_sempahore_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
-        if (timeline_semaphore_extension_present) {
-            timeline_sempahore_features.pNext = current_pnext;
-            current_pnext = &timeline_sempahore_features;
-        }
-
         VkPhysicalDeviceSynchronization2FeaturesKHR synchronization2_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR };
-        if (synchronization2_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
             synchronization2_features.pNext = current_pnext;
             current_pnext = &synchronization2_features;
         }
 
-        // [TAG: BINDLESS]
-        // We also add the bindless needed feature on the device creation.
-        if (bindless_supported) {
-            indexing_features.descriptorBindingPartiallyBound = VK_TRUE;
-            indexing_features.runtimeDescriptorArray = VK_TRUE;
-            indexing_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
-            indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-            indexing_features.runtimeDescriptorArray = VK_TRUE;
+        VkPhysicalDeviceMeshShaderFeaturesNV mesh_shaders_feature = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
+        if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            mesh_shaders_feature.taskShader = true;
+            mesh_shaders_feature.meshShader = true;
 
-            indexing_features.pNext = current_pnext;
-            current_pnext = &indexing_features;
+            mesh_shaders_feature.pNext = current_pnext;
+            current_pnext = &mesh_shaders_feature;
         }
 
         physical_features2.pNext = current_pnext;
 
         vkGetPhysicalDeviceFeatures2(vulkan_physical_device, &physical_features2);
+
+        HASSERT(vulkan_11_features.shaderDrawParameters == VK_TRUE);
 
         VkDeviceCreateInfo device_create_info{ VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
         device_create_info.queueCreateInfoCount = queue_count;
@@ -510,14 +519,20 @@ namespace Helix {
             pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdEndDebugUtilsLabelEXT");
         }
 
-        if (dynamic_rendering_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
             cmd_begin_rendering = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdBeginRenderingKHR");
             cmd_end_rendering = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdEndRenderingKHR");
         }
 
-        if (synchronization2_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
             queue_submit2 = (PFN_vkQueueSubmit2KHR)vkGetDeviceProcAddr(vulkan_device, "vkQueueSubmit2KHR");
             cmd_pipeline_barrier2 = (PFN_vkCmdPipelineBarrier2KHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdPipelineBarrier2KHR");
+        }
+
+        if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            cmd_draw_mesh_tasks = (PFN_vkCmdDrawMeshTasksNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksNV");
+            cmd_draw_mesh_tasks_indirect = (PFN_vkCmdDrawMeshTasksIndirectNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksIndirectNV");
+            cmd_draw_mesh_tasks_indirect_count = (PFN_vkCmdDrawMeshTasksIndirectCountNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksIndirectCountNV");
         }
 
         // Get main queue
@@ -615,7 +630,7 @@ namespace Helix {
 
         // [TAG: BINDLESS]
         // Create the Descriptor Pool used by bindless, that needs update after bind flag.
-        if (bindless_supported) {
+        if (gpu_device_features & GpuDeviceFeature_BINDLESS) {
             VkDescriptorPoolSize pool_sizes_bindless[] =
             {
                 { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, k_max_bindless_resources },
@@ -714,14 +729,14 @@ namespace Helix {
             vkCreateSemaphore(vulkan_device, &semaphore_info, vulkan_allocation_callbacks, &vulkan_image_acquired_semaphore[i]);
             vkCreateSemaphore(vulkan_device, &semaphore_info, vulkan_allocation_callbacks, &vulkan_render_complete_semaphore[i]);
 
-            if(!timeline_semaphore_extension_present){
+            if(!gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE){
                 VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
                 fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
                 vkCreateFence(vulkan_device, &fenceInfo, vulkan_allocation_callbacks, &vulkan_command_buffer_executed_fence[i]);
             }
         }
 
-        if (timeline_semaphore_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
             VkSemaphoreTypeCreateInfo timelineCreateInfo;
             timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
             timelineCreateInfo.pNext = NULL;
@@ -858,13 +873,13 @@ namespace Helix {
         for (size_t i = 0; i < k_max_swapchain_images; i++) {
             vkDestroySemaphore(vulkan_device, vulkan_image_acquired_semaphore[i], vulkan_allocation_callbacks);
             vkDestroySemaphore(vulkan_device, vulkan_render_complete_semaphore[i], vulkan_allocation_callbacks);
-            if(!timeline_semaphore_extension_present)
+            if(!gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE)
                 vkDestroyFence(vulkan_device, vulkan_command_buffer_executed_fence[i], vulkan_allocation_callbacks);
         }
 
         vkDestroySemaphore(vulkan_device, vulkan_compute_semaphore, vulkan_allocation_callbacks);
 
-        if (timeline_semaphore_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
             vkDestroySemaphore(vulkan_device, vulkan_timeline_graphics_semaphore, vulkan_allocation_callbacks);
         }
 
@@ -954,7 +969,7 @@ namespace Helix {
 
         // Destroy render passes from the cache.
         FlatHashMapIterator it = render_pass_cache.iterator_begin();
-        if (!dynamic_rendering_extension_present) {
+        if (!(gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING)) {
             FlatHashMapIterator it = render_pass_cache.iterator_begin();
             while (it.is_valid()) {
                 VkRenderPass vk_render_pass = render_pass_cache.get(it);
@@ -968,7 +983,6 @@ namespace Helix {
         destroy_swapchain();
         vkDestroySurfaceKHR(vulkan_instance, vulkan_window_surface, vulkan_allocation_callbacks);
 
-        vmaDestroyAllocator(vma_allocator);
 
         texture_to_update_bindless.shutdown();
         resource_deletion_queue.shutdown();
@@ -983,6 +997,9 @@ namespace Helix {
         descriptor_sets.shutdown();
         render_passes.shutdown();
         framebuffers.shutdown();
+
+        vmaDestroyAllocator(vma_allocator);
+
 #ifdef VULKAN_DEBUG_REPORT
         // Remove the debug report callback
         //auto vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr( vulkan_instance, "vkDestroyDebugReportCallbackEXT" );
@@ -993,7 +1010,7 @@ namespace Helix {
 #endif // IMGUI_VULKAN_DEBUG_REPORT
 
         // [TAG: BINDLESS]
-        if (bindless_supported) {
+        if (gpu_device_features & GpuDeviceFeature_BINDLESS) {
             vkDestroyDescriptorSetLayout(vulkan_device, vulkan_bindless_descriptor_layout, vulkan_allocation_callbacks);
             vkDestroyDescriptorPool(vulkan_device, vulkan_bindless_descriptor_pool, vulkan_allocation_callbacks);
         }
@@ -1144,10 +1161,10 @@ namespace Helix {
 
         gpu.set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)texture->vk_image_view, creation.name);
 
-        texture->vk_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        texture->state = RESOURCE_STATE_UNDEFINED;
 
         // Add deferred bindless update.
-        if (gpu.bindless_supported) {
+        if (gpu.gpu_device_features & GpuDeviceFeature_BINDLESS) {
             ResourceUpdate resource_update{ ResourceDeletionType::Texture, texture->handle.index, gpu.current_frame };
             gpu.texture_to_update_bindless.push(resource_update);
         }
@@ -1200,19 +1217,19 @@ namespace Helix {
         region.imageExtent = { texture->width, texture->height, texture->depth };
 
         // Copy from the staging buffer to the image
-        util_add_image_barrier(command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, 0, 1, false);
+        util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, 0, 1, false);
 
         vkCmdCopyBufferToImage(command_buffer->vk_handle, staging_buffer, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         // Prepare first mip to create lower mipmaps
         if (texture->mipmaps > 1) {
-            util_add_image_barrier(command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
+            util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
         }
 
         i32 w = texture->width;
         i32 h = texture->height;
 
         for (int mip_index = 1; mip_index < texture->mipmaps; ++mip_index) {
-            util_add_image_barrier(command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, mip_index, 1, false);
+            util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, mip_index, 1, false);
 
             VkImageBlit blit_region{ };
             blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1237,28 +1254,39 @@ namespace Helix {
             vkCmdBlitImage(command_buffer->vk_handle, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit_region, VK_FILTER_LINEAR);
 
             // Prepare current mip for next level
-            util_add_image_barrier(command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, mip_index, 1, false);
+            util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, mip_index, 1, false);
         }
 
         // Transition
-        util_add_image_barrier(command_buffer->vk_handle, texture->vk_image, (texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+        util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, (texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+        texture->state = RESOURCE_STATE_SHADER_RESOURCE;
 
         vkEndCommandBuffer(command_buffer->vk_handle);
 
         // Submit command buffer
-        VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &command_buffer->vk_handle;
+        if (gpu.gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
+            VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+            command_buffer_info.commandBuffer = command_buffer->vk_handle;
 
-        vkQueueSubmit(gpu.vulkan_main_queue, 1, &submitInfo, VK_NULL_HANDLE);
+            VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+            submit_info.commandBufferInfoCount = 1;
+            submit_info.pCommandBufferInfos = &command_buffer_info;
+
+            gpu.queue_submit2(gpu.vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+        }
+        else {
+            VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &command_buffer->vk_handle;
+
+            vkQueueSubmit(gpu.vulkan_main_queue, 1, &submitInfo, VK_NULL_HANDLE);
+        }
+
         vkQueueWaitIdle(gpu.vulkan_main_queue);
-
         vmaDestroyBuffer(gpu.vma_allocator, staging_buffer, staging_allocation);
 
         // TODO: free command buffer
         vkResetCommandBuffer(command_buffer->vk_handle, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
-
-        texture->vk_image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
     TextureHandle GpuDevice::create_texture(const TextureCreation& creation) {
@@ -1474,6 +1502,8 @@ namespace Helix {
 
             shader_state->parse_result;
         }
+
+        
         
         temporary_allocator->free_marker(current_temporary_marker);
 
@@ -1546,6 +1576,8 @@ namespace Helix {
 
         // Now that shaders have compiled we can create the pipeline.
         Pipeline* pipeline = access_pipeline(handle);
+
+        pipeline->name = creation.name;
         ShaderState* shader_state_data = access_shader_state(shader_state);
 
         pipeline->shader_state = shader_state;
@@ -1561,19 +1593,21 @@ namespace Helix {
         // Add bindless resource layout after other layouts.
         // [TAG: BINDLESS]
         u32 bindless_active = 0;
-        if (bindless_supported) {
+        if (gpu_device_features & GpuDeviceFeature_BINDLESS) {
             bindless_active = 1;
         }
 
         for (u32 l = 0; l < num_active_layouts; ++l) {
             // Ensures we skip the bindless layout at index 0.
 
-            if (bindless_supported && l == 0) {
+            if (gpu_device_features & GpuDeviceFeature_BINDLESS && l == 0) {
                 pipeline->descriptor_set_layout_handles[0] = k_invalid_layout;
 
                 vk_layouts[0] = vulkan_bindless_descriptor_layout;
             }
             else {
+                // Sort bindings by their index in ascending order
+                shader_state_data->parse_result->sets[l].sort_bindings_by_index();
                 pipeline->descriptor_set_layout_handles[l] = create_descriptor_set_layout(shader_state_data->parse_result->sets[l]);
 
                 vk_layouts[l] = access_descriptor_set_layout(pipeline->descriptor_set_layout_handles[l])->vk_handle;
@@ -1761,7 +1795,7 @@ namespace Helix {
 
             //// Render Pass
             VkPipelineRenderingCreateInfoKHR pipeline_rendering_create_info{ VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR };
-            if (dynamic_rendering_extension_present) {
+            if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
                 pipeline_rendering_create_info.viewMask = 0;
                 pipeline_rendering_create_info.colorAttachmentCount = creation.render_pass.num_color_formats;
                 pipeline_rendering_create_info.pColorAttachmentFormats = creation.render_pass.num_color_formats > 0 ? creation.render_pass.color_formats : nullptr;
@@ -1897,6 +1931,7 @@ namespace Helix {
         sampler->mag_filter = creation.mag_filter;
         sampler->mip_filter = creation.mip_filter;
         sampler->name = creation.name;
+        sampler->reduction_mode = creation.reduction_mode;
 
         VkSamplerCreateInfo create_info{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
         create_info.addressModeU = creation.address_mode_u;
@@ -1917,6 +1952,14 @@ namespace Helix {
         VkCompareOp             compareOp;
         VkBorderColor           borderColor;
         VkBool32                unnormalizedCoordinates;*/
+
+        VkSamplerReductionModeCreateInfoEXT createInfoReduction = { VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO_EXT };
+        // Add optional reduction mode.
+        if (creation.reduction_mode != VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE_EXT) {
+            createInfoReduction.reductionMode = creation.reduction_mode;
+
+            create_info.pNext = &createInfoReduction;
+        }
 
         vkCreateSampler(vulkan_device, &create_info, vulkan_allocation_callbacks, &sampler->vk_handle);
 
@@ -1943,6 +1986,8 @@ namespace Helix {
         descriptor_set_layout->handle = handle;
         descriptor_set_layout->set_index = u16(creation.set_index);
 
+        
+
         u32 used_bindings = 0;
         for (u32 r = 0; r < creation.num_bindings; ++r) {
             DescriptorBinding& binding = descriptor_set_layout->bindings[r];
@@ -1954,7 +1999,7 @@ namespace Helix {
 
             // [TAG: BINDLESS]
             // Skip bindings for images and textures as they are bindless, thus bound in the global bindless arrays (one for images, one for textures).
-            if (bindless_supported && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+            if (gpu_device_features & GpuDeviceFeature_BINDLESS && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
                 continue;
             }
 
@@ -1992,13 +2037,13 @@ namespace Helix {
 
             // Binding array contains the index into the resource layout binding to retrieve
             // the correct binding informations.
-            u32 layout_binding_index = bindings[r];
+            //u32 layout_binding_index = bindings[r];
 
-            const DescriptorBinding& binding = descriptor_set_layout->bindings[layout_binding_index];
+            const DescriptorBinding& binding = descriptor_set_layout->bindings[r];
 
             // [TAG: BINDLESS]
             // Skip bindless descriptors as they are bound in the global bindless arrays.
-            if (gpu.bindless_supported && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+            if (gpu.gpu_device_features & GpuDeviceFeature_BINDLESS && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
                 continue;
             }
 
@@ -2027,13 +2072,19 @@ namespace Helix {
                 if (texture_data->sampler) {
                     image_info[i].sampler = texture_data->sampler->vk_handle;
                 }
+                if (gpu.gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
+                    image_info[i].imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
+                }
+                else {
+                    image_info[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
                 // TODO: else ?
                 if (samplers[r].index != k_invalid_index) {
                     Sampler* sampler = gpu.access_sampler({ samplers[r] });
                     image_info[i].sampler = sampler->vk_handle;
                 }
 
-                image_info[i].imageLayout = TextureFormat::has_depth_or_stencil(texture_data->vk_format) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                image_info[i].imageLayout = TextureFormat::has_depth_or_stencil(texture_data->vk_format) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : image_info[i].imageLayout;
                 image_info[i].imageView = texture_data->vk_image_view;
 
                 descriptor_write[i].pImageInfo = &image_info[i];
@@ -2124,6 +2175,8 @@ namespace Helix {
             return handle;
         }
 
+        //creation.sort_bindings_by_index();
+
         DescriptorSet* descriptor_set = access_descriptor_set(handle);
         const DesciptorSetLayout* descriptor_set_layout = access_descriptor_set_layout(creation.layout);
 
@@ -2143,9 +2196,9 @@ namespace Helix {
         descriptor_set->layout = descriptor_set_layout;
 
         // Update descriptor set
-        VkWriteDescriptorSet descriptor_write[8];
-        VkDescriptorBufferInfo buffer_info[8];
-        VkDescriptorImageInfo image_info[8];
+        VkWriteDescriptorSet descriptor_write[16];
+        VkDescriptorBufferInfo buffer_info[16];
+        VkDescriptorImageInfo image_info[16];
 
         Sampler* vk_default_sampler = access_sampler(default_sampler);
 
@@ -2363,7 +2416,7 @@ namespace Helix {
 
         render_pass->output = fill_render_pass_output(*this, creation);
 
-        if (!dynamic_rendering_extension_present) {
+        if (!(gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING)) {
             render_pass->vk_handle = get_vulkan_render_pass(render_pass->output, creation.name);
         }
 
@@ -2391,7 +2444,7 @@ namespace Helix {
         framebuffer->name = creation.name;
         framebuffer->render_pass = creation.render_pass;
 
-        if (!dynamic_rendering_extension_present) {
+        if (!(gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING)) {
             vulkan_create_framebuffer(*this, framebuffer);
         }
 
@@ -2599,7 +2652,7 @@ namespace Helix {
                 //destroy_texture_instant(v_framebuffer->depth_stencil_attachment.index);
             }
 
-            if (!dynamic_rendering_extension_present) {
+            if (!(gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING)) {
                 vkDestroyFramebuffer(vulkan_device, v_framebuffer->vk_handle, vulkan_allocation_callbacks);
             }
         }
@@ -2763,17 +2816,29 @@ namespace Helix {
             vulkan_swapchain_framebuffers[iv] = create_framebuffer(creation);
 
 
-            util_add_image_barrier(command_buffer->vk_handle, color->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_PRESENT, 0, 1, false);
+            util_add_image_barrier(this, command_buffer->vk_handle, color->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_PRESENT, 0, 1, false);
         }
 
         vkEndCommandBuffer(command_buffer->vk_handle);
 
         // Submit command buffer
-        VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &command_buffer->vk_handle;
+        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
+            VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+            command_buffer_info.commandBuffer = command_buffer->vk_handle;
 
-        vkQueueSubmit(vulkan_main_queue, 1, &submitInfo, VK_NULL_HANDLE);
+            VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+            submit_info.commandBufferInfoCount = 1;
+            submit_info.pCommandBufferInfos = &command_buffer_info;
+
+            queue_submit2(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+        }
+        else {
+            VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &command_buffer->vk_handle;
+
+            vkQueueSubmit(vulkan_main_queue, 1, &submitInfo, VK_NULL_HANDLE);
+        }
         vkQueueWaitIdle(vulkan_main_queue);
 
         vulkan_swapchain_images.shutdown();
@@ -2800,7 +2865,7 @@ namespace Helix {
                 destroy_texture_instant(vk_framebuffer->depth_stencil_attachment.index);
             }
 
-            if (!dynamic_rendering_extension_present) {
+            if (!(gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING)) {
                 vkDestroyFramebuffer(vulkan_device, vk_framebuffer->vk_handle, vulkan_allocation_callbacks);
             }
 
@@ -3018,7 +3083,7 @@ namespace Helix {
 
     void GpuDevice::new_frame() {
 
-        if (timeline_semaphore_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
             if(true/*absolute_frame >= k_max_frames*/) {
                 u64 graphics_timeline_value = absolute_frame;// -(k_max_frames - 1);
 
@@ -3148,11 +3213,11 @@ namespace Helix {
         // Submit command buffers
         u32 wait_semaphore_count = 1;
 
-        if (timeline_semaphore_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
 
             if (has_async_work) wait_semaphore_count++;
 
-            if (synchronization2_extension_present) {
+            if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
                 VkCommandBufferSubmitInfoKHR command_buffer_info[4]{ }; // TODO: Maybe have a max queue count for command buffers
                 for (u32 c = 0; c < num_queued_command_buffers; c++) {
                     command_buffer_info[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
@@ -3215,7 +3280,7 @@ namespace Helix {
 
             if (has_async_work) wait_semaphore_count++;
 
-            if (synchronization2_extension_present) {
+            if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
                 VkCommandBufferSubmitInfoKHR command_buffer_info[4]{ };
                 for (u32 c = 0; c < num_queued_command_buffers; c++) {
                     command_buffer_info[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
@@ -3410,8 +3475,8 @@ namespace Helix {
     void GpuDevice::submit_compute_load(CommandBuffer* command_buffer) {
         has_async_work = true;
 
-        if (timeline_semaphore_extension_present) {
-            if (synchronization2_extension_present) {
+        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
+            if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
                 VkSemaphoreSubmitInfoKHR wait_semaphores[]{
                     { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, last_compute_semaphore_value, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR, 0 }
                 };
@@ -3474,7 +3539,7 @@ namespace Helix {
 
             vkResetFences(vulkan_device, 1, &vulkan_compute_fence);
 
-            if (synchronization2_extension_present) {
+            if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
                 VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
                 command_buffer_info.commandBuffer = command_buffer->vk_handle;
 

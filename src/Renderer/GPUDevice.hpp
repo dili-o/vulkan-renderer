@@ -74,6 +74,7 @@ namespace Helix {
 
     }; // struct GPUTimestampManager
 
+    static const uint32_t           k_max_frames = 3;
 
     //
     //
@@ -96,6 +97,30 @@ namespace Helix {
         DeviceCreation&                 set_num_threads(u32 value);
 
     }; // struct DeviceCreation
+
+    enum GpuDeviceFeature : u8 {
+        GpuDeviceFeature_BINDLESS = 1 << 0,
+        GpuDeviceFeature_DYNAMIC_RENDERING = 1 << 1,
+        GpuDeviceFeature_TIMELINE_SEMAPHORE = 1 << 2,
+        GpuDeviceFeature_SYNCHRONIZATION2 = 1 << 3,
+        GpuDeviceFeature_MESH_SHADER = 1 << 4,
+
+    };
+    inline GpuDeviceFeature operator|(GpuDeviceFeature a, GpuDeviceFeature b) {
+        return static_cast<GpuDeviceFeature>(static_cast<int>(a) | static_cast<int>(b));
+    }
+    inline GpuDeviceFeature operator|=(GpuDeviceFeature& a, GpuDeviceFeature b) {
+        a = a | b;
+        return a;
+    }
+
+    inline GpuDeviceFeature operator&(GpuDeviceFeature a, GpuDeviceFeature b) {
+        return static_cast<GpuDeviceFeature>(static_cast<int>(a) & static_cast<int>(b));
+    }
+    inline GpuDeviceFeature operator&=(GpuDeviceFeature& a, GpuDeviceFeature b) {
+        a = a & b;
+        return a;
+    }
 
     //
     //
@@ -282,7 +307,8 @@ namespace Helix {
 
         GPUTimestampManager*            gpu_timestamp_manager = nullptr;
 
-        bool                            bindless_supported = false;
+        GpuDeviceFeature                gpu_device_features;
+
         bool                            timestamps_enabled = false;
         bool                            resized = false;
         bool                            vertical_sync = false;
@@ -323,7 +349,6 @@ namespace Helix {
         u64                             last_compute_semaphore_value = 0;
         bool                            has_async_work = false;
 
-        static const uint32_t           k_max_frames = 3;
 
         // Windows specific
         VkSurfaceKHR                    vulkan_window_surface;
@@ -345,6 +370,11 @@ namespace Helix {
         PFN_vkQueueSubmit2KHR           queue_submit2;
         PFN_vkCmdPipelineBarrier2KHR    cmd_pipeline_barrier2;
 
+        // Mesh shaders functions
+        PFN_vkCmdDrawMeshTasksNV        cmd_draw_mesh_tasks;
+        PFN_vkCmdDrawMeshTasksIndirectCountNV cmd_draw_mesh_tasks_indirect_count;
+        PFN_vkCmdDrawMeshTasksIndirectNV cmd_draw_mesh_tasks_indirect;
+
         // These are dynamic - so that workload can be handled correctly.
         Array<ResourceUpdate>           resource_deletion_queue;
         Array<DescriptorSetUpdate>      descriptor_set_updates;
@@ -353,10 +383,7 @@ namespace Helix {
 
         f32                             gpu_timestamp_frequency;
         bool                            gpu_timestamp_reset = true;
-        bool                            debug_utils_extension_present = false;
-        bool                            dynamic_rendering_extension_present = false;
-        bool                            timeline_semaphore_extension_present = false;
-        bool                            synchronization2_extension_present = false;
+        bool                            debug_utils_extension_present = false; // Maybe
 
         char                            vulkan_binaries_path[512];
 
@@ -382,8 +409,8 @@ namespace Helix {
         DescriptorSetLayoutHandle       get_descriptor_set_layout(PipelineHandle pipeline_handle, int layout_index);
         DescriptorSetLayoutHandle       get_descriptor_set_layout(PipelineHandle pipeline_handle, int layout_index) const;
 
-        DescriptorSet*                   access_descriptor_set(DescriptorSetHandle set);
-        const DescriptorSet*             access_descriptor_set(DescriptorSetHandle set) const;
+        DescriptorSet*                  access_descriptor_set(DescriptorSetHandle set);
+        const DescriptorSet*            access_descriptor_set(DescriptorSetHandle set) const;
 
         RenderPass*                     access_render_pass(RenderPassHandle render_pass);
         const RenderPass*               access_render_pass(RenderPassHandle render_pass) const;

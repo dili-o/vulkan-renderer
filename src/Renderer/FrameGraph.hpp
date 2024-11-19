@@ -44,7 +44,7 @@ namespace Helix {
                 sizet                       size;
                 VkBufferUsageFlags          flags;
 
-                BufferHandle                buffer;
+                BufferHandle                handle;
             } buffer;
 
             struct {
@@ -52,12 +52,17 @@ namespace Helix {
                 u32                         height;
                 u32                         depth;
 
+                f32                         scale_width;
+                f32                         scale_height;
+
                 VkFormat                    format;
                 VkImageUsageFlags           flags;
 
                 RenderPassOperation::Enum   load_op;
 
-                TextureHandle               texture;
+                TextureHandle               handle;
+
+                bool                        compute;
             } texture;
         };
     };
@@ -78,9 +83,9 @@ namespace Helix {
 
 		FrameGraphResourceHandle			output_handle;
 
-		i32 ref_count						= 0;
+		i32                                 ref_count = 0;
 
-		cstring name						= nullptr;
+		cstring                             name = nullptr;
 	};
 
     struct FrameGraphRenderPass
@@ -88,7 +93,10 @@ namespace Helix {
         virtual void                        add_ui() { }
         virtual void                        pre_render(CommandBuffer* gpu_commands, Scene* scene) { }
         virtual void                        render(CommandBuffer* gpu_commands, Scene* scene) { }
-        virtual void                        on_resize(GpuDevice& gpu, u32 new_width, u32 new_height) {}
+        virtual void                        post_render(u32 current_frame_index, CommandBuffer* gpu_commands, FrameGraph* frame_graph) { }
+        virtual void                        on_resize(GpuDevice& gpu, FrameGraph* frame_graph, u32 new_width, u32 new_height) {}
+
+        bool                                enabled = false;
     };
 
     struct FrameGraphNodeCreation {
@@ -97,7 +105,8 @@ namespace Helix {
 
         bool                                enabled;
 
-        const char*                         name;
+        cstring                             name;
+        bool                                compute;
     };
 
     struct FrameGraphNode {
@@ -111,6 +120,9 @@ namespace Helix {
         Array<FrameGraphResourceHandle>     outputs;
 
         Array<FrameGraphNodeHandle>         edges;
+
+        bool                                compute = false;
+
         bool                                enabled = true;
         cstring                             name = nullptr;
     };
@@ -190,7 +202,7 @@ namespace Helix {
         void                            disable_render_pass(cstring render_pass_name);
         void                            compile();
         void                            add_ui();
-        void                            render(CommandBuffer* gpu_commands, Scene* render_scene);
+        void                            render(u32 current_frame_index, CommandBuffer* gpu_commands, Scene* scene);
         void                            on_resize(GpuDevice& gpu, u32 new_width, u32 new_height);
 
         FrameGraphNode*                 get_node(cstring name);
