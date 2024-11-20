@@ -1141,6 +1141,16 @@ namespace Helix {
         u32 num_double_sided_meshes_t = 0; // Transparent meshes
         u32 num_double_sided_meshes = 0;
 
+        // Meshlets
+        const sizet max_vertices = 64;
+        const sizet max_triangles = 124;
+        const f32 cone_weight = 0.0f;
+
+        meshlets.init(resident_allocator, 16);
+        meshlet_vertex_and_index_indices.init(resident_allocator, 16);
+        meshlets_vertex_positions.init(resident_allocator, 16);
+        meshlets_vertex_data.init(resident_allocator, 16);
+
         while (node_stack.size) {
             u32 node_index = node_stack.back();
             node_stack.pop();
@@ -1221,16 +1231,7 @@ namespace Helix {
                 node_scale = glm::vec3{ node.scale[0], node.scale[1], node.scale[2] };
             }
 
-            // Meshlets
-            const sizet max_vertices = 64;
-            const sizet max_triangles = 124;
-            const f32 cone_weight = 0.0f;
 
-            //meshes.init(resident_allocator_, 16);
-            meshlets.init(resident_allocator, 16);
-            meshlet_vertex_and_index_indices.init(resident_allocator, 16);
-            meshlets_vertex_positions.init(resident_allocator, 16);
-            meshlets_vertex_data.init(resident_allocator, 16);
             //gltf_mesh_to_mesh_offset.init(resident_allocator_, 16);
 
             // Gltf primitives are conceptually submeshes.
