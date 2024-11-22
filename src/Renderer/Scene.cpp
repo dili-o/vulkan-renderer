@@ -1446,7 +1446,7 @@ namespace Helix {
                             meshlet_vertex_and_index_indices.push(index_group);
                         }
 
-                        meshlets.push(meshlet);
+                    meshlets.push(meshlet);
                 }
                 // 
                 while (meshlets.size % 32)
@@ -1580,7 +1580,7 @@ namespace Helix {
         // Create indirect buffers, dynamic so need multiple buffering.
         for (u32 i = 0; i < k_max_frames; ++i) {
             char* name = renderer->resource_name_buffer.append_use_f("mesh_indirect_draw_command_buffer_%d", i);
-            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, total_meshes * sizeof(GPUMeshDrawCommand)).set_name(name);
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, total_meshes * sizeof(GPUMeshDrawCommand)).set_name(name).set_device_only(true);
             mesh_indirect_draw_command_buffers[i] = renderer->create_buffer(buffer_creation)->handle;
 
             name = renderer->resource_name_buffer.append_use_f("mesh_draw_count_buffer_%d", i);

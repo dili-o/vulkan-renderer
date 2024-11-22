@@ -603,7 +603,7 @@ namespace Helix {
 
         void                init(GpuDevice* gpu_, FrameGraph* frame_graph_, Renderer* renderer_, ImGuiService* imgui_, GPUProfiler* gpu_profiler_, glTFScene* scene_);
 
-        void                ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
+        void                ExecuteRange(enki::TaskSetPartition range_, u32 threadnum_) override;
 
     }; // struct DrawTask
 

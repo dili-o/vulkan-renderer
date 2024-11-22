@@ -56,8 +56,15 @@ namespace Helix {
 
     // BufferCreation //////////////////////////////////////////
     BufferCreation& BufferCreation::reset() {
+
+        type_flags = 0;
+        usage = ResourceUsageType::Immutable;
         size = 0;
+        persistent = 0;
+        device_only = 0;
         initial_data = nullptr;
+        
+        name = nullptr;
 
         return *this;
     }
