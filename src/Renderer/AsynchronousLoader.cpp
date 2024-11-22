@@ -97,7 +97,7 @@ namespace Helix
             completed = nullptr;
         }
 
-        texture_ready.index = k_invalid_texture.index;
+        texture_ready = k_invalid_texture;
 
         // Process upload requests
         if (upload_requests.size) {
@@ -143,6 +143,11 @@ namespace Helix
                 cb->upload_buffer_data(buffer->handle, request.data, staging_buffer->handle, current_offset);
 
                 free(request.data);
+            }
+            else if (request.gpu_buffer.index != k_invalid_buffer.index) {
+                Buffer* buffer = renderer->gpu->access_buffer(request.gpu_buffer);
+                const sizet current_offset = std::atomic_fetch_add(&staging_buffer_offset, buffer->size);
+                cb->upload_buffer_data(buffer->handle, request.data, staging_buffer->handle, current_offset);
             }
 
             cb->end();
@@ -216,7 +221,8 @@ namespace Helix
 
         UploadRequest& upload_request = upload_requests.push_use();
         upload_request.data = data;
-        upload_request.cpu_buffer = buffer;
+        upload_request.gpu_buffer = buffer;
+        upload_request.cpu_buffer = k_invalid_buffer;
         upload_request.texture = k_invalid_texture;
     }
 

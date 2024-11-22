@@ -1078,12 +1078,15 @@ namespace Helix {
             }
             // TODO: Identify resources (buffers in this case) that have the same name
             buffer_name = renderer->resource_name_buffer.append_use_f("buffer_%u", buffer_index + current_buffers_count);
-            BufferResource* br = renderer->create_buffer(flags, ResourceUsageType::Immutable, buffer.byte_length, buffer_data, buffer_name);
+            BufferCreation buffer_creation;
+            buffer_creation.reset().set_device_only(true).set_name(buffer_name).set(flags, ResourceUsageType::Immutable, buffer.byte_length);
+            BufferResource* br = renderer->create_buffer(buffer_creation);
             HASSERT(br != nullptr);
+
+            async_loader->request_buffer_upload(buffer_data, br->handle);
 
             buffers.push(*br);
         }
-
 
 
         i64 end_creating_buffers = Time::now();
