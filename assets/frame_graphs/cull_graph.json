@@ -71,6 +71,25 @@
             "inputs":
             [
                 {
+                    "type": "texture",
+                    "name": "depth"
+                }
+            ],
+            "name": "depth_pyramid_pass",
+            "type": "compute",
+            "outputs":
+            [
+                {
+                    "type": "texture",
+                    "external": true,
+                    "name": "depth_pyramid"
+                }
+            ]
+        },
+        {
+            "inputs":
+            [
+                {
                     "type": "attachment",
                     "name": "final"
                 },

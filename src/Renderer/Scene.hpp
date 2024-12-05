@@ -154,6 +154,11 @@ namespace Helix {
         VkDrawMeshTasksIndirectCommandNV indirectMS; // 2 uint32_t
     }; // struct GpuMeshDrawCommand 
 
+    struct GPUDebugIcon {
+        glm::vec4               position_texture_index[5]; // x,y,z for position, w for texture index
+        u32                     count; // TODO: Maybe store the texture index as a u16 and the count as a u16
+    };
+
     struct alignas(16) GPUMaterialData {
 
         u32                     textures[4]; // diffuse, roughness, normal, occlusion
@@ -418,6 +423,23 @@ namespace Helix {
 
     //
     //
+    struct MeshCullingLatePass : public FrameGraphRenderPass {
+        void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
+
+        void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
+        void                    free_gpu_resources();
+
+        Renderer* renderer;
+
+        PipelineHandle          frustum_cull_pipeline;
+        DescriptorSetHandle     frustum_cull_descriptor_set[k_max_frames];
+        SamplerHandle           depth_pyramid_sampler;
+        u32                     depth_pyramid_texture_index;
+
+    }; // struct MeshCullingLatePass
+
+    //
+    //
     struct DepthPrePass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* scene) override;
 
@@ -448,13 +470,29 @@ namespace Helix {
     }; // struct GBufferPass
 
     //
+    //
+    struct GBufferLatePass : public FrameGraphRenderPass {
+        void                render(CommandBuffer* gpu_commands, Scene* scene) override;
+
+        void                init();
+        void                prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
+        void                free_gpu_resources();
+
+        u32                 double_sided_mesh_count;
+        u32                 mesh_count;
+        Mesh* meshes;
+        Renderer* renderer;
+        u32                 meshlet_program_index;
+    }; // struct GBufferLatePass
+
+    //
 //
     struct DepthPyramidPass : public FrameGraphRenderPass {
         void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
         void                    on_resize(GpuDevice& gpu, FrameGraph* frame_graph, u32 new_width, u32 new_height) override;
         void                    post_render(u32 current_frame_index, CommandBuffer* gpu_commands, FrameGraph* frame_graph) override;
 
-        void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator, StackAllocator* scratch_allocator);
+        void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                    free_gpu_resources();
 
         void                    create_depth_pyramid_resource(Texture* depth_texture);
@@ -506,7 +544,7 @@ namespace Helix {
 
     //
     //
-    struct LightDebugPass : public FrameGraphRenderPass {
+    struct DebugPass : public FrameGraphRenderPass {
 
         void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
 
@@ -515,10 +553,11 @@ namespace Helix {
         void                    upload_materials() {};
         void                    free_gpu_resources();
 
-        PipelineHandle          light_pipeline;
-        DescriptorSetHandle     light_descriptor_set;
+        PipelineHandle          icon_debug_pipeline;
+        DescriptorSetHandle     icon_debug_descriptor_set;
+        BufferHandle            debug_icons_buffer;
         Renderer*               renderer;
-    }; // struct DoFPass
+    }; // struct DebugPass
 
 
     struct glTFScene : public Scene {
@@ -565,10 +604,13 @@ namespace Helix {
 
         //DepthPrePass            depth_pre_pass;
         MeshCullingPass         mesh_cull_pass;
+        MeshCullingLatePass         mesh_cull_late_pass;
         GBufferPass             gbuffer_pass;
+        GBufferLatePass             gbuffer_late_pass;
+        DepthPyramidPass        depth_pyramid_pass;
         LightPass               light_pass;
         TransparentPass         transparent_pass;
-        //LightDebugPass          light_debug_pass;
+        //DebugPass          light_debug_pass;
 
         // Fullscreen data
         Program*                fullscreen_program = nullptr;

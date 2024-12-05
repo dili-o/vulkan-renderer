@@ -155,6 +155,7 @@ namespace Helix {
     static sizet            s_ssbo_alignemnt = 256;
 
     static const u32        k_bindless_texture_binding = 10;
+    static const u32        k_bindless_image_binding = 11;
     static const u32        k_max_bindless_resources = 1024;
 
     bool GpuDevice::get_family_queue(VkPhysicalDevice physical_device) {
@@ -335,14 +336,20 @@ namespace Helix {
                 }
 
                 if (!strcmp(extensions[i].extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
-                    gpu_device_features |= GpuDeviceFeature_TIMELINE_SEMAPHORE;
+                    gpu_device_features |= GpuDeviceFeature_SYNCHRONIZATION2;
                     continue;
                 }
-
+#if NVIDIA
                 if (!strcmp(extensions[i].extensionName, VK_NV_MESH_SHADER_EXTENSION_NAME)) {
                     gpu_device_features |= GpuDeviceFeature_MESH_SHADER;
                     continue;
                 }
+#else
+                if (!strcmp(extensions[i].extensionName, VK_EXT_MESH_SHADER_EXTENSION_NAME)) {
+                    gpu_device_features |= GpuDeviceFeature_MESH_SHADER;
+                    continue;
+                }
+#endif // NVIDIA
             }
 
             temp_allocator->free_marker(initial_temp_allocator_marker);
@@ -430,11 +437,15 @@ namespace Helix {
         if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
             device_extensions.push(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         }
-
+#if NVIDIA
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             device_extensions.push(VK_NV_MESH_SHADER_EXTENSION_NAME);
         }
-
+#else
+        if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            device_extensions.push(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+        }
+#endif // NVIDIA
         const float queue_priority[] = { 1.0f, 1.0f };
         VkDeviceQueueCreateInfo queue_info[3] = {};
 
@@ -483,8 +494,17 @@ namespace Helix {
             synchronization2_features.pNext = current_pnext;
             current_pnext = &synchronization2_features;
         }
-
+#if NVIDIA
         VkPhysicalDeviceMeshShaderFeaturesNV mesh_shaders_feature = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
+        if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            mesh_shaders_feature.taskShader = true;
+            mesh_shaders_feature.meshShader = true;
+        
+            mesh_shaders_feature.pNext = current_pnext;
+            current_pnext = &mesh_shaders_feature;
+        }
+#else
+        VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shaders_feature = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             mesh_shaders_feature.taskShader = true;
             mesh_shaders_feature.meshShader = true;
@@ -492,7 +512,7 @@ namespace Helix {
             mesh_shaders_feature.pNext = current_pnext;
             current_pnext = &mesh_shaders_feature;
         }
-
+#endif // NVIDIA
         physical_features2.pNext = current_pnext;
 
         vkGetPhysicalDeviceFeatures2(vulkan_physical_device, &physical_features2);
@@ -528,13 +548,19 @@ namespace Helix {
             queue_submit2 = (PFN_vkQueueSubmit2KHR)vkGetDeviceProcAddr(vulkan_device, "vkQueueSubmit2KHR");
             cmd_pipeline_barrier2 = (PFN_vkCmdPipelineBarrier2KHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdPipelineBarrier2KHR");
         }
-
+#if NVIDIA
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             cmd_draw_mesh_tasks = (PFN_vkCmdDrawMeshTasksNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksNV");
             cmd_draw_mesh_tasks_indirect = (PFN_vkCmdDrawMeshTasksIndirectNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksIndirectNV");
             cmd_draw_mesh_tasks_indirect_count = (PFN_vkCmdDrawMeshTasksIndirectCountNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksIndirectCountNV");
         }
-
+#else
+        if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+            cmd_draw_mesh_tasks = (PFN_vkCmdDrawMeshTasksEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksEXT");
+            cmd_draw_mesh_tasks_indirect = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksIndirectEXT");
+            cmd_draw_mesh_tasks_indirect_count = (PFN_vkCmdDrawMeshTasksIndirectCountEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksIndirectCountEXT");
+        }
+#endif // NVIDIA
         // Get main queue
         vkGetDeviceQueue(vulkan_device, main_queue_family_index, 0, &vulkan_main_queue);
 
@@ -1070,18 +1096,49 @@ namespace Helix {
     }
 
     // Resource Creation ////////////////////////////////////////////////////////////
+    static void vulkan_create_texture_view(GpuDevice& gpu, const TextureViewCreation& creation, Texture* texture) {
+
+        //// Create the image view
+        VkImageViewCreateInfo info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+        info.image = texture->vk_image;
+        info.viewType = to_vk_image_view_type(texture->type);
+        info.format = texture->vk_format;
+
+        if (TextureFormat::has_depth_or_stencil(texture->vk_format)) {
+
+            info.subresourceRange.aspectMask = TextureFormat::has_depth(texture->vk_format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0;
+            // TODO:gs
+            //info.subresourceRange.aspectMask |= TextureFormat::has_stencil( creation.format ) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0;
+        }
+        else {
+            info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+
+        info.subresourceRange.baseMipLevel = creation.mip_base_level;
+        info.subresourceRange.levelCount = creation.mip_level_count;
+        info.subresourceRange.baseArrayLayer = creation.array_base_layer;
+        info.subresourceRange.layerCount = creation.array_layer_count;
+        check(vkCreateImageView(gpu.vulkan_device, &info, gpu.vulkan_allocation_callbacks, &texture->vk_image_view));
+
+        gpu.set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)texture->vk_image_view, creation.name);
+    }
+
     static void vulkan_create_texture(GpuDevice& gpu, const TextureCreation& creation, TextureHandle handle, Texture* texture) {
 
         texture->width = creation.width;
         texture->height = creation.height;
         texture->depth = creation.depth;
-        texture->mipmaps = creation.mipmaps;
+        // TODO:
+        texture->mip_base_level = 0;        // For new textures, we have a view that is for all mips and layers.
+        texture->array_base_layer = 0;      // For new textures, we have a view that is for all mips and layers.
+        texture->array_layer_count = creation.array_layer_count;
+        texture->mip_level_count = creation.mip_level_count;
         texture->type = creation.type;
         texture->name = creation.name;
         texture->vk_format = creation.format;
         texture->sampler = nullptr;
         texture->flags = creation.flags;
-
+        texture->parent_texture = k_invalid_texture; // Only used for texture views
         texture->handle = handle;
 
         //// Create the image
@@ -1092,8 +1149,8 @@ namespace Helix {
         image_info.extent.width = creation.width;
         image_info.extent.height = creation.height;
         image_info.extent.depth = creation.depth;
-        image_info.mipLevels = creation.mipmaps;
-        image_info.arrayLayers = 1;
+        image_info.mipLevels = creation.mip_level_count;
+        image_info.arrayLayers = creation.array_layer_count;
         image_info.samples = VK_SAMPLE_COUNT_1_BIT;
         image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 
@@ -1139,27 +1196,10 @@ namespace Helix {
 
         gpu.set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)texture->vk_image, creation.name);
 
-        //// Create the image view
-        VkImageViewCreateInfo info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-        info.image = texture->vk_image;
-        info.viewType = to_vk_image_view_type(creation.type);
-        info.format = image_info.format;
-
-        if (TextureFormat::has_depth_or_stencil(creation.format)) {
-
-            info.subresourceRange.aspectMask = TextureFormat::has_depth(creation.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0;
-            // TODO:gs
-            //info.subresourceRange.aspectMask |= TextureFormat::has_stencil( creation.format ) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0;
-        }
-        else {
-            info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        }
-
-        info.subresourceRange.levelCount = creation.mipmaps;
-        info.subresourceRange.layerCount = 1;
-        check(vkCreateImageView(gpu.vulkan_device, &info, gpu.vulkan_allocation_callbacks, &texture->vk_image_view));
-
-        gpu.set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)texture->vk_image_view, creation.name);
+        // Create default texture view.
+        TextureViewCreation tvc;
+        tvc.set_mips(0, creation.mip_level_count).set_array(0, creation.array_layer_count).set_name(creation.name);
+        vulkan_create_texture_view(gpu, tvc, texture);
 
         texture->state = RESOURCE_STATE_UNDEFINED;
 
@@ -1221,14 +1261,14 @@ namespace Helix {
 
         vkCmdCopyBufferToImage(command_buffer->vk_handle, staging_buffer, texture->vk_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         // Prepare first mip to create lower mipmaps
-        if (texture->mipmaps > 1) {
+        if (texture->mip_level_count > 1) {
             util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
         }
 
         i32 w = texture->width;
         i32 h = texture->height;
 
-        for (int mip_index = 1; mip_index < texture->mipmaps; ++mip_index) {
+        for (int mip_index = 1; mip_index < texture->mip_level_count; ++mip_index) {
             util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, mip_index, 1, false);
 
             VkImageBlit blit_region{ };
@@ -1258,7 +1298,7 @@ namespace Helix {
         }
 
         // Transition
-        util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, (texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+        util_add_image_barrier(&gpu, command_buffer->vk_handle, texture->vk_image, (texture->mip_level_count > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mip_level_count, false);
         texture->state = RESOURCE_STATE_SHADER_RESOURCE;
 
         vkEndCommandBuffer(command_buffer->vk_handle);
@@ -1305,6 +1345,29 @@ namespace Helix {
         if (creation.initial_data) {
             upload_texture_data(texture, creation.initial_data, *this);
         }
+
+        return handle;
+    }
+
+    TextureHandle GpuDevice::create_texture_view(const TextureViewCreation& creation) {
+        u32 resource_index = textures.obtain_resource();
+        TextureHandle handle = { resource_index };
+        if (resource_index == k_invalid_index) {
+            return handle;
+        }
+
+        Texture* parent_texture = access_texture(creation.parent_texture);
+        Texture* texture_view = access_texture(handle);
+
+        // Copy parent texture data to texture view
+        memory_copy(texture_view, parent_texture, sizeof(Texture));
+        // Add texture view data
+        texture_view->parent_texture = creation.parent_texture;
+        texture_view->handle = handle;
+        texture_view->array_base_layer = creation.array_base_layer;
+        texture_view->mip_base_level = creation.mip_base_level;
+
+        vulkan_create_texture_view(*this, creation, texture_view);
 
         return handle;
     }
@@ -1999,7 +2062,7 @@ namespace Helix {
 
             // [TAG: BINDLESS]
             // Skip bindings for images and textures as they are bindless, thus bound in the global bindless arrays (one for images, one for textures).
-            if (gpu_device_features & GpuDeviceFeature_BINDLESS && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+            if (creation.set_index == 0 && gpu_device_features & GpuDeviceFeature_BINDLESS && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
                 continue;
             }
 
@@ -2043,7 +2106,7 @@ namespace Helix {
 
             // [TAG: BINDLESS]
             // Skip bindless descriptors as they are bound in the global bindless arrays.
-            if (gpu.gpu_device_features & GpuDeviceFeature_BINDLESS && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+            if (descriptor_set_layout->set_index == 0 && gpu.gpu_device_features & GpuDeviceFeature_BINDLESS && (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
                 continue;
             }
 
@@ -2175,8 +2238,6 @@ namespace Helix {
             return handle;
         }
 
-        //creation.sort_bindings_by_index();
-
         DescriptorSet* descriptor_set = access_descriptor_set(handle);
         const DesciptorSetLayout* descriptor_set_layout = access_descriptor_set_layout(creation.layout);
 
@@ -2241,8 +2302,7 @@ namespace Helix {
         framebuffer_info.pAttachments = framebuffer_attachments;
         framebuffer_info.attachmentCount = active_attachments;
 
-        VkResult res = vkCreateFramebuffer(gpu.vulkan_device, &framebuffer_info, nullptr, &framebuffer->vk_handle);
-        //check(vkCreateFramebuffer(gpu.vulkan_device, &framebuffer_info, nullptr, &framebuffer->vk_handle));
+        check(vkCreateFramebuffer(gpu.vulkan_device, &framebuffer_info, nullptr, &framebuffer->vk_handle));
         gpu.set_resource_name(VK_OBJECT_TYPE_FRAMEBUFFER, (u64)framebuffer->vk_handle, framebuffer->name);
     }
 
@@ -2574,7 +2634,7 @@ namespace Helix {
             vkDestroyImageView(vulkan_device, v_texture->vk_image_view, vulkan_allocation_callbacks);
             v_texture->vk_image_view = VK_NULL_HANDLE;
 
-            if (v_texture->vma_allocation != 0) {
+            if (v_texture->vma_allocation != 0 && v_texture->parent_texture.index == k_invalid_texture.index) {
                 vmaDestroyImage(vma_allocator, v_texture->vk_image, v_texture->vma_allocation);
             }
             else if (v_texture->vma_allocation == nullptr) {
@@ -2890,21 +2950,6 @@ namespace Helix {
         return vulkan_render_pass;
     }
 
-    //
-    //
-    static void vulkan_resize_texture(GpuDevice& gpu, Texture* v_texture, Texture* v_texture_to_delete, u16 width, u16 height, u16 depth) {
-
-        // Cache handles to be delayed destroyed
-        v_texture_to_delete->vk_image_view = v_texture->vk_image_view;
-        v_texture_to_delete->vk_image = v_texture->vk_image;
-        v_texture_to_delete->vma_allocation = v_texture->vma_allocation;
-
-        // Re-create image in place.
-        TextureCreation tc;
-        tc.set_flags(v_texture->mipmaps, v_texture->flags).set_format_type(v_texture->vk_format, v_texture->type).set_name(v_texture->name).set_size(width, height, depth);
-        vulkan_create_texture(gpu, tc, v_texture->handle, v_texture);
-    }
-
     void GpuDevice::resize_swapchain() {
 
         vkDeviceWaitIdle(vulkan_device);
@@ -3074,7 +3119,7 @@ namespace Helix {
 
         // Re-create image in place.
         TextureCreation tc;
-        tc.set_flags(vk_texture->mipmaps, vk_texture->flags).set_format_type(vk_texture->vk_format, vk_texture->type)
+        tc.set_flags(vk_texture->mip_level_count, vk_texture->flags).set_format_type(vk_texture->vk_format, vk_texture->type)
             .set_name(vk_texture->name).set_size(width, height, vk_texture->depth);
         vulkan_create_texture(*this, tc, vk_texture->handle, vk_texture);
 
@@ -3202,6 +3247,24 @@ namespace Helix {
                     texture_to_update_bindless.delete_swap(it);
 
                     ++current_write_index;
+
+                    // Add optional compute bindless descriptor update
+                    if (texture->flags & TextureFlags::Compute_mask) {
+                        VkWriteDescriptorSet& descriptor_write_image = bindless_descriptor_writes[current_write_index];
+                        VkDescriptorImageInfo& descriptor_image_info_compute = bindless_image_info[current_write_index];
+
+                        // Copy common data from descriptor and image info
+                        descriptor_write_image = descriptor_write;
+                        descriptor_image_info_compute = descriptor_image_info;
+
+                        descriptor_image_info_compute.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+                        descriptor_write_image.dstBinding = k_bindless_image_binding;
+                        descriptor_write_image.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                        descriptor_write_image.pImageInfo = &descriptor_image_info_compute;
+
+                        ++current_write_index;
+                    }
                 }
             }
 
@@ -3681,7 +3744,7 @@ namespace Helix {
             out_description.height = texture_data->height;
             out_description.depth = texture_data->depth;
             out_description.format = texture_data->vk_format;
-            out_description.mipmaps = texture_data->mipmaps;
+            out_description.mipmaps = texture_data->mip_level_count;
             out_description.type = texture_data->type;
             out_description.render_target = (texture_data->flags & TextureFlags::RenderTarget_mask) == TextureFlags::RenderTarget_mask;
             out_description.compute_access = (texture_data->flags & TextureFlags::Compute_mask) == TextureFlags::Compute_mask;

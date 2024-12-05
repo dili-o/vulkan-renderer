@@ -516,8 +516,11 @@ namespace Helix {
     }
 
     void CommandBuffer::draw_mesh_task(u32 task_count, u32 first_task) {
-
+#if NVIDIA
         device->cmd_draw_mesh_tasks(vk_handle, task_count, first_task);
+#else
+        device->cmd_draw_mesh_tasks(vk_handle, task_count, first_task);
+#endif // NVIDIA
     }
 
     void CommandBuffer::draw_mesh_task_indirect_count(BufferHandle command_buffer, u32 command_offset, BufferHandle count_buffer, u32 count_offset, u32 max_draws, u32 stride) {

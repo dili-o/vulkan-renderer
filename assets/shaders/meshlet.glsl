@@ -29,6 +29,7 @@ struct Meshlet
     // vec3 keeps Meshlet aligned to 16 bytes which is important because C++ has an alignas() directive
     vec3 center;
     float radius;
+
     int8_t cone_axis[3];
     int8_t cone_cutoff;
 
@@ -41,7 +42,7 @@ struct Meshlet
 
 #if defined (TASK_DEPTH_PRE) || defined(TASK_GBUFFER_CULLING) || defined(TASK_TRANSPARENT_NO_CULL)
 
-#define CULL 0
+#define CULL 1
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
@@ -136,7 +137,7 @@ void main()
         frustum_visible = frustum_visible && (dot( frustum_planes[i], view_center) > -radius);
     }
 
-    frustum_visible = frustum_visible || (frustum_cull_meshlets == 0);
+    //frustum_visible = frustum_visible || (frustum_cull_meshlets == 0);
 
 
     accept = accept && frustum_visible;

@@ -545,14 +545,14 @@ namespace Helix {
     static void generate_mipmaps(Helix::Texture* texture, Helix::CommandBuffer* cb, bool from_transfer_queue) {
         using namespace Helix;
 
-        if (texture->mipmaps > 1) {
+        if (texture->mip_level_count > 1) {
             util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, from_transfer_queue ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_SOURCE, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
         }
 
         i32 w = texture->width;
         i32 h = texture->height;
 
-        for (int mip_index = 1; mip_index < texture->mipmaps; ++mip_index) {
+        for (int mip_index = 1; mip_index < texture->mip_level_count; ++mip_index) {
             util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_COPY_DEST, mip_index, 1, false);
 
             VkImageBlit blit_region{ };
@@ -583,10 +583,10 @@ namespace Helix {
 
         // Transition
         if (from_transfer_queue) {
-            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, (texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, (texture->mip_level_count > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mip_level_count, false);
         }
         else {
-            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mipmaps, false);
+            util_add_image_barrier(cb->device, cb->vk_handle, texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_SHADER_RESOURCE, 0, texture->mip_level_count, false);
         }
     }
 

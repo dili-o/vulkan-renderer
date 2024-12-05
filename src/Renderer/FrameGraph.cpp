@@ -680,6 +680,13 @@ namespace Helix {
 
         HASSERT(sorted_nodes.size == nodes.size);
 
+        HDEBUG("Sorted nodes=====================================");;
+        for (u32 i = 0; i < sorted_nodes.size; i++) {
+            FrameGraphNode* node = builder->access_node(sorted_nodes[i]);
+            HDEBUG(node->name);
+        }
+        HDEBUG("Sorted nodes=====================================");
+
         nodes.clear();
 
         for (i32 i = sorted_nodes.size - 1; i >= 0; --i) {

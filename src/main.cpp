@@ -121,7 +121,7 @@ int main(int argc, char** argv)
     task_scheduler.Initialize(config);
 
 	// window
-	WindowConfiguration wconf{ 1280, 720, "Engine Test", allocator };
+	WindowConfiguration wconf{ 1280, 800, "Engine Test", allocator };
 	Window window;
 	window.init(&wconf);
 
@@ -273,6 +273,7 @@ int main(int argc, char** argv)
 
         const i64 current_tick = Time::now();
         
+        static bool freeze_occlusion_camera = false;
         static glm::mat4 projection_transpose;
 
         // New frame
@@ -323,6 +324,11 @@ int main(int argc, char** argv)
                 }
                 ImGui::End();
 
+                if (ImGui::Begin("Scene Settings")) {
+                    ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
+                }
+                ImGui::End();
+
                 if (ImGui::Begin("GPU")) {
                     renderer.imgui_draw();
 
@@ -332,6 +338,7 @@ int main(int argc, char** argv)
                 ImGui::End();
 
                 scene->imgui_draw_hierarchy();
+                
 
                 renderer.imgui_resources_draw();
 
@@ -341,11 +348,10 @@ int main(int argc, char** argv)
             }
 
             {
-                MapBufferParameters cb_map = { scene->scene_constant_buffer, 0, 0 };
-                GPUSceneData* cb_data = (GPUSceneData*)gpu.map_buffer(cb_map);
+                
                 MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
                 //LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
-                if (cb_data) {
+                {
                     if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
                         pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
                         yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * 0.3f;
@@ -411,7 +417,7 @@ int main(int argc, char** argv)
                     scene_data.inverse_view_projection = glm::inverse(view_projection);
                     scene_data.world_to_camera = view;
                     scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
-                    scene_data.light_position = glm::vec4(0, 10, 0, 1.0f);
+                    scene_data.light_position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
                     scene_data.light_range = light_range;
                     scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;
@@ -424,17 +430,19 @@ int main(int argc, char** argv)
                     scene_data.frustum_cull_meshlets = 1;
                     scene_data.occlusion_cull_meshes = 1;
                     scene_data.occlusion_cull_meshlets = 1;
-                    scene_data.freeze_occlusion_camera = 0;
+                    scene_data.freeze_occlusion_camera = freeze_occlusion_camera ? 1 : 0;
 
                     scene_data.resolution_x = gpu.swapchain_width * 1.f;
                     scene_data.resolution_y = gpu.swapchain_height * 1.f;
                     scene_data.aspect_ratio = gpu.swapchain_width * 1.f / gpu.swapchain_height;
 
                     // Frustum computations
-                    scene_data.camera_position_debug = scene_data.camera_position;
-                    scene_data.world_to_camera_debug = scene_data.world_to_camera;
-                    scene_data.view_projection_debug = scene_data.view_projection;
-                    projection_transpose = glm::transpose(projection);
+                    if (!freeze_occlusion_camera) {
+                        scene_data.camera_position_debug = scene_data.camera_position;
+                        scene_data.world_to_camera_debug = scene_data.world_to_camera;
+                        scene_data.view_projection_debug = scene_data.view_projection;
+                        projection_transpose = glm::transpose(projection);
+                    }
 
                     scene_data.frustum_planes[0] = normalize_plane(projection_transpose[3] + projection_transpose[0]); // x + w  < 0;
                     scene_data.frustum_planes[1] = normalize_plane(projection_transpose[3] - projection_transpose[0]); // x - w  < 0;
@@ -444,16 +452,13 @@ int main(int argc, char** argv)
                     scene_data.frustum_planes[5] = normalize_plane(projection_transpose[3] - projection_transpose[2]); // z - w  < 0;
 
 
-                    cb_data->view_projection = view_projection;
-                    cb_data->view_projection_debug = view_projection;
-                    cb_data->camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
-                    cb_data->light_position = glm::vec4(0, 10, 0, 1.0f);
-                    cb_data->light_intensity = light_intensity;
-                    cb_data->light_range = light_range;
+                    MapBufferParameters cb_map = { scene->scene_constant_buffer, 0, 0 };
+                    GPUSceneData* cb_data = (GPUSceneData*)gpu.map_buffer(cb_map);
+                    if (cb_data) {
+                        memcpy(cb_data, &scene->scene_data, sizeof(GPUSceneData));
 
-                    cb_data->freeze_occlusion_camera = 1;
-
-                    gpu.unmap_buffer(cb_map);
+                        gpu.unmap_buffer(cb_map);
+                    }
                     
                     //light_cb_data->view_projection = view_projection;
                     //light_cb_data->camera_position_texture_index = glm::vec4(eye.x, eye.y, eye.z, scene->light_texture.handle.index);

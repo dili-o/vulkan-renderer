@@ -161,6 +161,13 @@ namespace Helix {
 				shader_code_buffer.close_current_string();
 
 				shader["stage"].get_to(name);
+#if NVIDIA
+				VkShaderStageFlagBits mesh_stage = VK_SHADER_STAGE_MESH_BIT_NV;
+				VkShaderStageFlagBits task_stage = VK_SHADER_STAGE_TASK_BIT_NV;
+#else
+				VkShaderStageFlagBits mesh_stage = VK_SHADER_STAGE_MESH_BIT_EXT;
+				VkShaderStageFlagBits task_stage = VK_SHADER_STAGE_TASK_BIT_EXT;
+#endif // NVIDIA
 
 				if (name == "vertex")
 					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_VERTEX_BIT);
@@ -175,11 +182,11 @@ namespace Helix {
 				else if (name == "mesh") {
 					if (!renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER)
 						HASSERT_MSG(false, "No mesh shader support");
-					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_MESH_BIT_NV);
+					pc.shader_state_creation.add_stage(code, strlen(code), mesh_stage);
 				}else if (name == "task") {
 					if (!renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER)
 						HASSERT_MSG(false, "No task shader support");
-					pc.shader_state_creation.add_stage(code, strlen(code), VK_SHADER_STAGE_TASK_BIT_NV);
+					pc.shader_state_creation.add_stage(code, strlen(code), task_stage);
 				}
 
 				else

@@ -48,11 +48,6 @@ void main() {
 	uint mesh_instance_index = gl_GlobalInvocationID.x;
 	uint count = total_count;
 
-	// TODO:
-	if ( mesh_instance_index == 0 && late_flag == 0 ) {
-		debug_draw_line( vec3(-1,-10,-1), vec3(1,10,1), vec4(0,0,1,1), vec4(1,0,0,1));
-		//debug_draw_box(vec3(-1,-1,-1), vec3(1,1,1), vec4(0,0,1,1));
-	}
 
 	if (mesh_instance_index < count) {
 		uint mesh_draw_index = mesh_instance_draws[mesh_instance_index].mesh_draw_index;
@@ -77,7 +72,7 @@ void main() {
 	    frustum_visible = frustum_visible || (frustum_cull_meshes == 0);
 
 	    uint flags = mesh_draw.flags;
-	    if ( /*frustum_visible*/ true) {
+	    if ( frustum_visible) {
 	    	// Add opaque draws
 			if ( /*(flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0*/ true ) {
 				uint draw_index = atomicAdd( opaque_mesh_visible_count, 1 );

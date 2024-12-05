@@ -11,6 +11,17 @@
 					"includes" : [ "platform.h", "scene.h", "mesh.h", "debug_rendering.h" ]
 				}
 			]
+		}, 
+		{
+			"name" : "depth_pyramid",
+			"render_pass" : "depth_pre_pass",
+			"shaders" : [
+				{
+					"stage" : "compute",
+					"shader" : "depth_pyramid.glsl",
+					"includes" : [ "platform.h" ]
+				}
+			]
 		}
 	]
 }

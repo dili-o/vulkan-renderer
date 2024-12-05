@@ -19,6 +19,8 @@
 #include "Core/Service.hpp"
 #include "Core/Array.hpp"
 
+#define NVIDIA 0
+
 namespace Helix {
 
     struct Allocator;
@@ -140,6 +142,7 @@ namespace Helix {
         // Creation/Destruction of resources /////////////////////////////////
         BufferHandle                    create_buffer(const BufferCreation& creation);
         TextureHandle                   create_texture(const TextureCreation& creation);
+        TextureHandle                   create_texture_view(const TextureViewCreation& creation);
         PipelineHandle                  create_pipeline(const PipelineCreation& creation, cstring cache_path = nullptr);
         SamplerHandle                   create_sampler(const SamplerCreation& creation);
         DescriptorSetLayoutHandle       create_descriptor_set_layout(const DescriptorSetLayoutCreation& creation);
@@ -296,7 +299,7 @@ namespace Helix {
         u32                             num_allocated_command_buffers = 0;
         u32                             num_queued_command_buffers = 0;
 
-        PresentMode::Enum               present_mode = PresentMode::VSync;
+        PresentMode::Enum               present_mode = PresentMode::Immediate;
         u32                             current_frame;
         u32                             previous_frame;
 
@@ -370,10 +373,17 @@ namespace Helix {
         PFN_vkQueueSubmit2KHR           queue_submit2;
         PFN_vkCmdPipelineBarrier2KHR    cmd_pipeline_barrier2;
 
+#if NVIDIA
         // Mesh shaders functions
         PFN_vkCmdDrawMeshTasksNV        cmd_draw_mesh_tasks;
         PFN_vkCmdDrawMeshTasksIndirectCountNV cmd_draw_mesh_tasks_indirect_count;
         PFN_vkCmdDrawMeshTasksIndirectNV cmd_draw_mesh_tasks_indirect;
+#else
+        // Mesh shaders functions
+        PFN_vkCmdDrawMeshTasksEXT        cmd_draw_mesh_tasks;
+        PFN_vkCmdDrawMeshTasksIndirectCountEXT cmd_draw_mesh_tasks_indirect_count;
+        PFN_vkCmdDrawMeshTasksIndirectEXT cmd_draw_mesh_tasks_indirect;
+#endif // NVIDIA
 
         // These are dynamic - so that workload can be handled correctly.
         Array<ResourceUpdate>           resource_deletion_queue;

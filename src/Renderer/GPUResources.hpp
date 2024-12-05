@@ -260,7 +260,8 @@ namespace Helix {
         u16                             width = 1;
         u16                             height = 1;
         u16                             depth = 1;
-        u8                              mipmaps = 1;
+        u16                             array_layer_count = 1;
+        u8                              mip_level_count = 1;
         u8                              flags = 0;    // TextureFlags bitmasks
 
         VkFormat                        format = VK_FORMAT_UNDEFINED;
@@ -272,12 +273,34 @@ namespace Helix {
 
         TextureCreation&                set_size(u16 width, u16 height, u16 depth);
         TextureCreation&                set_flags(u8 mipmaps, u8 flags);
+        TextureCreation&                set_layers(u32 layer_count);
         TextureCreation&                set_format_type(VkFormat format, TextureType::Enum type);
         TextureCreation&                set_name(cstring name);
         TextureCreation&                set_data(void* data);
         TextureCreation&                set_alias(TextureHandle alias);
 
     }; // struct TextureCreation
+
+    //
+    //
+    struct TextureViewCreation {
+
+        TextureHandle                   parent_texture = k_invalid_texture;
+
+        u32                             mip_base_level = 0;
+        u32                             mip_level_count = 1;
+        u32                             array_base_layer = 0;
+        u32                             array_layer_count = 1;
+
+        cstring                         name = nullptr;
+
+        TextureViewCreation&            set_parent_texture(TextureHandle parent_texture);
+        TextureViewCreation&            set_mips(u32 base_mip, u32 mip_level_count);
+        TextureViewCreation&            set_array(u32 base_layer, u32 layer_count);
+        TextureViewCreation&            set_name(cstring name);
+
+    }; // struct TextureViewCreation
+
 
     //
     //
@@ -622,7 +645,7 @@ namespace Helix {
         VkFormat                        format = VK_FORMAT_UNDEFINED;
         TextureType::Enum               type = TextureType::Texture2D;
 
-    }; // struct Texture
+    }; // struct TextureDescription
 
     //
     //
@@ -786,10 +809,14 @@ namespace Helix {
         u16                             width = 1;
         u16                             height = 1;
         u16                             depth = 1;
-        u8                              mipmaps = 1;
+        u16                             array_layer_count = 1;
+        u8                              mip_level_count = 1;
         u8                              flags = 0;
+        u16                             mip_base_level = 0;    // Not 0 when texture is a view.
+        u16                             array_base_layer = 0;   // Not 0 when texture is a view.
 
         TextureHandle                   handle;
+        TextureHandle                   parent_texture;     // Used when a texture view.
         TextureType::Enum               type = TextureType::Texture2D;
 
         Sampler*                        sampler = nullptr;

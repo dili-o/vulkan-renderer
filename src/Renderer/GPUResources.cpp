@@ -109,8 +109,14 @@ namespace Helix {
     }
 
     TextureCreation& TextureCreation::set_flags(u8 mipmaps_, u8 flags_) {
-        mipmaps = mipmaps_;
+        mip_level_count = mipmaps_;
         flags = flags_;
+
+        return *this;
+    }
+
+    TextureCreation& TextureCreation::set_layers(u32 layer_count_) {
+        array_layer_count = layer_count_;
 
         return *this;
     }
@@ -136,6 +142,33 @@ namespace Helix {
 
     TextureCreation& TextureCreation::set_alias(TextureHandle alias_) {
         alias = alias_;
+
+        return *this;
+    }
+
+    // TextureViewCreation ////////////////////////////////////////////////////
+    TextureViewCreation& TextureViewCreation::set_parent_texture(TextureHandle parent_texture_) {
+        parent_texture = parent_texture_;
+
+        return *this;
+    }
+
+    TextureViewCreation& TextureViewCreation::set_mips(u32 base_mip_, u32 mip_level_count_) {
+        mip_base_level = base_mip_;
+        mip_level_count = mip_level_count_;
+
+        return *this;
+    }
+
+    TextureViewCreation& TextureViewCreation::set_array(u32 base_layer_, u32 layer_count_) {
+        array_base_layer = base_layer_;
+        array_layer_count = layer_count_;
+
+        return *this;
+    }
+
+    TextureViewCreation& TextureViewCreation::set_name(cstring name_) {
+        name = name_;
 
         return *this;
     }

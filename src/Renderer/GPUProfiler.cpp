@@ -185,7 +185,7 @@ namespace Helix {
                     draw_list->AddRectFilled({ x, y },
                         { x + 8, y + 8 }, timestamp.color);
 
-                    sprintf(buf, "(%d)-%s %2.4f", timestamp.depth, timestamp.name, timestamp.elapsed_ms);
+                    sprintf(buf, "(%2.4f)-%s %d", timestamp.elapsed_ms, timestamp.name, timestamp.depth);
                     draw_list->AddText({ x + 12, y }, 0xffffffff, buf);
 
                     y += 16;
