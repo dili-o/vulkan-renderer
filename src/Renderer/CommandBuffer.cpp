@@ -274,7 +274,7 @@ namespace Helix {
 
                     device->cmd_begin_rendering(vk_handle, &rendering_info);
                 }
-                else{
+                else {
                     VkRenderPassBeginInfo render_pass_begin{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
                     render_pass_begin.framebuffer = framebuffer->vk_handle;
                     render_pass_begin.renderPass = render_pass->vk_handle;
@@ -514,14 +514,16 @@ namespace Helix {
 
         vkCmdDrawIndexedIndirect(vk_handle, vk_buffer, vk_offset, 1, sizeof(VkDrawIndirectCommand));
     }
+#if NVIDIA
 
     void CommandBuffer::draw_mesh_task(u32 task_count, u32 first_task) {
-#if NVIDIA
         device->cmd_draw_mesh_tasks(vk_handle, task_count, first_task);
-#else
-        device->cmd_draw_mesh_tasks(vk_handle, task_count, first_task);
-#endif // NVIDIA
     }
+#else
+    void CommandBuffer::draw_mesh_task(u32 x, u32 y, u32 z) {
+        device->cmd_draw_mesh_tasks(vk_handle, x, y, z);
+    }
+#endif // NVIDIA
 
     void CommandBuffer::draw_mesh_task_indirect_count(BufferHandle command_buffer, u32 command_offset, BufferHandle count_buffer, u32 count_offset, u32 max_draws, u32 stride) {
         Buffer* command_buffer_ = device->access_buffer(command_buffer);

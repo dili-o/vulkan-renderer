@@ -499,20 +499,28 @@ namespace Helix {
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             mesh_shaders_feature.taskShader = true;
             mesh_shaders_feature.meshShader = true;
-        
+
             mesh_shaders_feature.pNext = current_pnext;
             current_pnext = &mesh_shaders_feature;
         }
 #else
         VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shaders_feature = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+        VkPhysicalDeviceFragmentShadingRateFeaturesKHR primitive_fragment_shading_rate = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR };
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             mesh_shaders_feature.taskShader = true;
             mesh_shaders_feature.meshShader = true;
 
             mesh_shaders_feature.pNext = current_pnext;
             current_pnext = &mesh_shaders_feature;
+
+            primitive_fragment_shading_rate.primitiveFragmentShadingRate = VK_TRUE;
+            primitive_fragment_shading_rate.pNext = current_pnext;
+            current_pnext = &primitive_fragment_shading_rate;
         }
 #endif // NVIDIA
+
+        
+        
         physical_features2.pNext = current_pnext;
 
         vkGetPhysicalDeviceFeatures2(vulkan_physical_device, &physical_features2);
@@ -1453,7 +1461,11 @@ namespace Helix {
         char* glsl_compiler_path = temp_string_buffer.append_use_f("%sglslangValidator.exe", vulkan_binaries_path);
         char* final_spirv_filename = temp_string_buffer.append_use("shader_final.spv");
         // TODO: add optional debug information in shaders (option -g).
+#if NVIDIA
+        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+#else
         char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+#endif // NVIDIA
 #else
         char* glsl_compiler_path = temp_string_buffer.append_use_f("%sglslangValidator", vulkan_binaries_path);
         char* final_spirv_filename = temp_string_buffer.append_use("shader_final.spv");

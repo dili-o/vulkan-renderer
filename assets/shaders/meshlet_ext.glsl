@@ -1,9 +1,9 @@
 
 #extension GL_EXT_shader_16bit_storage: require
 #extension GL_EXT_shader_8bit_storage: require
-#extension GL_NV_mesh_shader: require
-
 #extension GL_KHR_shader_subgroup_ballot: require
+
+#extension GL_EXT_mesh_shader: require
 
 #define DEBUG 0
 
@@ -39,6 +39,20 @@ struct Meshlet
     uint8_t triangleCount;
 };
 
+#if defined(TASK) || defined(MESH)
+layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
+{
+    uint opaque_mesh_visible_count;
+	uint opaque_mesh_culled_count;
+	uint transparent_mesh_visible_count;
+	uint transparent_mesh_culled_count;
+
+	uint total_count;
+	uint depth_pyramid_texture_index;
+    uint late_flag;
+};
+#endif // TASK MESH
+
 
 #if defined (TASK_DEPTH_PRE) || defined(TASK_GBUFFER_CULLING) || defined(TASK_TRANSPARENT_NO_CULL)
 
@@ -56,22 +70,11 @@ layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
     MeshDrawCommand draw_commands[];
 };
 
-layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
-{
-    uint opaque_mesh_visible_count;
-	uint opaque_mesh_culled_count;
-	uint transparent_mesh_visible_count;
-	uint transparent_mesh_culled_count;
-
-	uint total_count;
-	uint depth_pyramid_texture_index;
-    uint late_flag;
-};
-
-out taskNV block
+struct TaskData
 {
     uint meshletIndices[32];
 };
+taskPayloadSharedEXT TaskData td;
 
 // NOTE(marco): as described in meshoptimizer.h
 bool coneCull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, vec3 camera_position)
@@ -103,7 +106,7 @@ bool project_sphere(vec3 C, float r, float znear, float P00, float P11, out vec4
 void main()
 {
     uint task_invo = gl_LocalInvocationID.x;
-    uint task_group = gl_WorkGroupID.x;
+    uint task_group = gl_WorkGroupID.x + draw_commands[gl_DrawIDARB].firstTask;
 
     uint meshlet_index = task_group * 32 + task_invo;
 
@@ -147,17 +150,17 @@ void main()
     uint index = subgroupBallotExclusiveBitCount(ballot);
 
     if (accept)
-        meshletIndices[index] = meshlet_index;
+        td.meshletIndices[index] = meshlet_index;
 
     uint count = subgroupBallotBitCount(ballot);
 
     if (task_invo == 0)
-        gl_TaskCountNV = count;
+        EmitMeshTasksEXT(count, 1, 1);
 #else
-    meshletIndices[task_invo] = meshlet_index;
+    td.meshletIndices[task_invo] = meshlet_index;
 
     if (task_invo == 0)
-        gl_TaskCountNV = 32;
+        EmitMeshTasksEXT(32, 1, 1);
 #endif
 }
 
@@ -194,22 +197,11 @@ layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
     MeshDrawCommand draw_commands[];
 };
 
-layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
-{
-    uint opaque_mesh_visible_count;
-	uint opaque_mesh_culled_count;
-	uint transparent_mesh_visible_count;
-	uint transparent_mesh_culled_count;
-
-	uint total_count;
-	uint depth_pyramid_texture_index;
-    uint late_flag;
-};
-
-in taskNV block
+struct TaskData
 {
     uint meshletIndices[32];
 };
+taskPayloadSharedEXT TaskData td;
 
 layout (location = 0) out vec2 vTexcoord0[];
 layout (location = 1) out vec4 vNormal_BiTanX[];
@@ -235,13 +227,17 @@ uint hash(uint a)
 void main()
 {
     uint task_invo = gl_LocalInvocationID.x;
-    uint meshlet_index = meshletIndices[gl_WorkGroupID.x];
+    uint meshlet_index = td.meshletIndices[gl_WorkGroupID.x];
 
     MeshDraw mesh_draw = mesh_draws[ meshlets[meshlet_index].mesh_index ];
 
     uint vertexCount = uint(meshlets[meshlet_index].vertexCount);
     uint triangleCount = uint(meshlets[meshlet_index].triangleCount);
     uint indexCount = triangleCount * 3;
+
+    if(task_invo == 0){
+        SetMeshOutputsEXT(vertexCount, triangleCount);
+    }
 
     uint dataOffset = meshlets[meshlet_index].dataOffset;
     uint vertexOffset = dataOffset;
@@ -290,7 +286,7 @@ void main()
 
         vTexcoord0[i] = vec2(vertex_data[vi].tu, vertex_data[vi].tv);
 
-        gl_MeshVerticesNV[ i ].gl_Position = view_projection * (model * vec4(position, 1));
+        gl_MeshVerticesEXT[ i ].gl_Position = view_projection * (model * vec4(position, 1));
 
         vec4 worldPosition = model * vec4(position, 1.0);
         vPosition_BiTanZ[ i ].xyz = worldPosition.xyz / worldPosition.w;
@@ -303,95 +299,16 @@ void main()
 #endif
     }
 
-    uint indexGroupCount = (indexCount + 3) / 4;
-
-    for (uint i = task_invo; i < indexGroupCount; i += 32)
-    {
-        writePackedPrimitiveIndices4x8NV(i * 4, meshletData[indexOffset + i]);
-    }
-
-    if (task_invo == 0)
-        gl_PrimitiveCountNV = uint(meshlets[meshlet_index].triangleCount);
+    for (uint i = 0; i < uint(meshlets[meshlet_index].triangleCount); ++i)
+	{
+		// TODO: possibly bad for perf, consider writePackedPrimitiveIndices4x8NV
+		gl_PrimitiveTriangleIndicesEXT[i] = uvec3(meshletData[indexOffset + (i * 3)], meshletData[indexOffset + (i * 3) + 1], meshletData[indexOffset + (i * 3) + 2]);
+	}
+    
 }
 
 #endif // MESH
 
-
-#if defined(MESH_DEPTH_PRE)
-
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 64, max_primitives = 124) out;
-
-layout(set = MATERIAL_SET, binding = 1) readonly buffer Meshlets
-{
-    Meshlet meshlets[];
-};
-
-layout(set = MATERIAL_SET, binding = 3) readonly buffer MeshletData
-{
-    uint meshletData[];
-};
-
-layout(set = MATERIAL_SET, binding = 4) readonly buffer VertexPositions
-{
-    VertexPosition vertex_positions[];
-};
-
-layout(set = MATERIAL_SET, binding = 5) readonly buffer VertexData
-{
-    VertexExtraData vertex_data[];
-};
-
-layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
-{
-    MeshDrawCommand draw_commands[];
-};
-
-in taskNV block
-{
-    uint meshletIndices[32];
-};
-
-void main()
-{
-    uint mesh_index = meshletIndices[gl_WorkGroupID.x];
-
-    MeshDraw mesh_draw = mesh_draws[ meshlets[mesh_index].mesh_index ];
-
-    uint vertexCount = uint(meshlets[mesh_index].vertexCount);
-    uint triangleCount = uint(meshlets[mesh_index].triangleCount);
-    uint indexCount = triangleCount * 3;
-
-    uint dataOffset = meshlets[mesh_index].dataOffset;
-    uint vertexOffset = dataOffset;
-    uint indexOffset = dataOffset + vertexCount;
-
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
-    mat4 model = mesh_instance_draws[mesh_instance_index].model;
-
-    // TODO: if we have meshlets with 62 or 63 vertices then we pay a small penalty for branch divergence here - we can instead redundantly xform the last vertex
-    uint task_invo = gl_LocalInvocationID.x;
-    for (uint i = task_invo; i < vertexCount; i += 32)
-    {
-        uint vi = meshletData[vertexOffset + i]; + mesh_draw.vertexOffset;
-
-        vec3 position = vec3(vertex_positions[vi].v.x, vertex_positions[vi].v.y, vertex_positions[vi].v.z);
-
-        gl_MeshVerticesNV[ i ].gl_Position = view_projection * (model * vec4(position, 1));
-    }
-
-    uint indexGroupCount = (indexCount + 3) / 4;
-
-    for (uint i = task_invo; i < indexGroupCount; i += 32)
-    {
-        writePackedPrimitiveIndices4x8NV(i * 4, meshletData[indexOffset + i]);
-    }
-
-    if (task_invo == 0)
-        gl_PrimitiveCountNV = uint(meshlets[mesh_index].triangleCount);
-}
-
-#endif // MESH
 
 #if defined(FRAGMENT_GBUFFER_CULLING) || defined(FRAGMENT_MESH)
 

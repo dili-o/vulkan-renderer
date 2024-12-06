@@ -1,6 +1,6 @@
 
-#ifndef RAPTOR_GLSL_MESH_H
-#define RAPTOR_GLSL_MESH_H
+#ifndef HELIX_GLSL_MESH_H
+#define HELIX_GLSL_MESH_H
 
 uint DrawFlags_AlphaMask    = 1 << 0;
 uint DrawFlags_DoubleSided  = 1 << 1;
@@ -50,6 +50,7 @@ struct MeshInstanceDraw {
     uint        pad002;
 };
 
+#if NVIDIA
 struct MeshDrawCommand
 {
     uint        drawId;
@@ -60,11 +61,30 @@ struct MeshDrawCommand
     uint        firstIndex;
     uint        vertexOffset;
     uint        firstInstance;
-
     // VkDrawMeshTasksIndirectCommandNV
     uint        taskCount;
     uint        firstTask;
 };
+#else
+struct MeshDrawCommand
+{
+    uint        drawId;
+    uint        firstTask;      
+
+    // VkDrawIndexedIndirectCommand
+    uint        indexCount;
+    uint        instanceCount;
+    uint        firstIndex;
+    uint        vertexOffset;
+    uint        firstInstance;
+        // VkDrawMeshTasksIndirectCommandEXT
+    uint        x;
+    uint        y;
+    uint        z;
+    uint        padding[2];
+};
+
+#endif // NVIDIA
 
 layout ( std430, set = MATERIAL_SET, binding = 2 ) readonly buffer MeshDraws {
 
@@ -81,4 +101,4 @@ layout ( std430, set = MATERIAL_SET, binding = 12 ) readonly buffer MeshBounds {
     vec4        mesh_bounds[];
 };
 
-#endif // RAPTOR_GLSL_MESH_H
+#endif // HELIX_GLSL_MESH_H

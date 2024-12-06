@@ -205,7 +205,6 @@ namespace Helix {
 
             return;
         }
-
         enabled = node->enabled;
 
         renderer = scene.renderer;
@@ -423,7 +422,11 @@ namespace Helix {
         
         Renderer* renderer = scene->renderer;
 
-        const u64 meshlet_hashed_name = hash_calculate("meshlet");
+#if NVIDIA
+        const u64 meshlet_hashed_name = hash_calculate("meshlet_nv");
+#else
+        const u64 meshlet_hashed_name = hash_calculate("meshlet_ext");
+#endif // NVIDIA
         Program* meshlet_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
 
         PipelineHandle pipeline = meshlet_program->passes[meshlet_program_index].pipeline;
@@ -451,6 +454,7 @@ namespace Helix {
 
         FrameGraphNode* node = frame_graph->get_node("gbuffer_pass");
         HASSERT(node);
+        
 
         if (scene.opaque_meshes.size) {
             meshes = &scene.opaque_meshes[0];
@@ -458,7 +462,11 @@ namespace Helix {
         }
 
         if (renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
-            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet"));
+#if NVIDIA
+            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet_nv"));
+#else
+            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet_ext"));
+#endif // NVIDIA
             meshlet_program_index = main_program->get_pass_index("gbuffer_culling");
         }
     }
@@ -481,7 +489,11 @@ namespace Helix {
 
         Renderer* renderer = scene->renderer;
 
-        const u64 meshlet_hashed_name = hash_calculate("meshlet");
+#if NVIDIA
+        const u64 meshlet_hashed_name = hash_calculate("meshlet_nv");
+#else
+        const u64 meshlet_hashed_name = hash_calculate("meshlet_ext");
+#endif // NVIDIA
         Program* meshlet_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
 
         PipelineHandle pipeline = meshlet_program->passes[meshlet_program_index].pipeline;
@@ -518,7 +530,12 @@ namespace Helix {
         }
 
         if (renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
-            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet"));
+#if NVIDIA
+            const u64 meshlet_hashed_name = hash_calculate("meshlet_nv");
+#else
+            const u64 meshlet_hashed_name = hash_calculate("meshlet_ext");
+#endif // NVIDIA
+            Program* main_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
             meshlet_program_index = main_program->get_pass_index("gbuffer_culling");
         }
     }
@@ -601,7 +618,6 @@ namespace Helix {
 
             return;
         }
-
         enabled = node->enabled;
         if (!enabled)
             return;
@@ -725,7 +741,6 @@ namespace Helix {
 
         FrameGraphNode* node = frame_graph->get_node("lighting_pass");
         HASSERT(node);
-
         enabled = node->enabled;
         if (!enabled)
             return;
@@ -848,7 +863,6 @@ namespace Helix {
 
         FrameGraphNode* node = frame_graph->get_node("transparent_pass");
         HASSERT(node);
-
         // Create pipeline state
         //PipelineCreation pipeline_creation;
 
@@ -1610,6 +1624,7 @@ namespace Helix {
 
                         meshlet.cone_cutoff = meshlet_bounds.cone_cutoff_s8;
                         meshlet.mesh_index = opaque_meshes.size - 1; // TODO: What about transparent meshes?
+#if NVIDIA
 
                         // Resize data array
                         const u32 index_group_count = (local_meshlet.triangle_count * 3 + 3) / 4;
@@ -1619,7 +1634,6 @@ namespace Helix {
                             u32 vertex_index = meshlet_vertex_offset + meshlet_vertex_indices[local_meshlet.vertex_offset + i];
                             meshlet_vertex_and_index_indices.push(vertex_index);
                         }
-
                         // Store indices as uint32
                         // NOTE(marco): we write 4 indices at at time, it will come in handy in the mesh shader
                         const u32* index_groups = reinterpret_cast<const u32*>(meshlet_triangles.data + local_meshlet.triangle_offset);
@@ -1627,7 +1641,23 @@ namespace Helix {
                             const u32 index_group = index_groups[i];
                             meshlet_vertex_and_index_indices.push(index_group);
                         }
+#else
+                        // Resize data array
+                        const u32 index_count = local_meshlet.triangle_count * 3;
+                        meshlet_vertex_and_index_indices.set_capacity(meshlet_vertex_and_index_indices.size + local_meshlet.vertex_count + index_count);
 
+                        for (u32 i = 0; i < meshlet.vertex_count; ++i) {
+                            u32 vertex_index = meshlet_vertex_offset + meshlet_vertex_indices[local_meshlet.vertex_offset + i];
+                            meshlet_vertex_and_index_indices.push(vertex_index);
+                        }
+                        // Store indices as uint32
+                        // NOTE(marco): we write to the gl_PrimitiveTriangleIndicesEXT uvec3 array
+                        const u8* p_indicies = reinterpret_cast<const u8*>(meshlet_triangles.data + local_meshlet.triangle_offset);
+                        for (u32 i = 0; i < index_count; ++i) {
+                            const u32 index_group = (u32)p_indicies[i];
+                            meshlet_vertex_and_index_indices.push(index_group);
+                        }
+#endif // NVIDIA
                     meshlets.push(meshlet);
                 }
                 // 
@@ -1743,6 +1773,8 @@ namespace Helix {
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
         BufferCreation buffer_creation;
 
+        u32 siz = sizeof(GPUMeshDrawCommand);
+
         u32 total_meshes = opaque_meshes.size + transparent_meshes.size;
 
         // Meshlets buffers
@@ -1796,7 +1828,11 @@ namespace Helix {
         }
 
         if (renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
-            const u64 meshlet_hashed_name = hash_calculate("meshlet");
+#if NVIDIA
+            const u64 meshlet_hashed_name = hash_calculate("meshlet_nv");
+#else
+            const u64 meshlet_hashed_name = hash_calculate("meshlet_ext");
+#endif // NVIDIA
             Program* meshlet_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
 
             DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(meshlet_program->passes[1].pipeline, k_material_descriptor_set_index);

@@ -2,7 +2,6 @@
 
 #if defined(COMPUTE_GPU_CULLING)
 
-
 layout(set = MATERIAL_SET, binding = 1) writeonly buffer VisibleMeshInstances
 {
 	MeshDrawCommand draw_commands[];
@@ -72,33 +71,27 @@ void main() {
 	    frustum_visible = frustum_visible || (frustum_cull_meshes == 0);
 
 	    uint flags = mesh_draw.flags;
-	    if ( frustum_visible) {
+	    if (frustum_visible) {
 	    	// Add opaque draws
 			if ( /*(flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0*/ true ) {
 				uint draw_index = atomicAdd( opaque_mesh_visible_count, 1 );
-
+	
 				draw_commands[draw_index].drawId = mesh_instance_index;
 				draw_commands[draw_index].indexCount = 0;
 				draw_commands[draw_index].instanceCount = 1;
 				draw_commands[draw_index].firstIndex = 0;
 				draw_commands[draw_index].vertexOffset = mesh_draw.vertexOffset;
 				draw_commands[draw_index].firstInstance = 0;
+#if NVIDIA				
 				draw_commands[draw_index].taskCount = (mesh_draw.meshlet_count + 31) / 32;
 				draw_commands[draw_index].firstTask = (mesh_draw.meshlet_offset) / 32;
+#else
+				draw_commands[draw_index].x = (mesh_draw.meshlet_count + 31) / 32;
+				draw_commands[draw_index].y = 1;
+				draw_commands[draw_index].z = 1;
+				draw_commands[draw_index].firstTask = (mesh_draw.meshlet_offset) / 32;
+#endif // NVIDIA				
 			}
-			//else {
-			//	// Transparent draws are written after total_count commands in the same buffer.
-			//	uint draw_index = atomicAdd( transparent_mesh_visible_count, 1 ) + total_count;
-//
-			//	draw_commands[draw_index].drawId = mesh_instance_index;
-			//	draw_commands[draw_index].indexCount = 0;
-			//	draw_commands[draw_index].instanceCount = 1;
-			//	draw_commands[draw_index].firstIndex = 0;
-			//	draw_commands[draw_index].vertexOffset = mesh_draw.vertexOffset;
-			//	draw_commands[draw_index].firstInstance = 0;
-			//	draw_commands[draw_index].taskCount = (mesh_draw.meshlet_count + 31) / 32;
-			//	draw_commands[draw_index].firstTask = mesh_draw.meshlet_offset / 32;
-			//}
 	    }
 	}
 }

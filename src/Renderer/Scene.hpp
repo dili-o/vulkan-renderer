@@ -63,7 +63,7 @@ namespace Helix {
         glm::vec4       camera_position_texture_index;
     };
 
-    
+
 
     enum DrawFlags {
         DrawFlags_AlphaMask = 1 << 0,
@@ -80,7 +80,7 @@ namespace Helix {
     }; // enum DrawFlags
 
     struct PBRMaterial {
-        Material*           material;
+        Material* material;
 
         BufferHandle        material_buffer;
         DescriptorSetHandle descriptor_set;
@@ -130,7 +130,7 @@ namespace Helix {
     }; // struct Mesh
 
     struct MeshInstance {
-        Mesh*               mesh;
+        Mesh* mesh;
         u32                 material_pass_index;
     }; // struct MeshInstance
 
@@ -147,12 +147,22 @@ namespace Helix {
         u32                     late_flag;
         u32                     pad001;
     }; // struct GPUMeshDrawCounts Draw count buffer used in indirect draw calls
-
+#if NVIDIA
     struct alignas(16) GPUMeshDrawCommand {
         u32                     mesh_index;
         VkDrawIndexedIndirectCommand indirect; // 5 uint32_t
         VkDrawMeshTasksIndirectCommandNV indirectMS; // 2 uint32_t
-    }; // struct GpuMeshDrawCommand 
+    };
+#else
+    struct alignas(16) GPUMeshDrawCommand {
+        u32                     mesh_index;
+        u32                     firstTask;
+        VkDrawIndexedIndirectCommand indirect; // 5 uint32_t
+        VkDrawMeshTasksIndirectCommandEXT indirectMS; // 3 uint32_t
+        u32                     padding[2];
+    };
+        
+#endif // NVIDIA
 
     struct GPUDebugIcon {
         glm::vec4               position_texture_index[5]; // x,y,z for position, w for texture index
