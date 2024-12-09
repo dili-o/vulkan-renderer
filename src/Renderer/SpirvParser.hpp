@@ -20,6 +20,7 @@ namespace Helix {
         // TODO: Maybe include vertex input as well
         struct ParseResult {
             u32                         set_count;
+            VkPushConstantRange         push_constant;
             DescriptorSetLayoutCreation sets[MAX_SET_COUNT];
         };
 

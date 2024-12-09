@@ -253,7 +253,7 @@ int main(int argc, char** argv)
     i64 begin_frame_tick = Time::now();
     i64 absolute_begin_frame_tick = begin_frame_tick;
 
-    glm::vec3 eye = { 0.0f, 2.5f, 2.0f };
+    glm::vec3 eye = { 0.0f, 0.0f, 0.0f };
     glm::vec3 look = { 0.0f, 0.0, -1.0f };
     glm::vec3 right = { 1.0f, 0.0, 0.0f };
     glm::vec3 up = { 0.0f, 1.0f, 0.0f };
@@ -329,6 +329,8 @@ int main(int argc, char** argv)
                 ImGui::End();
 
                 if (ImGui::Begin("Scene Settings")) {
+                    ImGui::Text("x: %f, y: %f, z: %f", eye.x, eye.y, eye.z);
+                    ImGui::Text("AABB \t minx: %f, miny: %f, maxx: %f, maxy: %f", scene->tester.x, scene->tester.y, scene->tester.z, scene->tester.w);
                     ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
                 }
                 ImGui::End();
@@ -396,7 +398,9 @@ int main(int argc, char** argv)
                     }
 
                     glm::mat4 view = glm::lookAt(eye, (eye + look), glm::vec3( 0.0f, 1.0f, 0.0f ));
-                    glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspect_ratio, 0.01f, 1000.0f);
+                    float z_near = 0.01f;
+                    float z_far = 1000.0f;
+                    glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspect_ratio, z_near, z_far);
 
                     // Calculate view projection matrix
                     glm::mat4 view_projection = projection * view;
@@ -418,18 +422,19 @@ int main(int argc, char** argv)
                     GPUSceneData& scene_data = scene->scene_data;
                     scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
                     scene_data.view_projection = view_projection;
-                    scene_data.inverse_view_projection = glm::inverse(view_projection);
-                    scene_data.world_to_camera = view;
+                    scene_data.inverse_view_projection = projection;// TODO glm::inverse(view_projection);
+                    scene_data.view_matrix = view;
                     scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
                     scene_data.light_position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
                     scene_data.light_range = light_range;
                     scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;
 
-                    //scene_data.z_near = game_camera.camera.near_plane;
-                    //scene_data.z_far = game_camera.camera.far_plane;
-                    //scene_data.projection_00 = game_camera.camera.projection.m00;
-                    //scene_data.projection_11 = game_camera.camera.projection.m11;
+                    scene_data.z_near = z_near;
+                    scene_data.z_far = z_far;
+                    scene_data.projection_00 = projection[0][0];
+                    scene_data.projection_11 = projection[1][1];
+
                     scene_data.frustum_cull_meshes = 1;
                     scene_data.frustum_cull_meshlets = 1;
                     scene_data.occlusion_cull_meshes = 1;
@@ -443,7 +448,7 @@ int main(int argc, char** argv)
                     // Frustum computations
                     if (!freeze_occlusion_camera) {
                         scene_data.camera_position_debug = scene_data.camera_position;
-                        scene_data.world_to_camera_debug = scene_data.world_to_camera;
+                        scene_data.view_matrix_debug = scene_data.view_matrix;
                         scene_data.view_projection_debug = scene_data.view_projection;
                         projection_transpose = glm::transpose(projection);
                     }

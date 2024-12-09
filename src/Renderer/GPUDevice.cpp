@@ -1692,6 +1692,8 @@ namespace Helix {
         VkPipelineLayoutCreateInfo pipeline_layout_info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
         pipeline_layout_info.pSetLayouts = vk_layouts;
         pipeline_layout_info.setLayoutCount = num_active_layouts;// +bindless_active;
+        pipeline_layout_info.pPushConstantRanges = shader_state_data->parse_result->push_constant.size == 0 ? nullptr : &shader_state_data->parse_result->push_constant;
+        pipeline_layout_info.pushConstantRangeCount = shader_state_data->parse_result->push_constant.size == 0 ? 0 : 1;
 
         VkPipelineLayout pipeline_layout;
         check(vkCreatePipelineLayout(vulkan_device, &pipeline_layout_info, vulkan_allocation_callbacks, &pipeline_layout));

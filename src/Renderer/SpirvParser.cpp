@@ -122,6 +122,16 @@ namespace Helix {
                     add_binding_if_unique(creation, binding);
                 }
             }
+
+            if (module.push_constant_block_count) {
+                // TODO: Multiple push constants
+                SpvReflectBlockVariable& push_constant = module.push_constant_blocks[0];
+                parse_result->push_constant.size = push_constant.size;
+                parse_result->push_constant.offset = push_constant.offset;
+                parse_result->push_constant.stageFlags = module.shader_stage;
+                
+            }
+
             parse_result->set_count = max(parse_result->set_count, (u32)sets.size());
             return;
         }

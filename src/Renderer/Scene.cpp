@@ -13,6 +13,43 @@
 #include <Core/Numerics.hpp>
 
 namespace Helix {
+    float square(float r) {
+        return r * r;
+    }
+
+    glm::vec4 project_sphere(glm::vec3 C, float r, float znear, float P00, float P11, glm::mat4 P) {
+        
+        if (C.z + r > -znear)
+            return glm::vec4(0, 0, 0, 0);
+
+        glm::vec4 aabb;
+
+        glm::vec4 min_p = glm::vec4(C.x - r, C.y - r, C.z, 1.0f);
+        glm::vec4 max_p = glm::vec4(C.x + r, C.y + r, C.z, 1.0f);
+
+        glm::vec4 min_clip = P * min_p;
+        glm::vec4 max_clip = P * max_p;
+
+        //aabb = glm::vec4(min_clip.x / min_clip.w, min_clip.y / min_clip.w, max_clip.x / max_clip.w, max_clip.y / max_clip.w);
+
+        //aabb = glm::vec4(aabb.x + 1.0f, 1.0f - aabb.y, aabb.z + 1.0f, 1.0f - aabb.w) * 0.5f;
+
+        glm::vec2 cx = glm::vec2(C.x, -C.z);
+        glm::vec2 vx = glm::vec2(sqrt(dot(cx, cx) - r * r), r);
+        glm::vec2 minx = glm::mat2(vx.x, vx.y, -vx.y, vx.x) * cx;
+        glm::vec2 maxx = glm::mat2(vx.x, -vx.y, vx.y, vx.x) * cx;
+
+        glm::vec2 cy = glm::vec2(-C.y, -C.z);
+        glm::vec2 vy = glm::vec2(sqrt(dot(cy, cy) - r * r), r);
+        glm::vec2 miny = glm::mat2(vy.x, vy.y, -vy.y, vy.x) * cy;
+        glm::vec2 maxy = glm::mat2(vy.x, -vy.y, vy.y, vy.x) * cy;
+
+        aabb = glm::vec4(minx.x / minx.y * P00, miny.x / miny.y * P11, maxx.x / maxx.y * P00, maxy.x / maxy.y * P11);
+        aabb = aabb * glm::vec4(0.5f, -0.5f, 0.5f, -0.5f) + glm::vec4(0.5f); // clip space -> uv space
+
+        return aabb;
+    }
+
 
     // Node
     static void update_transform(Node* node, NodePool* node_pool) {
@@ -553,6 +590,18 @@ namespace Helix {
         update_depth_pyramid = (scene->scene_data.freeze_occlusion_camera == 0);
     }
 
+    u32 previous_pow2(u32 value) {
+        if (value == 0) return 0;
+#if defined (_MSC_VER)
+        unsigned long index;
+        _BitScanReverse(&index, value);
+#else 
+        u32 index = 31 - __builtin_clz(value);
+#endif // MSVC
+        u32 result = 1;
+        return result << index;
+    }
+
     void DepthPyramidPass::post_render(u32 current_frame_index, CommandBuffer* gpu_commands, FrameGraph* frame_graph) {
         if (!enabled)
             return;
@@ -567,9 +616,16 @@ namespace Helix {
             u32 width = depth_pyramid_texture->width;
             u32 height = depth_pyramid_texture->height;
 
+            //u32 width = previous_pow2(depth_pyramid_texture->width);
+            //u32 height = previous_pow2(depth_pyramid_texture->height);
+
             FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
             TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
             Texture* depth_texture = gpu->access_texture(depth_handle);
+
+            Mesh& mesh = p_scene->opaque_meshes[0];
+            MeshNode* mesh_node_primitive = (MeshNode*)p_scene->node_pool.access_node({ mesh.node_index, NodeType::MeshNode });
+
 
             util_add_image_barrier(gpu, gpu_commands->vk_handle, depth_texture, RESOURCE_STATE_SHADER_RESOURCE, 0, 1, true);
 
@@ -577,6 +633,18 @@ namespace Helix {
                 util_add_image_barrier(gpu, gpu_commands->vk_handle, depth_pyramid_texture->vk_image, RESOURCE_STATE_UNDEFINED, RESOURCE_STATE_UNORDERED_ACCESS, mip_index, 1, false);
 
                 gpu_commands->bind_descriptor_set(&depth_hierarchy_descriptor_set[mip_index], 1, nullptr, 0);
+
+                //TODO Make a function for this
+                Pipeline* pipeline = gpu->access_pipeline(depth_pyramid_pipeline);
+
+                struct PushConst {
+                    glm::vec2 image_size;
+                    glm::vec2 padding;
+                };
+                PushConst push_const;
+                push_const.image_size = glm::vec2(width, height);
+
+                vkCmdPushConstants(gpu_commands->vk_handle, pipeline->vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConst), &push_const);
 
                 // NOTE(marco): local workgroup is 8 x 8
                 u32 group_x = (width + 7) / 8;
@@ -609,7 +677,10 @@ namespace Helix {
         create_depth_pyramid_resource(depth_texture);
     }
 
-    void DepthPyramidPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+    void DepthPyramidPass::prepare_draws(Scene& scene_, FrameGraph* frame_graph, Allocator* resident_allocator) {
+        glTFScene& scene = (glTFScene&)scene_;
+
+        p_scene = &scene;
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("depth_pyramid_pass");
@@ -636,6 +707,8 @@ namespace Helix {
 
         create_depth_pyramid_resource(depth_texture);
 
+        
+
         gpu.link_texture_sampler(depth_pyramid, depth_pyramid_sampler);
     }
 
@@ -654,15 +727,23 @@ namespace Helix {
         }
     }
 
+    
+
     void DepthPyramidPass::create_depth_pyramid_resource(Texture* depth_texture) {
 
-        // TODO(marco): this assumes a pot depth resolution
-        u32 width = depth_texture->width / 2;
-        u32 height = depth_texture->height / 2;
+        u32 depth_pyramid_width = depth_texture->width / 2;
+        u32 depth_pyramid_height = depth_texture->height / 2;
+        // Note previous_pow2 makes sure all reductions are at most 2x2 which makes sure they are conservative
+        //u32 depth_pyramid_width = previous_pow2(depth_texture->width);
+        //u32 depth_pyramid_height = previous_pow2(depth_texture->height);
+        //depth_pyramid_width /= 2; 
+        //depth_pyramid_height /= 2;
 
         GpuDevice& gpu = *renderer->gpu;
 
         depth_pyramid_levels = 0;
+        u32 width = depth_pyramid_width;
+        u32 height = depth_pyramid_height;
         while (width >= 2 && height >= 2) {
             depth_pyramid_levels++;
 
@@ -671,7 +752,7 @@ namespace Helix {
         }
 
         TextureCreation depth_hierarchy_creation{ };
-        depth_hierarchy_creation.set_format_type(VK_FORMAT_R32_SFLOAT, TextureType::Enum::Texture2D).set_flags(depth_pyramid_levels, TextureFlags::Compute_mask).set_size(depth_texture->width / 2, depth_texture->height / 2, 1).set_name("depth_hierarchy");
+        depth_hierarchy_creation.set_format_type(VK_FORMAT_R32_SFLOAT, TextureType::Enum::Texture2D).set_flags(depth_pyramid_levels, TextureFlags::Compute_mask).set_size(depth_pyramid_width, depth_pyramid_height, 1).set_name("depth_hierarchy");
         
         depth_pyramid = gpu.create_texture(depth_hierarchy_creation);
 
@@ -1497,6 +1578,8 @@ namespace Helix {
                 mesh.index_offset = indices_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : indices_accessor.byte_offset;
                 mesh.primitive_count = indices_accessor.count;
 
+                mesh.pbr_material.flags |= DrawFlags_Phong;
+
                 i32 indicies_data_offset = glTF::get_data_offset(indices_accessor.byte_offset, indices_buffer_view.byte_offset);
                 u16* indices = (u16*)((u8*)buffers_data[indices_buffer_view.buffer] + indicies_data_offset);
 
@@ -1563,8 +1646,10 @@ namespace Helix {
                         meshlet_vertex_data.tangent[3] = (tangents[v * 3 + 3] + 1.0f) * 127.0f;
                     }
 
-                    meshlet_vertex_data.uv_coords[0] = meshopt_quantizeHalf(tex_coords[v * 2 + 0]);
-                    meshlet_vertex_data.uv_coords[1] = meshopt_quantizeHalf(tex_coords[v * 2 + 1]);
+                    if(tex_coords != nullptr){
+                        meshlet_vertex_data.uv_coords[0] = meshopt_quantizeHalf(tex_coords[v * 2 + 0]);
+                        meshlet_vertex_data.uv_coords[1] = meshopt_quantizeHalf(tex_coords[v * 2 + 1]);
+                    }
 
                     meshlets_vertex_data.push(meshlet_vertex_data);
                 }
@@ -1849,14 +1934,17 @@ namespace Helix {
         }
 
         //depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        depth_pyramid_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+
         mesh_cull_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         mesh_cull_late_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         gbuffer_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         gbuffer_late_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
         transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
-        depth_pyramid_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
 
+        mesh_cull_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
+        //gbuffer_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
         mesh_cull_late_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
         //gbuffer_late_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
     }

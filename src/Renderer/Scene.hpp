@@ -255,8 +255,8 @@ namespace Helix {
         glm::mat4               view_projection;
         glm::mat4               view_projection_debug;
         glm::mat4               inverse_view_projection;
-        glm::mat4               world_to_camera;    // view matrix
-        glm::mat4               world_to_camera_debug;
+        glm::mat4               view_matrix;
+        glm::mat4               view_matrix_debug;
         glm::mat4               previous_view_projection;
 
         glm::vec4               camera_position;
@@ -517,6 +517,8 @@ namespace Helix {
 
         u32                     depth_pyramid_levels = 0;
 
+        glTFScene* p_scene = nullptr; // TODO: Remove
+
         bool                    update_depth_pyramid;
     }; // struct DepthPrePass
 
@@ -602,6 +604,8 @@ namespace Helix {
         Array<TextureResource>  images; // TODO: Maybe just store the pool index rather than the whole Texture resource
         Array<SamplerResource>  samplers;
         Array<BufferResource>   buffers;
+
+        glm::vec4 tester = glm::vec4(1.0f); // TODO: Remove
 
         u32                     current_images_count = 0;
         u32                     current_buffers_count = 0;
