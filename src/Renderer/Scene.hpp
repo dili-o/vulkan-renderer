@@ -422,7 +422,7 @@ namespace Helix {
         void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                    free_gpu_resources();
 
-        Renderer* renderer;
+        Renderer*               renderer = nullptr;
 
         PipelineHandle          frustum_cull_pipeline;
         DescriptorSetHandle     frustum_cull_descriptor_set[k_max_frames];

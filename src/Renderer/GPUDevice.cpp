@@ -2536,7 +2536,7 @@ namespace Helix {
             resource_deletion_queue.push({ ResourceDeletionType::Buffer, buffer.index, current_frame });
         }
         else {
-            HERROR("Graphics error: trying to free invalid Buffer {}", buffer.index);
+            HWARN("Graphics error: trying to free invalid Buffer {}", buffer.index);
         }
     }
 
@@ -2546,7 +2546,7 @@ namespace Helix {
             texture_to_update_bindless.push({ ResourceDeletionType::Texture, texture.index, current_frame });
         }
         else {
-            HERROR("Graphics error: trying to free invalid Texture {}", texture.index);
+            HWARN("Graphics error: trying to free invalid Texture {}", texture.index);
         }
     }
 
@@ -2567,7 +2567,7 @@ namespace Helix {
             destroy_shader_state(v_pipeline->shader_state);
         }
         else {
-            HERROR("Graphics error: trying to free invalid Pipeline {}", pipeline.index);
+            HWARN("Graphics error: trying to free invalid Pipeline {}", pipeline.index);
         }
     }
 
@@ -2576,7 +2576,7 @@ namespace Helix {
             resource_deletion_queue.push({ ResourceDeletionType::Sampler, sampler.index, current_frame });
         }
         else {
-            HERROR("Graphics error: trying to free invalid Sampler {}", sampler.index);
+            HWARN("Graphics error: trying to free invalid Sampler {}", sampler.index);
 
         }
     }
@@ -2586,7 +2586,7 @@ namespace Helix {
             resource_deletion_queue.push({ ResourceDeletionType::DescriptorSetLayout, descriptor_set_layout.index, current_frame });
         }
         else {
-            HERROR("Graphics error: trying to free invalid DescriptorSetLayout {}", descriptor_set_layout.index);
+            HWARN("Graphics error: trying to free invalid DescriptorSetLayout {}", descriptor_set_layout.index);
         }
     }
 
@@ -2595,7 +2595,7 @@ namespace Helix {
             resource_deletion_queue.push({ ResourceDeletionType::DescriptorSet, descriptor_set.index, current_frame });
         }
         else {
-            HERROR("Graphics error: trying to free invalid DescriptorSet {}", descriptor_set.index);
+            HWARN("Graphics error: trying to free invalid DescriptorSet {}", descriptor_set.index);
         }
     }
 
@@ -2604,7 +2604,7 @@ namespace Helix {
             resource_deletion_queue.push({ ResourceDeletionType::RenderPass, render_pass.index, current_frame });
         }
         else {
-            HERROR("Graphics error: trying to free invalid RenderPass {}", render_pass.index);
+            HWARN("Graphics error: trying to free invalid RenderPass {}", render_pass.index);
         }
     }
 
@@ -2613,7 +2613,7 @@ namespace Helix {
             resource_deletion_queue.push({ ResourceDeletionType::Framebuffer, framebuffer.index, current_frame});
         }
         else {
-            HERROR("Graphics error: trying to free invalid Framebuffer {}", framebuffer.index);
+            HWARN("Graphics error: trying to free invalid Framebuffer {}", framebuffer.index);
         }
     }
 
@@ -2626,7 +2626,7 @@ namespace Helix {
             allocator->deallocate(state->parse_result);
         }
         else {
-            HERROR("Graphics error: trying to free invalid Shader {}", shader.index);
+            HWARN("Graphics error: trying to free invalid Shader {}", shader.index);
         }
     }
 

@@ -1109,6 +1109,11 @@ namespace Helix {
         samplers.init(resident_allocator, 1);
         buffers.init(resident_allocator, k_num_meshes);
 
+        meshlets.init(resident_allocator, 16);
+        meshlet_vertex_and_index_indices.init(resident_allocator, 16);
+        meshlets_vertex_positions.init(resident_allocator, 16);
+        meshlets_vertex_data.init(resident_allocator, 16);
+
         // Create material
         //u64 hashed_name = hash_calculate("geometry");
         //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
@@ -1413,10 +1418,7 @@ namespace Helix {
         const sizet max_triangles = 124;
         const f32 cone_weight = 0.0f;
 
-        meshlets.init(resident_allocator, 16);
-        meshlet_vertex_and_index_indices.init(resident_allocator, 16);
-        meshlets_vertex_positions.init(resident_allocator, 16);
-        meshlets_vertex_data.init(resident_allocator, 16);
+
 
         while (node_stack.size) {
             u32 node_index = node_stack.back();
