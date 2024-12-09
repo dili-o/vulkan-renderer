@@ -224,7 +224,9 @@ namespace Helix {
 
         gpu_commands->bind_descriptor_set(&frustum_cull_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-        u32 group_x = Helix::ceilu32(scene->mesh_draw_counts.total_count / 64.0f);
+        const Pipeline* pipeline = renderer->gpu->access_pipeline(frustum_cull_pipeline);
+
+        u32 group_x = Helix::ceilu32(scene->mesh_draw_counts.total_count / (f32)pipeline->local_size[0]);
         gpu_commands->dispatch(group_x, 1, 1);
 
         util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, indirect_draw_commands_sb->vk_handle,
@@ -647,8 +649,8 @@ namespace Helix {
                 vkCmdPushConstants(gpu_commands->vk_handle, pipeline->vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConst), &push_const);
 
                 // NOTE(marco): local workgroup is 8 x 8
-                u32 group_x = (width + 7) / 8;
-                u32 group_y = (height + 7) / 8;
+                u32 group_x = (width + pipeline->local_size[0] - 1) / pipeline->local_size[0];
+                u32 group_y = (height + pipeline->local_size[1] - 1) / pipeline->local_size[1];
 
                 gpu_commands->dispatch(group_x, group_y, 1);
 
@@ -1578,13 +1580,11 @@ namespace Helix {
                 mesh.index_offset = indices_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : indices_accessor.byte_offset;
                 mesh.primitive_count = indices_accessor.count;
 
-                mesh.pbr_material.flags |= DrawFlags_Phong;
-
                 i32 indicies_data_offset = glTF::get_data_offset(indices_accessor.byte_offset, indices_buffer_view.byte_offset);
                 u16* indices = (u16*)((u8*)buffers_data[indices_buffer_view.buffer] + indicies_data_offset);
 
 
-                //meshopt_optimizeVertexCache(indices, indices, indices_accessor.count, position_accessor.count);
+                meshopt_optimizeVertexCache(indices, indices, indices_accessor.count, position_accessor.count);
                 //meshopt_optimizeVertexFetch(vertices, indices, indices_accessor.count, vertices, position_accessor.count, sizeof(glm::vec3));
                 //if(normals)
                 //    meshopt_optimizeVertexFetch(normals, indices, indices_accessor.count, normals, position_accessor.count, sizeof(glm::vec3));

@@ -132,6 +132,14 @@ namespace Helix {
                 
             }
 
+            if (module.entry_points) {
+                if (module.entry_points->local_size.x) {
+                    parse_result->local_size[0] = module.entry_points->local_size.x;
+                    parse_result->local_size[1] = module.entry_points->local_size.y;
+                    parse_result->local_size[2] = module.entry_points->local_size.z;
+                }
+            }
+
             parse_result->set_count = max(parse_result->set_count, (u32)sets.size());
             return;
         }

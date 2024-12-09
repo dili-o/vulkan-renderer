@@ -901,6 +901,8 @@ namespace Helix {
         PipelineHandle                  handle;
         bool                            graphics_pipeline = true;
 
+        u32                             local_size[3];
+
         cstring                         name = nullptr;
 
     }; // struct PipelineVulkan

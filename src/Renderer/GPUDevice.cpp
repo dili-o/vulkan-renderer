@@ -1689,6 +1689,10 @@ namespace Helix {
             }
         }
 
+        pipeline->local_size[0] = shader_state_data->parse_result->local_size[0];
+        pipeline->local_size[1] = shader_state_data->parse_result->local_size[1];
+        pipeline->local_size[2] = shader_state_data->parse_result->local_size[2];
+
         VkPipelineLayoutCreateInfo pipeline_layout_info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
         pipeline_layout_info.pSetLayouts = vk_layouts;
         pipeline_layout_info.setLayoutCount = num_active_layouts;// +bindless_active;
