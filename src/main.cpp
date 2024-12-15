@@ -94,11 +94,7 @@ glm::vec4 normalize_plane(glm::vec4 plane) {
 int main(int argc, char** argv)
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-	if (argc < 2) {
-		printf("No default model was given, changing [path to glTF model]\n");
-		InjectDefault3DModel();
-	}
-
+	
 	using namespace Helix;
 	// Init services
 	LogService log{};
@@ -211,16 +207,6 @@ int main(int argc, char** argv)
 
 	Directory cwd{ };
 	directory_current(&cwd);
-
-	char gltf_base_path[512]{ };
-	memcpy(gltf_base_path, argv[1], strlen(argv[1]));
-	file_directory_from_path(gltf_base_path);
-
-	directory_change(gltf_base_path);
-
-	char gltf_file[512]{ };
-	memcpy(gltf_file, argv[1], strlen(argv[1]));
-	file_name_from_path(gltf_file);
 
     // TODO: Implement obj loading.
     glTFScene* scene = nullptr;
@@ -335,6 +321,8 @@ int main(int argc, char** argv)
                 }
                 ImGui::End();
 
+                //MemoryService::instance()->imgui_draw();
+
                 if (ImGui::Begin("GPU")) {
                     renderer.imgui_draw();
 
@@ -345,12 +333,10 @@ int main(int argc, char** argv)
 
                 scene->imgui_draw_hierarchy();
                 
-
                 renderer.imgui_resources_draw();
 
                 scene->imgui_draw_node_property(scene->current_node);
 
-                //MemoryService::instance()->imgui_draw();
             }
 
             {
@@ -478,6 +464,7 @@ int main(int argc, char** argv)
 
                     gpu.unmap_buffer(light_cb_map);
                 }
+                
                 scene->fill_gpu_data_buffers(model_scale);
             }
             scene->submit_draw_task(imgui, &gpu_profiler, &task_scheduler);
@@ -488,7 +475,7 @@ int main(int argc, char** argv)
             frame_count++;
             if (current_time - last_time >= 1.0) {
                 renderer.fps = (f64)frame_count / (current_time - last_time);
-
+            
                 // Reset for the next second
                 last_time = current_time;
                 frame_count = 0;

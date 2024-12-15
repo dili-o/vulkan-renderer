@@ -197,6 +197,7 @@ namespace Helix {
         vulkan_allocation_callbacks = nullptr;
 
         VkApplicationInfo application_info = { VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr, "Helix Graphics Device", 1, "Helix", 1, VK_MAKE_VERSION(1, 3, 0) };
+        application_info.apiVersion = VK_API_VERSION_1_3;
 
         VkInstanceCreateInfo create_info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, nullptr, 0, &application_info,
     #if defined(VULKAN_DEBUG_REPORT)
@@ -324,7 +325,6 @@ namespace Helix {
             VkExtensionProperties* extensions = (VkExtensionProperties*)halloca(sizeof(VkExtensionProperties) * device_extension_count, temp_allocator);
             vkEnumerateDeviceExtensionProperties(vulkan_physical_device, nullptr, &device_extension_count, extensions);
             for (size_t i = 0; i < device_extension_count; i++) {
-
                 if (!strcmp(extensions[i].extensionName, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)) {
                     gpu_device_features |= GpuDeviceFeature_DYNAMIC_RENDERING;
                     continue;
@@ -475,11 +475,18 @@ namespace Helix {
 
         // Enable all features: just pass the physical features 2 struct.
         VkPhysicalDeviceFeatures2 physical_features2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        physical_features2.features.multiDrawIndirect = VK_TRUE;
+        physical_features2.features.pipelineStatisticsQuery = VK_TRUE;
+        physical_features2.features.shaderInt16 = VK_TRUE;
+        physical_features2.features.shaderInt64 = VK_TRUE;
+
         VkPhysicalDeviceVulkan11Features vulkan_11_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+        vulkan_11_features.storageBuffer16BitAccess = VK_TRUE;
 
         void* current_pnext = &vulkan_11_features;
 
         VkPhysicalDeviceVulkan12Features vulkan_12_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        vulkan_12_features.drawIndirectCount = VK_TRUE;
         vulkan_12_features.pNext = current_pnext;
         current_pnext = &vulkan_12_features;
 

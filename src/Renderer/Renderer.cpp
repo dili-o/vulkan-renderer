@@ -137,7 +137,7 @@ namespace Helix {
         Material::k_type_hash = hash_calculate(Material::k_type);
 
 
-        resource_name_buffer.init(hkilo(30), creation.allocator);
+        resource_name_buffer.init(hmega(2), creation.allocator);
         //s_texture_loader.renderer = this;
         //s_buffer_loader.renderer = this;
         //s_sampler_loader.renderer = this;

@@ -562,7 +562,7 @@ namespace Helix {
 
         json gltf_data = json::parse(read_result.data);
 
-        result.allocator.init(hmega(2));
+        result.allocator.init(hmega(5));
         Allocator* allocator = &result.allocator;
 
         for (auto properties : gltf_data.items()) {

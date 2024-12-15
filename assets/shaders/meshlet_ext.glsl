@@ -120,7 +120,7 @@ void main()
 #if CULL
     vec4 world_center = model * vec4(meshlets[meshlet_index].center, 1);
     float scale = length( model[0] );
-    float radius = meshlets[meshlet_index].radius * scale;   // Artificially inflate bounding sphere.
+    float radius = meshlets[meshlet_index].radius * scale * 1.1;   // Artificially inflate bounding sphere.
     vec3 cone_axis = mat3( model ) * vec3(int(meshlets[meshlet_index].cone_axis[0]) / 127.0, int(meshlets[meshlet_index].cone_axis[1]) / 127.0, int(meshlets[meshlet_index].cone_axis[2]) / 127.0);
     float cone_cutoff = int(meshlets[meshlet_index].cone_cutoff) / 127.0;
 
@@ -165,7 +165,8 @@ void main()
             depth = max(depth, textureLod(global_textures[nonuniformEXT(depth_pyramid_texture_index)], vec2(aabb.z, 1.0f - aabb.y), level).r);
 
             vec3 dir = normalize(eye.xyz - world_center.xyz);
-            vec4 sceen_space_center_last = previous_view_projection * vec4(world_center.xyz + dir * radius, 1.0);
+            mat4 view_projection_m = freeze_occlusion_camera == 0 ? previous_view_projection : view_projection_debug;
+            vec4 sceen_space_center_last = view_projection_m * vec4(world_center.xyz + dir * radius, 1.0);
 
             float depth_sphere = sceen_space_center_last.z / sceen_space_center_last.w;
 
@@ -173,7 +174,7 @@ void main()
         }
     }
 
-    accept = accept && frustum_visible;
+    accept = accept && frustum_visible && occlusion_visible;
 
     uvec4 ballot = subgroupBallot(accept); // Gets all the invocations in the subgroup with a visible meshlet
 

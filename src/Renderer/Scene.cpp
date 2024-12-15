@@ -201,7 +201,7 @@ namespace Helix {
 
         // Reset debug draw counts
         cb_map.buffer = scene->debug_line_count_buffer;
-        f32* debug_line_count = (f32*)renderer->gpu->map_buffer(cb_map);
+        u32* debug_line_count = (u32*)renderer->gpu->map_buffer(cb_map);
         if (debug_line_count) {
 
             debug_line_count[0] = 0;
@@ -314,7 +314,7 @@ namespace Helix {
 
         // Reset debug draw counts
         cb_map.buffer = scene->debug_line_count_buffer;
-        f32* debug_line_count = (f32*)renderer->gpu->map_buffer(cb_map);
+        u32* debug_line_count = (u32*)renderer->gpu->map_buffer(cb_map);
         if (debug_line_count) {
 
             debug_line_count[0] = 0;
@@ -396,7 +396,7 @@ namespace Helix {
     //
     // DepthPrePass ///////////////////////////////////////////////////////
     void DepthPrePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-        glTFScene* scene = (glTFScene*)scene;
+        glTFScene* scene = (glTFScene*)scene_;
 
         Material* last_material = nullptr;
         for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
@@ -640,11 +640,10 @@ namespace Helix {
                 Pipeline* pipeline = gpu->access_pipeline(depth_pyramid_pipeline);
 
                 struct PushConst {
-                    glm::vec2 image_size;
-                    glm::vec2 padding;
+                    glm::vec2 src_image_size;
                 };
                 PushConst push_const;
-                push_const.image_size = glm::vec2(width, height);
+                push_const.src_image_size = glm::vec2(width, height);
 
                 vkCmdPushConstants(gpu_commands->vk_handle, pipeline->vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConst), &push_const);
 
@@ -982,6 +981,7 @@ namespace Helix {
             break;
         default:
             HCRITICAL("Invalid node type");
+            return "Invalid node type";
             break;
         }
     }
@@ -989,7 +989,7 @@ namespace Helix {
     //
     // DebugPass ////////////////////////////////////////////////////////
     void DebugPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-        glTFScene* scene = (glTFScene*)scene;
+        glTFScene* scene = (glTFScene*)scene_;
 
         gpu_commands->bind_pipeline(icon_debug_pipeline);
         gpu_commands->bind_descriptor_set(&icon_debug_descriptor_set, 1, nullptr, 0);
@@ -1123,7 +1123,7 @@ namespace Helix {
 
         //pbr_material = renderer->create_material(material_creation);
 
-        names.init(4024, main_allocator);
+        names.init(hmega(1), main_allocator);
 
         // Creating the light image
         stbi_set_flip_vertically_on_load(true);
@@ -1611,20 +1611,20 @@ namespace Helix {
                 sizet temp_marker = temp_allocator->get_marker();
 
                 Array<meshopt_Meshlet> local_meshlets;
-                local_meshlets.init(temp_allocator, max_meshlets, max_meshlets);
+                local_meshlets.init(temp_allocator, (u32)max_meshlets, (u32)max_meshlets);
 
                 Array<u32> meshlet_vertex_indices;
-                meshlet_vertex_indices.init(temp_allocator, max_meshlets * max_vertices, max_meshlets * max_vertices);
+                meshlet_vertex_indices.init(temp_allocator, (u32)max_meshlets * (u32)max_vertices, (u32)max_meshlets * (u32)max_vertices);
 
                 Array<u8> meshlet_triangles;
-                meshlet_triangles.init(temp_allocator, max_meshlets * max_triangles * 3, max_meshlets * max_triangles * 3);
+                meshlet_triangles.init(temp_allocator, (u32)max_meshlets * (u32)max_triangles * 3, (u32)max_meshlets * (u32)max_triangles * 3);
 
                 sizet meshlet_count = meshopt_buildMeshlets(local_meshlets.data, meshlet_vertex_indices.data, meshlet_triangles.data, indices,
                     indices_accessor.count, vertices, position_accessor.count, sizeof(glm::vec3),
                     max_vertices, max_triangles, cone_weight);
 
                 u32 meshlet_vertex_offset = meshlets_vertex_positions.size;
-                for (u32 v = 0; v < position_accessor.count; ++v) {
+                for (u32 v = 0; v < (u32)position_accessor.count; ++v) {
                     GPUMeshletVertexPosition meshlet_vertex_pos{ };
 
                     meshlet_vertex_pos.position[0] = vertices[v * 3 + 0];
@@ -1636,16 +1636,16 @@ namespace Helix {
                     GPUMeshletVertexData meshlet_vertex_data{ };
 
                     if (normals != nullptr) {
-                        meshlet_vertex_data.normal[0] = (normals[v * 3 + 0] + 1.0f) * 127.0f;
-                        meshlet_vertex_data.normal[1] = (normals[v * 3 + 1] + 1.0f) * 127.0f;
-                        meshlet_vertex_data.normal[2] = (normals[v * 3 + 2] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.normal[0] = (u8)((normals[v * 3 + 0] + 1.0f) * 127.0f);
+                        meshlet_vertex_data.normal[1] = (u8)((normals[v * 3 + 1] + 1.0f) * 127.0f);
+                        meshlet_vertex_data.normal[2] = (u8)((normals[v * 3 + 2] + 1.0f) * 127.0f);
                     }
 
                     if (tangents != nullptr) {
-                        meshlet_vertex_data.tangent[0] = (tangents[v * 3 + 0] + 1.0f) * 127.0f;
-                        meshlet_vertex_data.tangent[1] = (tangents[v * 3 + 1] + 1.0f) * 127.0f;
-                        meshlet_vertex_data.tangent[2] = (tangents[v * 3 + 2] + 1.0f) * 127.0f;
-                        meshlet_vertex_data.tangent[3] = (tangents[v * 3 + 3] + 1.0f) * 127.0f;
+                        meshlet_vertex_data.tangent[0] = (u8)((tangents[v * 3 + 0] + 1.0f) * 127.0f);
+                        meshlet_vertex_data.tangent[1] = (u8)((tangents[v * 3 + 1] + 1.0f) * 127.0f);
+                        meshlet_vertex_data.tangent[2] = (u8)((tangents[v * 3 + 2] + 1.0f) * 127.0f);
+                        meshlet_vertex_data.tangent[3] = (u8)((tangents[v * 3 + 3] + 1.0f) * 127.0f);
                     }
 
                     if(tex_coords != nullptr){
@@ -1658,7 +1658,7 @@ namespace Helix {
 
                 // Cache meshlet offset
                 mesh.meshlet_offset = meshlets.size;
-                mesh.meshlet_count = meshlet_count;
+                mesh.meshlet_count = (u32)meshlet_count;
 
                 // Nodes
                 // TODO Make this a primitive struct. Not a MeshNode
@@ -1906,7 +1906,7 @@ namespace Helix {
             buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, k_max_lines * sizeof(glm::vec4) * 2).set_name("debug_lines_buffer");
             debug_line_buffer = renderer->create_buffer(buffer_creation)->handle;
 
-            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(glm::vec4)).set_name("debug_line_count_buffer");
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(glm::ivec4)).set_name("debug_line_count_buffer");
             debug_line_count_buffer = renderer->create_buffer(buffer_creation)->handle;
 
             // Gather 3D and 2D gpu drawing commands
@@ -1949,6 +1949,8 @@ namespace Helix {
         //gbuffer_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
         mesh_cull_late_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
         //gbuffer_late_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
+
+        fill_gpu_data_buffers(1.0f);
     }
 
     void glTFScene::fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material) {
@@ -2008,10 +2010,10 @@ namespace Helix {
 
             gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu);
 
-            return texture_gpu.handle.index;
+            return (u16)texture_gpu.handle.index;
         }
         else {
-            return k_invalid_index;
+            return (u16)k_invalid_index;
         }
     }
 
@@ -2027,10 +2029,10 @@ namespace Helix {
 
             gpu.link_texture_sampler(texture_gpu.handle, sampler_gpu);
 
-            return texture_gpu.handle.index;
+            return (u16)texture_gpu.handle.index;
         }
         else {
-            return k_invalid_index;
+            return (u16)k_invalid_index;
         }
     }
 
@@ -2056,9 +2058,9 @@ namespace Helix {
                     renderer->gpu->unmap_buffer(material_buffer_map);
                 }
             }
-            for (u32 mesh_index = opaque_meshes.size; mesh_index < (opaque_meshes.size + transparent_meshes.size); ++mesh_index) {
-                copy_gpu_material_data(gpu_mesh_data[mesh_index], transparent_meshes[mesh_index - opaque_meshes.size]);
-            }
+            //for (u32 mesh_index = opaque_meshes.size; mesh_index < (opaque_meshes.size + transparent_meshes.size); ++mesh_index) {
+            //    copy_gpu_material_data(gpu_mesh_data[mesh_index], transparent_meshes[mesh_index - opaque_meshes.size]);
+            //}
             renderer->gpu->unmap_buffer(cb_map);
             renderer->gpu->unmap_buffer(mesh_instance_map);
         }

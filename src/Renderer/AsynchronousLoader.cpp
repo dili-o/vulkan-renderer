@@ -84,6 +84,7 @@ namespace Helix
             // Add update request.
             // This method is multithreaded_safe
             renderer->add_texture_to_update(texture_ready);
+            texture_ready = k_invalid_texture;
         }
 
         if (cpu_buffer_ready.index != k_invalid_buffer.index) {
@@ -97,7 +98,6 @@ namespace Helix
             completed = nullptr;
         }
 
-        texture_ready = k_invalid_texture;
 
         // Process upload requests
         if (upload_requests.size) {
@@ -181,6 +181,7 @@ namespace Helix
                 HASSERT(cpu_buffer_ready.index == k_invalid_index);
                 cpu_buffer_ready = request.cpu_buffer;
             }
+            staging_buffer_offset = 0;
         }
 
         // Process a file request
@@ -206,7 +207,6 @@ namespace Helix
             }
         }
 
-        staging_buffer_offset = 0;
     }
 
     void AsynchronousLoader::request_texture_data(cstring filename, TextureHandle texture) {

@@ -162,7 +162,8 @@ void main()
             depth = max(depth, textureLod(global_textures[nonuniformEXT(depth_pyramid_texture_index)], vec2(aabb.z, 1.0f - aabb.y), level).r);
 
             vec3 dir = normalize(eye.xyz - world_center.xyz);
-            vec4 sceen_space_center_last = previous_view_projection * vec4(world_center.xyz + dir * radius, 1.0);
+            mat4 view_projection_m = freeze_occlusion_camera == 0 ? view_projection : view_projection_debug;
+            vec4 sceen_space_center_last = view_projection_m * vec4(world_center.xyz + dir * radius, 1.0);
 
             float depth_sphere = sceen_space_center_last.z / sceen_space_center_last.w;
 
@@ -170,7 +171,7 @@ void main()
         }
     }
 
-    accept = accept && frustum_visible;
+    accept = accept && frustum_visible && occlusion_visible;
 
     uvec4 ballot = subgroupBallot(accept); // Gets all the invocations in the subgroup with a visible meshlet
 

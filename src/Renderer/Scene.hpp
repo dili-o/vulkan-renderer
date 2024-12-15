@@ -17,7 +17,7 @@
 #include <vendor/glm/glm/gtx/quaternion.hpp>
 
 namespace Helix {
-    static const u16    INVALID_TEXTURE_INDEX = ~0u;
+    static const u16    INVALID_TEXTURE_INDEX = 0xffff;
 
     static const u32    k_material_descriptor_set_index = 1;
     static const u32    k_max_depth_pyramid_levels = 16;

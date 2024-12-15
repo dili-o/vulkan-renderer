@@ -16,9 +16,9 @@ namespace Helix {
 
         void                        imgui_draw();
 
-        Allocator* allocator;
-        GPUTimestamp* timestamps;
-        u16* per_frame_active;
+        Allocator*                  allocator;
+        GPUTimestamp*               timestamps;
+        u16*                        per_frame_active;
 
         u32                         max_frames;
         u32                         current_frame;

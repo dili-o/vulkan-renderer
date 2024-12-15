@@ -63,9 +63,9 @@ namespace Helix {
         u32                             push(u32 current_frame, cstring name);    // Returns the timestamp query index.
         u32                             pop(u32 current_frame);
 
-        Allocator* allocator = nullptr;
-        GPUTimestamp* timestamps = nullptr;
-        u64* timestamps_data = nullptr;
+        Allocator*                      allocator = nullptr;
+        GPUTimestamp*                   timestamps = nullptr;
+        u64*                            timestamps_data = nullptr;
 
         u32                             queries_per_frame = 0;
         u32                             current_query = 0;
@@ -76,7 +76,7 @@ namespace Helix {
 
     }; // struct GPUTimestampManager
 
-    static const uint32_t           k_max_frames = 3;
+    static const uint32_t               k_max_frames = 3;
 
     //
     //
