@@ -776,10 +776,14 @@ namespace Helix {
             depth_pyramid_views[i] = gpu.create_texture_view(depth_pyramid_view_creation);
 
             if (i == 0) {
-                descriptor_set_creation.reset().texture(depth_texture->handle, 0).texture(depth_pyramid_views[i], 1).set_layout(depth_pyramid_layout);
+                descriptor_set_creation.reset()
+                    .texture_sampler(depth_texture->handle, depth_pyramid_sampler, 0)
+                    .texture_sampler(depth_pyramid_views[i], depth_pyramid_sampler, 1).set_layout(depth_pyramid_layout);
             }
             else {
-                descriptor_set_creation.reset().texture(depth_pyramid_views[i - 1], 0).texture(depth_pyramid_views[i], 1).set_layout(depth_pyramid_layout);
+                descriptor_set_creation.reset()
+                    .texture_sampler(depth_pyramid_views[i - 1], depth_pyramid_sampler, 0)
+                    .texture_sampler(depth_pyramid_views[i], depth_pyramid_sampler, 1).set_layout(depth_pyramid_layout);
             }
 
             depth_hierarchy_descriptor_set[i] = gpu.create_descriptor_set(descriptor_set_creation);
@@ -1949,8 +1953,6 @@ namespace Helix {
         //gbuffer_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
         mesh_cull_late_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
         //gbuffer_late_pass.depth_pyramid_texture_index = depth_pyramid_pass.depth_pyramid.index;
-
-        fill_gpu_data_buffers(1.0f);
     }
 
     void glTFScene::fill_pbr_material(Renderer& renderer, glTF::Material& material, PBRMaterial& pbr_material) {
