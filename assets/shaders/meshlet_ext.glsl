@@ -54,7 +54,7 @@ layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
 #endif // TASK MESH
 
 
-#if defined (TASK_DEPTH_PRE) || defined(TASK_GBUFFER_CULLING) || defined(TASK_TRANSPARENT_NO_CULL)
+#if defined (TASK)
 
 #define CULL 1
 
@@ -67,7 +67,7 @@ layout(set = MATERIAL_SET, binding = 1) readonly buffer Meshlets
 
 layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
 {
-    MeshDrawCommand draw_commands[];
+    MeshDrawCommand draw_early_commands[];
 };
 
 struct TaskData
@@ -106,14 +106,14 @@ bool project_sphere(vec3 C, float r, float znear, float P00, float P11, out vec4
 void main()
 {
     uint task_invo = gl_LocalInvocationID.x;
-    uint task_group = gl_WorkGroupID.x + draw_commands[gl_DrawIDARB].firstTask;
+    uint task_group = gl_WorkGroupID.x + draw_early_commands[gl_DrawIDARB].firstTask;
 
     uint meshlet_index = task_group * 32 + task_invo;
 
 #if defined(TASK_TRANSPARENT_NO_CULL)
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB + total_count].drawId;
+    uint mesh_instance_index = draw_early_commands[gl_DrawIDARB + total_count].drawId;
 #else
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
+    uint mesh_instance_index = draw_early_commands[gl_DrawIDARB].drawId;
 #endif
     mat4 model = mesh_instance_draws[mesh_instance_index].model;
 
@@ -198,7 +198,7 @@ void main()
 #endif // TASK
 
 
-#if defined(MESH_GBUFFER_CULLING) || defined(MESH_MESH) || defined(MESH_TRANSPARENT_NO_CULL)
+#if defined(MESH)
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
@@ -225,7 +225,7 @@ layout(set = MATERIAL_SET, binding = 5) readonly buffer VertexData
 
 layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
 {
-    MeshDrawCommand draw_commands[];
+    MeshDrawCommand draw_early_commands[];
 };
 
 struct TaskData
@@ -285,9 +285,9 @@ void main()
 #endif
 
 #if defined(MESH_TRANSPARENT_NO_CULL)
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB + total_count].drawId;
+    uint mesh_instance_index = draw_early_commands[gl_DrawIDARB + total_count].drawId;
 #else
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
+    uint mesh_instance_index = draw_early_commands[gl_DrawIDARB].drawId;
 #endif
 
     mat4 model = mesh_instance_draws[mesh_instance_index].model;
@@ -341,7 +341,7 @@ void main()
 #endif // MESH
 
 
-#if defined(FRAGMENT_GBUFFER_CULLING) || defined(FRAGMENT_MESH)
+#if defined(FRAGMENT_GBUFFER_CULLING)
 
 layout (location = 0) in vec2 vTexcoord0;
 layout (location = 1) in vec4 vNormal_BiTanX;

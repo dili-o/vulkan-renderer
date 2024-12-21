@@ -3,12 +3,35 @@
     "passes":
     [
         {
-            "name": "mesh_cull_pass",
+            "name": "mesh_cull_early_pass",
             "type": "compute",
             "outputs":
             [
                 {
                     "type": "buffer",
+                    "name": "mesh_indirect_draw_list"
+                }
+            ]
+        },
+        {
+            "inputs":
+            [
+                {
+                    "type": "texture",
+                    "external": true,
+                    "name": "depth_pyramid"
+                },
+                {
+                    "type": "buffer",
+                    "name": "mesh_indirect_draw_list"
+                }
+            ],
+            "name": "mesh_cull_late_pass",
+            "type": "compute",
+            "outputs":
+            [
+                {
+                    "type": "reference",
                     "name": "mesh_indirect_draw_list"
                 }
             ]

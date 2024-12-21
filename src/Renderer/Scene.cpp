@@ -168,8 +168,8 @@ namespace Helix {
     }
 
     //
-    // MeshCullingPass /////////////////////////////////////////////////////////
-    void MeshCullingPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+    // MeshEarlyCullingPass /////////////////////////////////////////////////////////
+    void MeshEarlyCullingPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
 
         if (!enabled)
             return;
@@ -214,7 +214,7 @@ namespace Helix {
 
         gpu_commands->bind_pipeline(frustum_cull_pipeline);
 
-        const Buffer* indirect_draw_commands_sb = renderer->gpu->access_buffer(scene->mesh_indirect_draw_command_buffers[buffer_frame_index]);
+        const Buffer* indirect_draw_commands_sb = renderer->gpu->access_buffer(scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index]);
         util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, indirect_draw_commands_sb->vk_handle,
             RESOURCE_STATE_INDIRECT_ARGUMENT, RESOURCE_STATE_UNORDERED_ACCESS, indirect_draw_commands_sb->size);
 
@@ -236,9 +236,9 @@ namespace Helix {
             RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, count_sb->size);
     }
 
-    void MeshCullingPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+    void MeshEarlyCullingPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
 
-        FrameGraphNode* node = frame_graph->get_node("mesh_cull_pass");
+        FrameGraphNode* node = frame_graph->get_node("mesh_cull_early_pass");
         if (node == nullptr) {
             enabled = false;
 
@@ -259,8 +259,8 @@ namespace Helix {
             for (u32 i = 0; i < k_max_frames; ++i) {
                 DescriptorSetCreation ds_creation{};
                 ds_creation
-                    .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_command_buffers[i], 1)
-                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_instances_buffer, 10)
+                    .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_early_command_buffers[i], 1)
+                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_indirect_draw_late_command_buffers[i], 3).buffer(scene.mesh_instances_buffer, 10)
                     .buffer(scene.mesh_draw_count_buffers[i], 11).buffer(scene.mesh_bounds_buffer, 12)
                     .buffer(scene.debug_line_buffer, 20).buffer(scene.debug_line_count_buffer, 21)
                     .buffer(scene.debug_line_indirect_command_buffer, 22).set_layout(layout);
@@ -270,7 +270,7 @@ namespace Helix {
         }
     }
 
-    void MeshCullingPass::free_gpu_resources() {
+    void MeshEarlyCullingPass::free_gpu_resources() {
         if (!renderer)
             return;
         GpuDevice& gpu = *renderer->gpu;
@@ -281,9 +281,8 @@ namespace Helix {
     }
 
     //
-    // MeshCullingLatePass /////////////////////////////////////////////////////////
-    void MeshCullingLatePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-        return;
+    // MeshLateCullingPass /////////////////////////////////////////////////////////
+    void MeshLateCullingPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
         if (!enabled)
             return;
 
@@ -291,23 +290,17 @@ namespace Helix {
 
         Renderer* renderer = scene->renderer;
 
-        // Frustum cull meshes
-        GPUMeshDrawCounts& mesh_draw_counts = scene->mesh_draw_counts;
-        mesh_draw_counts.opaque_mesh_visible_count = 0;
-        mesh_draw_counts.opaque_mesh_culled_count = 0;
-        mesh_draw_counts.transparent_mesh_visible_count = 0;
-        mesh_draw_counts.transparent_mesh_culled_count = 0;
 
-        mesh_draw_counts.total_count = scene->opaque_meshes.size + scene->transparent_meshes.size;
-        mesh_draw_counts.depth_pyramid_texture_index = depth_pyramid_texture_index;
-        mesh_draw_counts.late_flag = 1;
 
         u32 buffer_frame_index = renderer->gpu->current_frame;
         // Reset mesh draw counts
         MapBufferParameters cb_map{ scene->mesh_draw_count_buffers[buffer_frame_index], 0, 0 };
         GPUMeshDrawCounts* count_data = (GPUMeshDrawCounts*)renderer->gpu->map_buffer(cb_map);
         if (count_data) {
-            *count_data = mesh_draw_counts;
+            count_data->opaque_mesh_visible_count = 0;
+            count_data->late_flag = 1;
+
+            scene->mesh_draw_counts = *count_data;
 
             renderer->gpu->unmap_buffer(cb_map);
         }
@@ -327,7 +320,7 @@ namespace Helix {
 
         gpu_commands->bind_pipeline(frustum_cull_pipeline);
 
-        const Buffer* indirect_draw_commands_sb = renderer->gpu->access_buffer(scene->mesh_indirect_draw_command_buffers[buffer_frame_index]);
+        const Buffer* indirect_draw_commands_sb = renderer->gpu->access_buffer(scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index]);
         util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, indirect_draw_commands_sb->vk_handle,
             RESOURCE_STATE_INDIRECT_ARGUMENT, RESOURCE_STATE_UNORDERED_ACCESS, indirect_draw_commands_sb->size);
 
@@ -337,7 +330,7 @@ namespace Helix {
 
         gpu_commands->bind_descriptor_set(&frustum_cull_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-        u32 group_x = Helix::ceilu32(scene->mesh_draw_counts.total_count / 64.0f);
+        u32 group_x = Helix::ceilu32(scene->mesh_draw_counts.opaque_mesh_culled_count / 64.0f);
         gpu_commands->dispatch(group_x, 1, 1);
 
         util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, indirect_draw_commands_sb->vk_handle,
@@ -347,7 +340,7 @@ namespace Helix {
             RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, count_sb->size);
     }
 
-    void MeshCullingLatePass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+    void MeshLateCullingPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
 
         FrameGraphNode* node = frame_graph->get_node("mesh_cull_late_pass");
         if (node == nullptr) {
@@ -355,7 +348,7 @@ namespace Helix {
 
             return;
         }
-        node->enabled = false;
+        //node->enabled = false;
 
         enabled = node->enabled;
 
@@ -372,8 +365,8 @@ namespace Helix {
             for (u32 i = 0; i < k_max_frames; ++i) {
                 DescriptorSetCreation ds_creation{};
                 ds_creation
-                    .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_command_buffers[i], 1)
-                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_instances_buffer, 10)
+                    .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_early_command_buffers[i], 1)
+                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_indirect_draw_late_command_buffers[i], 3).buffer(scene.mesh_instances_buffer, 10)
                     .buffer(scene.mesh_draw_count_buffers[i], 11).buffer(scene.mesh_bounds_buffer, 12)
                     .buffer(scene.debug_line_buffer, 20).buffer(scene.debug_line_count_buffer, 21)
                     .buffer(scene.debug_line_indirect_command_buffer, 22).set_layout(layout);
@@ -383,7 +376,7 @@ namespace Helix {
         }
     }
 
-    void MeshCullingLatePass::free_gpu_resources() {
+    void MeshLateCullingPass::free_gpu_resources() {
         if (!renderer)
             return;
         GpuDevice& gpu = *renderer->gpu;
@@ -449,8 +442,8 @@ namespace Helix {
 
 
     //
-    // GBufferPass ////////////////////////////////////////////////////////
-    void GBufferPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+    // GBufferEarlyPass ////////////////////////////////////////////////////////
+    void GBufferEarlyPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
         if (!enabled)
             return;
 
@@ -475,18 +468,18 @@ namespace Helix {
         u32 buffer_frame_index = renderer->gpu->current_frame;
         gpu_commands->bind_descriptor_set(&scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], 0, scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
+        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], 0, scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
         
     }
 
-    void GBufferPass::init() {
+    void GBufferEarlyPass::init() {
         renderer = nullptr;
         double_sided_mesh_count = 0;
         mesh_count = 0;
         meshes = nullptr;
     }
 
-    void GBufferPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
+    void GBufferEarlyPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
         renderer = scene.renderer;
 
         enabled = true;
@@ -510,7 +503,7 @@ namespace Helix {
         }
     }
 
-    void GBufferPass::free_gpu_resources() {
+    void GBufferEarlyPass::free_gpu_resources() {
         //mesh_instances.shutdown();
     }
 
@@ -542,7 +535,7 @@ namespace Helix {
         u32 buffer_frame_index = renderer->gpu->current_frame;
         gpu_commands->bind_descriptor_set(&scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], 0, scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
+        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], 0, scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
 
     }
 
@@ -617,9 +610,6 @@ namespace Helix {
 
             u32 width = depth_pyramid_texture->width;
             u32 height = depth_pyramid_texture->height;
-
-            //u32 width = previous_pow2(depth_pyramid_texture->width);
-            //u32 height = previous_pow2(depth_pyramid_texture->height);
 
             FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
             TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
@@ -732,13 +722,13 @@ namespace Helix {
 
     void DepthPyramidPass::create_depth_pyramid_resource(Texture* depth_texture) {
 
-        u32 depth_pyramid_width = depth_texture->width / 2;
-        u32 depth_pyramid_height = depth_texture->height / 2;
+        //u32 depth_pyramid_width = depth_texture->width / 2;
+        //u32 depth_pyramid_height = depth_texture->height / 2;
         // Note previous_pow2 makes sure all reductions are at most 2x2 which makes sure they are conservative
-        //u32 depth_pyramid_width = previous_pow2(depth_texture->width);
-        //u32 depth_pyramid_height = previous_pow2(depth_texture->height);
-        //depth_pyramid_width /= 2; 
-        //depth_pyramid_height /= 2;
+        u32 depth_pyramid_width = previous_pow2(depth_texture->width);
+        u32 depth_pyramid_height = previous_pow2(depth_texture->height);
+        depth_pyramid_width /= 2; 
+        depth_pyramid_height /= 2;
 
         GpuDevice& gpu = *renderer->gpu;
 
@@ -1068,7 +1058,6 @@ namespace Helix {
         Framebuffer* fullscreen_fb = gpu->access_framebuffer(gpu->fullscreen_framebuffer);
         Texture* fullscreen_texture = gpu->access_texture(fullscreen_fb->color_attachments[0]);
 
-        //util_add_image_barrier(gpu, gpu_commands->vk_handle, final_texture->vk_image, RESOURCE_STATE_RENDER_TARGET, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
         //util_add_image_barrier(gpu, gpu_commands->vk_handle, fullscreen_texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
 
         gpu_commands->bind_pass(gpu->fullscreen_render_pass, gpu->fullscreen_framebuffer, false);
@@ -1083,9 +1072,13 @@ namespace Helix {
         gpu_commands->bind_descriptor_set(&scene->fullscreen_ds, 1, nullptr, 0);
         gpu_commands->draw(TopologyType::Triangle, 0, 3, scene->fullscreen_texture_index, 1);
 
-        imgui->render(*gpu_commands, false);
+        gpu_commands->end_current_render_pass();
 
         gpu_commands->pop_marker();
+
+        imgui->render(*gpu_commands, false);
+        gpu_commands->end_current_render_pass();
+
         gpu_commands->pop_marker();
 
         gpu_profiler->update(*gpu);
@@ -1802,7 +1795,7 @@ namespace Helix {
 
         //depth_pre_pass.free_gpu_resources();
         mesh_cull_pass.free_gpu_resources();
-        //mesh_cull_late_pass.free_gpu_resources();
+        mesh_cull_late_pass.free_gpu_resources();
         gbuffer_pass.free_gpu_resources();
         //gbuffer_late_pass.free_gpu_resources();
         light_pass.free_gpu_resources();
@@ -1849,8 +1842,8 @@ namespace Helix {
         frame_graph = frame_graph_;
 
         //frame_graph->builder->register_render_pass("depth_pre_pass", &depth_pre_pass);
-        frame_graph->builder->register_render_pass("mesh_cull_pass", &mesh_cull_pass);
-        //frame_graph->builder->register_render_pass("mesh_cull_late_pass", &mesh_cull_late_pass);
+        frame_graph->builder->register_render_pass("mesh_cull_early_pass", &mesh_cull_pass);
+        frame_graph->builder->register_render_pass("mesh_cull_late_pass", &mesh_cull_late_pass);
         frame_graph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
         //frame_graph->builder->register_render_pass("gbuffer_late_pass", &gbuffer_late_pass);
         frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
@@ -1893,9 +1886,13 @@ namespace Helix {
 
         // Create indirect buffers, dynamic so need multiple buffering.
         for (u32 i = 0; i < k_max_frames; ++i) {
-            char* name = renderer->resource_name_buffer.append_use_f("mesh_indirect_draw_command_buffer_%d", i);
+            char* name = renderer->resource_name_buffer.append_use_f("mesh_indirect_draw_early_command_buffer_%d", i);
             buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, total_meshes * sizeof(GPUMeshDrawCommand)).set_name(name).set_device_only(true);
-            mesh_indirect_draw_command_buffers[i] = renderer->create_buffer(buffer_creation)->handle;
+            mesh_indirect_draw_early_command_buffers[i] = renderer->create_buffer(buffer_creation)->handle;
+
+            name = renderer->resource_name_buffer.append_use_f("mesh_indirect_draw_late_command_buffer_%d", i);
+            buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, total_meshes * sizeof(GPUMeshDrawCommand)).set_name(name).set_device_only(true);
+            mesh_indirect_draw_late_command_buffers[i] = renderer->create_buffer(buffer_creation)->handle;
 
             name = renderer->resource_name_buffer.append_use_f("mesh_draw_count_buffer_%d", i);
             buffer_creation.reset().set(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshDrawCounts)).set_name(name);
@@ -1932,7 +1929,7 @@ namespace Helix {
                 DescriptorSetCreation ds_creation{};
                 ds_creation.buffer(scene_constant_buffer, 0).buffer(meshlets_buffer, 1).buffer(material_data_buffer, 2)
                     .buffer(meshlet_vertex_and_index_indices_buffer, 3).buffer(meshlets_vertex_pos_buffer, 4).buffer(meshlets_vertex_data_buffer, 5)
-                    .buffer(mesh_indirect_draw_command_buffers[i], 6).buffer(mesh_draw_count_buffers[i], 7).buffer(mesh_instances_buffer, 10)
+                    .buffer(mesh_indirect_draw_early_command_buffers[i], 6).buffer(mesh_draw_count_buffers[i], 7).buffer(mesh_instances_buffer, 10)
                     .buffer(mesh_bounds_buffer, 12).buffer(debug_line_buffer, 20).buffer(debug_line_count_buffer, 21).buffer(debug_line_indirect_command_buffer, 22).set_layout(layout);
 
                 mesh_shader_descriptor_set[i] = renderer->gpu->create_descriptor_set(ds_creation);

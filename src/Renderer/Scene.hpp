@@ -398,7 +398,8 @@ namespace Helix {
 
         // Indirect data
         BufferHandle            mesh_draw_count_buffers[k_max_frames];
-        BufferHandle            mesh_indirect_draw_command_buffers[k_max_frames];
+        BufferHandle            mesh_indirect_draw_early_command_buffers[k_max_frames];
+        BufferHandle            mesh_indirect_draw_late_command_buffers[k_max_frames];
 
         // Gpu debug draw
         BufferHandle            debug_line_buffer = k_invalid_buffer;
@@ -416,7 +417,7 @@ namespace Helix {
 
     //
     //
-    struct MeshCullingPass : public FrameGraphRenderPass {
+    struct MeshEarlyCullingPass : public FrameGraphRenderPass {
         void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
 
         void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
@@ -429,24 +430,24 @@ namespace Helix {
         SamplerHandle           depth_pyramid_sampler;
         u32                     depth_pyramid_texture_index;
 
-    }; // struct MeshCullingPass
+    }; // struct MeshEarlyCullingPass
 
     //
     //
-    struct MeshCullingLatePass : public FrameGraphRenderPass {
+    struct MeshLateCullingPass : public FrameGraphRenderPass {
         void                    render(CommandBuffer* gpu_commands, Scene* scene) override;
 
         void                    prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator);
         void                    free_gpu_resources();
 
-        Renderer* renderer;
+        Renderer*               renderer = nullptr;
 
         PipelineHandle          frustum_cull_pipeline;
         DescriptorSetHandle     frustum_cull_descriptor_set[k_max_frames];
         SamplerHandle           depth_pyramid_sampler;
         u32                     depth_pyramid_texture_index;
 
-    }; // struct MeshCullingLatePass
+    }; // struct MeshLateCullingPass
 
     //
     //
@@ -465,7 +466,7 @@ namespace Helix {
 
     //
     //
-    struct GBufferPass : public FrameGraphRenderPass {
+    struct GBufferEarlyPass : public FrameGraphRenderPass {
         void                render(CommandBuffer* gpu_commands, Scene* scene) override;
 
         void                init();
@@ -477,7 +478,7 @@ namespace Helix {
         Mesh*               meshes;
         Renderer*           renderer;
         u32                 meshlet_program_index;
-    }; // struct GBufferPass
+    }; // struct GBufferEarlyPass
 
     //
     //
@@ -616,15 +617,15 @@ namespace Helix {
 
         NodePool                node_pool;
 
-        //DepthPrePass            depth_pre_pass;
-        MeshCullingPass         mesh_cull_pass;
-        MeshCullingLatePass         mesh_cull_late_pass;
-        GBufferPass             gbuffer_pass;
-        GBufferLatePass             gbuffer_late_pass;
+        //DepthPrePass          depth_pre_pass;
+        MeshEarlyCullingPass    mesh_cull_pass;
+        MeshLateCullingPass     mesh_cull_late_pass;
+        GBufferEarlyPass        gbuffer_pass;
+        GBufferLatePass         gbuffer_late_pass;
         DepthPyramidPass        depth_pyramid_pass;
         LightPass               light_pass;
         TransparentPass         transparent_pass;
-        //DebugPass          light_debug_pass;
+        //DebugPass             light_debug_pass;
 
         // Fullscreen data
         Program*                fullscreen_program = nullptr;

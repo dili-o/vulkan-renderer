@@ -100,8 +100,8 @@ namespace Helix {
     };
 
     struct FrameGraphNodeCreation {
-        Array<FrameGraphResourceCreation>   inputs;
-        Array<FrameGraphResourceCreation>   outputs;
+        Array<FrameGraphResourceCreation>   input_creations;
+        Array<FrameGraphResourceCreation>   output_creations;
 
         bool                                enabled;
 
