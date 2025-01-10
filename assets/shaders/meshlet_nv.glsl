@@ -131,14 +131,13 @@ void main()
         accept = !coneCull(world_center.xyz, radius, cone_axis, cone_cutoff, eye_debug.xyz);
         view_center = world_to_camera_debug * world_center;
     }
-
     bool frustum_visible = true;
     for ( uint i = 0; i < 6; ++i ) {
         frustum_visible = frustum_visible && (dot( frustum_planes[i], view_center) > -radius);
     }
 
     //frustum_visible = frustum_visible || (frustum_cull_meshlets == 0);
-      bool occlusion_visible = true;
+    bool occlusion_visible = true;
     if ( frustum_visible ) {
         vec4 aabb;
         if ( project_sphere(view_center.xyz, radius, z_near, projection_00, projection_11, aabb ) ) {
@@ -161,7 +160,7 @@ void main()
             depth = max(depth, textureLod(global_textures[nonuniformEXT(depth_pyramid_texture_index)], vec2(aabb.x, 1.0f - aabb.w), level).r);
             depth = max(depth, textureLod(global_textures[nonuniformEXT(depth_pyramid_texture_index)], vec2(aabb.z, 1.0f - aabb.y), level).r);
 
-            vec3 dir = normalize(eye.xyz - world_center.xyz);
+            vec3 dir = freeze_occlusion_camera == 0 ? normalize(eye.xyz - world_center.xyz) : normalize(eye_debug.xyz - world_center.xyz);
             mat4 view_projection_m = freeze_occlusion_camera == 0 ? view_projection : view_projection_debug;
             vec4 sceen_space_center_last = view_projection_m * vec4(world_center.xyz + dir * radius, 1.0);
 

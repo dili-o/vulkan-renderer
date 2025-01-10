@@ -90,6 +90,7 @@
                 }
             ]
         },
+        
         {
             "inputs":
             [
@@ -106,6 +107,59 @@
                     "type": "texture",
                     "external": true,
                     "name": "depth_pyramid"
+                }
+            ]
+        },
+        {
+            "inputs":
+            [
+                {
+                    "type": "buffer",
+                    "name": "mesh_indirect_draw_list"
+                },
+                {
+                    "type": "attachment",
+                    "name": "gbuffer_colour"
+                },
+                {
+                    "type": "attachment",
+                    "name": "gbuffer_normals"
+                },
+                {
+                    "type": "attachment",
+                    "name": "gbuffer_occlusion_roughness_metalness"
+                },
+                {
+                    "type": "attachment",
+                    "name": "gbuffer_emissive"
+                },
+                {
+                    "type": "attachment",
+                    "name": "depth"
+                }
+            ],
+            "name": "gbuffer_late_pass",
+            "outputs":
+            [
+                {
+                    "type": "reference",
+                    "name": "gbuffer_colour"
+                },
+                {
+                    "type": "reference",
+                    "name": "gbuffer_normals"
+                },
+                {
+                    "type": "reference",
+                    "name": "gbuffer_occlusion_roughness_metalness"
+                },
+                {
+                    "type": "reference",
+                    "name": "gbuffer_emissive"
+                },
+                {
+                    "type": "reference",
+                    "name": "depth"
                 }
             ]
         },

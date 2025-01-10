@@ -408,7 +408,7 @@ namespace Helix {
                             }
                         }
 
-                        commands.draw_indexed(Helix::TopologyType::Triangle, pcmd->ElemCount, 1, index_buffer_offset + pcmd->IdxOffset, vtx_buffer_offset + pcmd->VtxOffset, new_texture.index);
+                        commands.draw_indexed(pcmd->ElemCount, 1, index_buffer_offset + pcmd->IdxOffset, vtx_buffer_offset + pcmd->VtxOffset, new_texture.index);
                     }
                 }
 

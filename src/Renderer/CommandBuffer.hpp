@@ -35,8 +35,8 @@ namespace Helix {
         void                            clear(f32 red, f32 green, f32 blue, f32 alpha);
         void                            clear_depth_stencil(f32 depth, u8 stencil);
 
-        void                            draw(TopologyType::Enum topology, u32 first_vertex, u32 vertex_count, u32 first_instance, u32 instance_count);
-        void                            draw_indexed(TopologyType::Enum topology, u32 index_count, u32 instance_count, u32 first_index, i32 vertex_offset, u32 first_instance);
+        void                            draw(u32 vertex_count, u32 instance_count, u32 first_vertex, u32 first_instance);
+        void                            draw_indexed(u32 index_count, u32 instance_count, u32 first_index, i32 vertex_offset, u32 first_instance);
         void                            draw_indirect(BufferHandle handle, u32 offset, u32 stride);
         void                            draw_indexed_indirect(BufferHandle handle, u32 offset, u32 stride);
 

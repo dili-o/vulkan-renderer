@@ -3,7 +3,7 @@
 	"pipelines" : [
 		{
 			"name" : "gpu_culling",
-			"render_pass" : "mesh_cull_pass",
+			"render_pass" : "mesh_cull_early_pass",
 			"shaders" : [
 				{
 					"stage" : "compute",
@@ -11,7 +11,18 @@
 					"includes" : [ "platform.h", "scene.h", "mesh.h", "debug_rendering.h" ]
 				}
 			]
-		}, 
+		},
+		{
+			"name" : "gpu_culling_late",
+			"render_pass" : "mesh_cull_late_pass",
+			"shaders" : [
+				{
+					"stage" : "compute",
+					"shader" : "culling_late.glsl",
+					"includes" : [ "platform.h", "scene.h", "mesh.h", "debug_rendering.h" ]
+				}
+			]
+		},
 		{
 			"name" : "depth_pyramid",
 			"render_pass" : "depth_pre_pass",

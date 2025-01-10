@@ -161,7 +161,7 @@ namespace Helix {
 
         // NOTE(marco): first create the outputs, then we can patch the input resources
         // with the right handles
-        for (sizet i = 0; i < node->outputs.size; ++i) {
+        for (u32 i = 0; i < node->outputs.size; ++i) {
             FrameGraphResource* output_resource = frame_graph->access_resource(node->outputs[i]);
 
             FrameGraphResourceInfo& info = output_resource->resource_info;
@@ -178,7 +178,7 @@ namespace Helix {
             }
         }
 
-        for (sizet i = 0; i < node->inputs.size; ++i) {
+        for (u32 i = 0; i < node->inputs.size; ++i) {
             FrameGraphResource* input_resource = frame_graph->access_resource(node->inputs[i]);
 
             FrameGraphResourceInfo& info = input_resource->resource_info;
@@ -370,7 +370,7 @@ namespace Helix {
 
         // NOTE(marco): first create the outputs, then we can patch the input resources
         // with the right handles
-        for (sizet i = 0; i < creation.output_creations.size; ++i) {
+        for (u32 i = 0; i < creation.output_creations.size; ++i) {
             const FrameGraphResourceCreation& output_creation = creation.output_creations[i];
 
             FrameGraphResourceHandle output = create_node_output(output_creation, node_handle);
@@ -378,7 +378,7 @@ namespace Helix {
             node->outputs.push(output);
         }
 
-        for (sizet i = 0; i < creation.input_creations.size; ++i) {
+        for (u32 i = 0; i < creation.input_creations.size; ++i) {
             const FrameGraphResourceCreation& input_creation = creation.input_creations[i];
 
             FrameGraphResourceHandle input_handle = create_node_input(input_creation);
@@ -455,6 +455,8 @@ namespace Helix {
     }
 
     void FrameGraph::parse(cstring file_path, StackAllocator* temp_allocator) {
+        // TODO: Check for external resources
+
         using json = nlohmann::json;
 
         if (!file_exists(file_path)) {
@@ -482,8 +484,8 @@ namespace Helix {
             json pass_outputs = pass["outputs"];
 
             FrameGraphNodeCreation node_creation{ };
-            node_creation.input_creations.init(temp_allocator, pass_inputs.size());
-            node_creation.output_creations.init(temp_allocator, pass_outputs.size());
+            node_creation.input_creations.init(temp_allocator, (u32)pass_inputs.size());
+            node_creation.output_creations.init(temp_allocator, (u32)pass_outputs.size());
 
             node_creation.compute = pass.value("type", "").compare("compute") == 0;
 
@@ -620,7 +622,6 @@ namespace Helix {
         // TODO(marco)
         // - check that input has been produced by a different node
         // - cull inactive nodes
-        // - check for external resources
 
         for (u32 i = 0; i < nodes.size; ++i) {
             FrameGraphNode* node = builder->access_node(nodes[i]);
@@ -719,19 +720,19 @@ namespace Helix {
         // NOTE(marco): allocations and deallocations are used for verification purposes only
         sizet resource_count = builder->resource_cache.resources.used_indices;
         Array<FrameGraphNodeHandle> allocations;
-        allocations.init(&linear_allocator, resource_count, resource_count);
+        allocations.init(&linear_allocator, (u32)resource_count, (u32)resource_count);
         for (u32 i = 0; i < resource_count; ++i) {
             allocations[i].index = k_invalid_index;
         }
 
         Array<FrameGraphNodeHandle> deallocations;
-        deallocations.init(&linear_allocator, resource_count, resource_count);
+        deallocations.init(&linear_allocator, (u32)resource_count, (u32)resource_count);
         for (u32 i = 0; i < resource_count; ++i) {
             deallocations[i].index = k_invalid_index;
         }
 
         Array<TextureHandle> free_list;
-        free_list.init(&linear_allocator, resource_count);
+        free_list.init(&linear_allocator, (u32)resource_count);
 
         size_t peak_memory = 0;
         size_t instant_memory = 0;
@@ -769,8 +770,8 @@ namespace Helix {
 
                         // Resolve texture size if needed
                         if (info.texture.width == 0 || info.texture.height == 0) {
-                            info.texture.width = builder->device->swapchain_width * info.texture.scale_width;
-                            info.texture.height = builder->device->swapchain_height * info.texture.scale_height;
+                            info.texture.width = (u32)(builder->device->swapchain_width * info.texture.scale_width);
+                            info.texture.height = (u32)(builder->device->swapchain_height * info.texture.scale_height);
                         }
 
                         TextureFlags::Mask texture_creation_flags = info.texture.compute ? (TextureFlags::Mask)(TextureFlags::RenderTarget_mask | TextureFlags::Compute_mask) : TextureFlags::RenderTarget_mask;

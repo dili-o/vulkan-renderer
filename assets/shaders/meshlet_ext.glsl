@@ -164,7 +164,7 @@ void main()
             depth = max(depth, textureLod(global_textures[nonuniformEXT(depth_pyramid_texture_index)], vec2(aabb.x, 1.0f - aabb.w), level).r);
             depth = max(depth, textureLod(global_textures[nonuniformEXT(depth_pyramid_texture_index)], vec2(aabb.z, 1.0f - aabb.y), level).r);
 
-            vec3 dir = normalize(eye.xyz - world_center.xyz);
+            vec3 dir = freeze_occlusion_camera == 0 ? normalize(eye.xyz - world_center.xyz) : normalize(eye_debug.xyz - world_center.xyz);
             mat4 view_projection_m = freeze_occlusion_camera == 0 ? previous_view_projection : view_projection_debug;
             vec4 sceen_space_center_last = view_projection_m * vec4(world_center.xyz + dir * radius, 1.0);
 
@@ -192,9 +192,8 @@ void main()
 
     if (task_invo == 0)
         EmitMeshTasksEXT(32, 1, 1);
-#endif
+#endif // CULL
 }
-
 #endif // TASK
 
 

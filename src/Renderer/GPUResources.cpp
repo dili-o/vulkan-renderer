@@ -332,7 +332,7 @@ namespace Helix {
     void DescriptorSetCreation::sort_bindings_by_index() {
         std::vector<u16> indices(num_resources);
 
-        for (int i = 0; i < num_resources; ++i) {
+        for (u32 i = 0; i < num_resources; ++i) {
             indices[i] = i;
         }
 

@@ -484,11 +484,11 @@ namespace Helix {
         clears[1].depthStencil.stencil = value;
     }
 
-    void CommandBuffer::draw(TopologyType::Enum topology, u32 first_vertex, u32 vertex_count, u32 first_instance, u32 instance_count) {
+    void CommandBuffer::draw(u32 vertex_count, u32 instance_count, u32 first_vertex, u32 first_instance) {
         vkCmdDraw(vk_handle, vertex_count, instance_count, first_vertex, first_instance);
     }
 
-    void CommandBuffer::draw_indexed(TopologyType::Enum topology, u32 index_count, u32 instance_count, u32 first_index, i32 vertex_offset, u32 first_instance) {
+    void CommandBuffer::draw_indexed(u32 index_count, u32 instance_count, u32 first_index, i32 vertex_offset, u32 first_instance) {
         vkCmdDrawIndexed(vk_handle, index_count, instance_count, first_index, vertex_offset, first_instance);
     }
 

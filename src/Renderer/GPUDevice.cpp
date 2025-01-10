@@ -56,9 +56,10 @@ namespace Helix {
 
     // Methods //////////////////////////////////////////////////////////////////////
 
-    // Enable this to add debugging capabilities.
-    // https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_EXT_debug_utils.html
+#ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
+#endif // _DEBUG
+
 
 //#define VULKAN_SYNCHRONIZATION_VALIDATION
 
@@ -1469,7 +1470,7 @@ namespace Helix {
         char* final_spirv_filename = temp_string_buffer.append_use("shader_final.spv");
         // TODO: add optional debug information in shaders (option -g).
 #if NVIDIA
-        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -g -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #else
         char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #endif // NVIDIA
@@ -2814,8 +2815,6 @@ namespace Helix {
         swapchain_width = (u16)swapchain_extent.width;
         swapchain_height = (u16)swapchain_extent.height;
 
-        //vulkan_swapchain_image_count = surface_capabilities.minImageCount + 2;
-
         VkSwapchainCreateInfoKHR swapchain_create_info = {};
         swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         swapchain_create_info.surface = vulkan_window_surface;
@@ -2859,13 +2858,14 @@ namespace Helix {
 
 
         for (u32 iv = 0; iv < vulkan_swapchain_image_count; iv++) {
+            cstring name = string_buffer.append_use_f("DepthImaage_Texture%d", iv);
             TextureCreation depth_texture_creation;
             depth_texture_creation
                 .set_data(nullptr)
                 .set_size(swapchain_width, swapchain_height, 1)
                 .set_flags(1, 0)
                 .set_format_type(VK_FORMAT_D32_SFLOAT, TextureType::Texture2D)
-                .set_name("DepthImage_Texture");
+                .set_name(name);
             FramebufferCreation creation;
             creation
                 .reset()
