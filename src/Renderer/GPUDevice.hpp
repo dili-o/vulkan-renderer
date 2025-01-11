@@ -19,7 +19,7 @@
 #include "Core/Service.hpp"
 #include "Core/Array.hpp"
 
-#define NVIDIA 0
+#define NVIDIA 1
 
 namespace Helix {
 
@@ -366,12 +366,6 @@ namespace Helix {
         u32                             vulkan_image_index;
 
         VmaAllocator                    vma_allocator;
-
-        // Extension functions
-        PFN_vkCmdBeginRenderingKHR      cmd_begin_rendering;
-        PFN_vkCmdEndRenderingKHR        cmd_end_rendering;
-        PFN_vkQueueSubmit2KHR           queue_submit2;
-        PFN_vkCmdPipelineBarrier2KHR    cmd_pipeline_barrier2;
 
 #if NVIDIA
         // Mesh shaders functions

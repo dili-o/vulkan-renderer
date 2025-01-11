@@ -231,7 +231,7 @@ namespace Helix {
         void                            add_vector_1d(InputHandle action, DevicePart device_pos, uint16_t button_pos, DevicePart device_neg, uint16_t button_neg, bool repeat = true);
         void                            add_vector_2d(InputHandle action, DevicePart device_up, uint16_t button_up, DevicePart device_down, uint16_t button_down, DevicePart device_left, uint16_t button_left, DevicePart device_right, uint16_t button_right, bool repeat = true);
 
-        Helix::StringBuffer            string_buffer;
+        Helix::StringBuffer             string_buffer;
 
         Array<InputActionMap>           action_maps;
         Array<InputAction>              actions;

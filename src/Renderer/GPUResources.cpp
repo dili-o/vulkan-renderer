@@ -559,7 +559,7 @@ namespace Helix {
         QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type) {
 
         if (gpu->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            VkImageMemoryBarrier2KHR barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR };
+            VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
             barrier.srcAccessMask = util_to_vk_access_flags2(old_state);
             barrier.srcStageMask = util_determine_pipeline_stage_flags2(barrier.srcAccessMask, source_queue_type);
             barrier.dstAccessMask = util_to_vk_access_flags2(new_state);
@@ -575,11 +575,11 @@ namespace Helix {
             barrier.subresourceRange.baseMipLevel = base_mip_level;
             barrier.subresourceRange.levelCount = mip_count;
 
-            VkDependencyInfoKHR dependency_info{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+            VkDependencyInfo dependency_info{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
             dependency_info.imageMemoryBarrierCount = 1;
             dependency_info.pImageMemoryBarriers = &barrier;
 
-            gpu->cmd_pipeline_barrier2(command_buffer, &dependency_info);
+            vkCmdPipelineBarrier2(command_buffer, &dependency_info);
         } else{
             VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
             barrier.image = image;
@@ -615,7 +615,7 @@ namespace Helix {
         QueueType::Enum source_queue_type, QueueType::Enum destination_queue_type) {
 
         if (gpu->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            VkBufferMemoryBarrier2KHR barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR };
+            VkBufferMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
             barrier.srcAccessMask = util_to_vk_access_flags2(old_state);
             barrier.srcStageMask = util_determine_pipeline_stage_flags2(barrier.srcAccessMask, source_queue_type);
             barrier.dstAccessMask = util_to_vk_access_flags2(new_state);
@@ -624,11 +624,11 @@ namespace Helix {
             barrier.offset = 0;
             barrier.size = buffer_size;
 
-            VkDependencyInfoKHR dependency_info{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+            VkDependencyInfo dependency_info{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
             dependency_info.bufferMemoryBarrierCount = 1;
             dependency_info.pBufferMemoryBarriers = &barrier;
 
-            gpu->cmd_pipeline_barrier2(command_buffer, &dependency_info);
+            vkCmdPipelineBarrier2(command_buffer, &dependency_info);
         } else{
             VkBufferMemoryBarrier barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
             barrier.buffer = buffer;
@@ -1396,34 +1396,34 @@ namespace Helix {
     VkAccessFlags util_to_vk_access_flags2(ResourceState state) {
         VkAccessFlags ret = 0;
         if (state & RESOURCE_STATE_COPY_SOURCE) {
-            ret |= VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_TRANSFER_READ_BIT;
         }
         if (state & RESOURCE_STATE_COPY_DEST) {
-            ret |= VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+            ret |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
         }
         if (state & RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER) {
-            ret |= VK_ACCESS_2_UNIFORM_READ_BIT_KHR | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
         }
         if (state & RESOURCE_STATE_INDEX_BUFFER) {
-            ret |= VK_ACCESS_2_INDEX_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_INDEX_READ_BIT;
         }
         if (state & RESOURCE_STATE_UNORDERED_ACCESS) {
-            ret |= VK_ACCESS_2_SHADER_READ_BIT_KHR | VK_ACCESS_2_SHADER_WRITE_BIT_KHR;
+            ret |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
         }
         if (state & RESOURCE_STATE_INDIRECT_ARGUMENT) {
-            ret |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
         }
         if (state & RESOURCE_STATE_RENDER_TARGET) {
-            ret |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT_KHR | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
+            ret |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         }
         if (state & RESOURCE_STATE_DEPTH_WRITE) {
-            ret |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         }
         if (state & RESOURCE_STATE_SHADER_RESOURCE) {
-            ret |= VK_ACCESS_2_SHADER_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_SHADER_READ_BIT;
         }
         if (state & RESOURCE_STATE_PRESENT) {
-            ret |= VK_ACCESS_2_MEMORY_READ_BIT_KHR;
+            ret |= VK_ACCESS_2_MEMORY_READ_BIT;
         }
 #ifdef ENABLE_RAYTRACING
         if (state & RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE) {
@@ -1477,19 +1477,19 @@ namespace Helix {
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
         if (usage & RESOURCE_STATE_RENDER_TARGET)
-            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 
         if (usage & RESOURCE_STATE_DEPTH_WRITE)
-            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 
         if (usage & RESOURCE_STATE_DEPTH_READ)
-            return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
+            return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 
         if (usage & RESOURCE_STATE_UNORDERED_ACCESS)
             return VK_IMAGE_LAYOUT_GENERAL;
 
         if (usage & RESOURCE_STATE_SHADER_RESOURCE)
-            return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
+            return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 
         if (usage & RESOURCE_STATE_PRESENT)
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -1573,18 +1573,18 @@ namespace Helix {
         return flags;
     }
 
-    VkPipelineStageFlags2KHR util_determine_pipeline_stage_flags2(VkAccessFlags2KHR access_flags, QueueType::Enum queue_type) {
-        VkPipelineStageFlags2KHR flags = 0;
+    VkPipelineStageFlags2 util_determine_pipeline_stage_flags2(VkAccessFlags2 access_flags, QueueType::Enum queue_type) {
+        VkPipelineStageFlags2 flags = 0;
 
         switch (queue_type) {
         case QueueType::Graphics:
         {
             if ((access_flags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
 
             if ((access_flags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0) {
-                flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT_KHR;
-                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
                 /*if ( pRenderer->pActiveGpuSettings->mGeometryShaderSupported ) {
                     flags |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
                 }
@@ -1592,7 +1592,7 @@ namespace Helix {
                     flags |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
                     flags |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
                 }*/
-                flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 #ifdef ENABLE_RAYTRACING
                 if (pRenderer->mVulkan.mRaytracingExtension) {
                     flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV;
@@ -1601,13 +1601,13 @@ namespace Helix {
             }
 
             if ((access_flags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0)
-                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 
             if ((access_flags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
             if ((access_flags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
 
             break;
         }
@@ -1617,29 +1617,29 @@ namespace Helix {
                 (access_flags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
                 (access_flags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
                 (access_flags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
-                return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+                return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
             if ((access_flags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0)
-                flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+                flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
             break;
         }
-        case QueueType::CopyTransfer: return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+        case QueueType::CopyTransfer: return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         default: break;
         }
 
         // Compatible with both compute and graphics queues
         if ((access_flags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) != 0)
-            flags |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT_KHR;
+            flags |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
 
         if ((access_flags & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)
-            flags |= VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            flags |= VK_PIPELINE_STAGE_2_TRANSFER_BIT;
 
         if ((access_flags & (VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT)) != 0)
-            flags |= VK_PIPELINE_STAGE_2_HOST_BIT_KHR;
+            flags |= VK_PIPELINE_STAGE_2_HOST_BIT;
 
         if (flags == 0)
-            flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+            flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
 
         return flags;
     }

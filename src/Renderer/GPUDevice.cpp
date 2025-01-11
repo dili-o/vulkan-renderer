@@ -495,17 +495,6 @@ namespace Helix {
         vulkan_12_features.pNext = current_pnext;
         current_pnext = &vulkan_12_features;
 
-        VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR };
-        if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
-            dynamic_rendering_features.pNext = current_pnext;
-            current_pnext = &dynamic_rendering_features;
-        }
-
-        VkPhysicalDeviceSynchronization2FeaturesKHR synchronization2_features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR };
-        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            synchronization2_features.pNext = current_pnext;
-            current_pnext = &synchronization2_features;
-        }
 #if NVIDIA
         VkPhysicalDeviceMeshShaderFeaturesNV mesh_shaders_feature = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
@@ -531,7 +520,13 @@ namespace Helix {
         }
 #endif // NVIDIA
 
-        
+        VkPhysicalDeviceVulkan13Features vulkan_13_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        vulkan_13_features.dynamicRendering = true;
+        vulkan_13_features.synchronization2 = true;
+        vulkan_13_features.maintenance4 = true;
+
+        vulkan_13_features.pNext = current_pnext;
+        current_pnext = &vulkan_13_features;
         
         physical_features2.pNext = current_pnext;
 
@@ -559,15 +554,6 @@ namespace Helix {
             pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(vulkan_device, "vkCmdEndDebugUtilsLabelEXT");
         }
 
-        if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
-            cmd_begin_rendering = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdBeginRenderingKHR");
-            cmd_end_rendering = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdEndRenderingKHR");
-        }
-
-        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            queue_submit2 = (PFN_vkQueueSubmit2KHR)vkGetDeviceProcAddr(vulkan_device, "vkQueueSubmit2KHR");
-            cmd_pipeline_barrier2 = (PFN_vkCmdPipelineBarrier2KHR)vkGetDeviceProcAddr(vulkan_device, "vkCmdPipelineBarrier2KHR");
-        }
 #if NVIDIA
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             cmd_draw_mesh_tasks = (PFN_vkCmdDrawMeshTasksNV)vkGetDeviceProcAddr(vulkan_device, "vkCmdDrawMeshTasksNV");
@@ -1325,14 +1311,14 @@ namespace Helix {
 
         // Submit command buffer
         if (gpu.gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+            VkCommandBufferSubmitInfo command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
             command_buffer_info.commandBuffer = command_buffer->vk_handle;
 
-            VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+            VkSubmitInfo2 submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
             submit_info.commandBufferInfoCount = 1;
             submit_info.pCommandBufferInfos = &command_buffer_info;
 
-            gpu.queue_submit2(gpu.vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+            vkQueueSubmit2(gpu.vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
         }
         else {
             VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
@@ -1474,14 +1460,14 @@ namespace Helix {
         char* final_spirv_filename = temp_string_buffer.append_use_f("shader_final_%s.spv", to_compiler_extension(stage));
         // TODO: add optional debug information in shaders (option -g).
 #if NVIDIA
-        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -g -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1 --auto-map-locations", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -g -V --target-env vulkan1.3 -o %s -S %s --D %s --D %s --D NVIDIA=1", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #else
-        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -g -V --target-env vulkan1.3 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #endif // NVIDIA
 #else
         char* glsl_compiler_path = temp_string_buffer.append_use_f("%sglslangValidator", vulkan_binaries_path);
         char* final_spirv_filename = temp_string_buffer.append_use("shader_final.spv");
-        char* arguments = temp_string_buffer.append_use_f("%s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+        char* arguments = temp_string_buffer.append_use_f("%s -V --target-env vulkan1.3 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #endif
         process_execute(".", glsl_compiler_path, arguments, "");
 
@@ -2916,14 +2902,15 @@ namespace Helix {
 
         // Submit command buffer
         if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+            VkCommandBufferSubmitInfo command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
             command_buffer_info.commandBuffer = command_buffer->vk_handle;
 
-            VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+            VkSubmitInfo2 submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
             submit_info.commandBufferInfoCount = 1;
             submit_info.pCommandBufferInfos = &command_buffer_info;
 
-            queue_submit2(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+            vkQueueSubmit2(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+
         }
         else {
             VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
@@ -3314,9 +3301,9 @@ namespace Helix {
             if (has_async_work) wait_semaphore_count++;
 
             if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-                VkCommandBufferSubmitInfoKHR command_buffer_info[4]{ }; // TODO: Maybe have a max queue count for command buffers
+                VkCommandBufferSubmitInfo command_buffer_info[4]{ }; // TODO: Maybe have a max queue count for command buffers
                 for (u32 c = 0; c < num_queued_command_buffers; c++) {
-                    command_buffer_info[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+                    command_buffer_info[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
                     command_buffer_info[c].commandBuffer = enqueued_command_buffers[c];
                 }
 
@@ -3330,7 +3317,7 @@ namespace Helix {
                     { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_timeline_graphics_semaphore, absolute_frame + 1, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR , 0 }
                 };
 
-                VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+                VkSubmitInfo2 submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
                 submit_info.waitSemaphoreInfoCount = wait_semaphore_count;
                 submit_info.pWaitSemaphoreInfos = wait_semaphores;
                 submit_info.commandBufferInfoCount = num_queued_command_buffers;
@@ -3338,7 +3325,7 @@ namespace Helix {
                 submit_info.signalSemaphoreInfoCount = 2;
                 submit_info.pSignalSemaphoreInfos = signal_semaphores;
 
-                queue_submit2(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
+                vkQueueSubmit2(vulkan_main_queue, 1, &submit_info, VK_NULL_HANDLE);
             }
             else {
                 VkSemaphore wait_semaphores[] = { vulkan_image_acquired_semaphore[current_frame], vulkan_compute_semaphore };
@@ -3377,9 +3364,9 @@ namespace Helix {
             if (has_async_work) wait_semaphore_count++;
 
             if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-                VkCommandBufferSubmitInfoKHR command_buffer_info[4]{ };
+                VkCommandBufferSubmitInfo command_buffer_info[4]{ };
                 for (u32 c = 0; c < num_queued_command_buffers; c++) {
-                    command_buffer_info[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+                    command_buffer_info[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
                     command_buffer_info[c].commandBuffer = enqueued_command_buffers[c];
                 }
 
@@ -3392,7 +3379,7 @@ namespace Helix {
                     { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, *render_complete_semaphore, 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, 0 },
                 };
 
-                VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+                VkSubmitInfo2 submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
                 submit_info.waitSemaphoreInfoCount = wait_semaphore_count;
                 submit_info.pWaitSemaphoreInfos = wait_semaphores;
                 submit_info.commandBufferInfoCount = num_queued_command_buffers;
@@ -3400,7 +3387,7 @@ namespace Helix {
                 submit_info.signalSemaphoreInfoCount = 1;
                 submit_info.pSignalSemaphoreInfos = signal_semaphores;
 
-                queue_submit2(vulkan_main_queue, 1, &submit_info, render_complete_fence);
+                vkQueueSubmit2(vulkan_main_queue, 1, &submit_info, render_complete_fence);
             }
             else {
                 VkSemaphore wait_semaphores[] = { vulkan_image_acquired_semaphore[current_frame] };
@@ -3583,10 +3570,10 @@ namespace Helix {
                     { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, last_compute_semaphore_value, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR, 0 },
                 };
 
-                VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+                VkCommandBufferSubmitInfo command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
                 command_buffer_info.commandBuffer = command_buffer->vk_handle;
 
-                VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+                VkSubmitInfo2 submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
                 submit_info.waitSemaphoreInfoCount = 1;
                 submit_info.pWaitSemaphoreInfos = wait_semaphores;
                 submit_info.commandBufferInfoCount = 1;
@@ -3594,7 +3581,7 @@ namespace Helix {
                 submit_info.signalSemaphoreInfoCount = 1;
                 submit_info.pSignalSemaphoreInfos = signal_semaphores;
 
-                queue_submit2(vulkan_compute_queue, 1, &submit_info, VK_NULL_HANDLE);
+                vkQueueSubmit2(vulkan_compute_queue, 1, &submit_info, VK_NULL_HANDLE);
             }
             else {
                 VkSemaphore wait_semaphores[] = { vulkan_compute_semaphore };
@@ -3636,14 +3623,14 @@ namespace Helix {
             vkResetFences(vulkan_device, 1, &vulkan_compute_fence);
 
             if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-                VkCommandBufferSubmitInfoKHR command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+                VkCommandBufferSubmitInfo command_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
                 command_buffer_info.commandBuffer = command_buffer->vk_handle;
 
                 VkSemaphoreSubmitInfoKHR signal_semaphores[]{
                     { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR, nullptr, vulkan_compute_semaphore, 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, 0 },
                 };
 
-                VkSubmitInfo2KHR submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
+                VkSubmitInfo2 submit_info{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR };
                 submit_info.waitSemaphoreInfoCount = 0;
                 submit_info.pWaitSemaphoreInfos = nullptr;
                 submit_info.commandBufferInfoCount = 1;
@@ -3651,7 +3638,7 @@ namespace Helix {
                 submit_info.signalSemaphoreInfoCount = 1;
                 submit_info.pSignalSemaphoreInfos = signal_semaphores;
 
-                queue_submit2(vulkan_compute_queue, 1, &submit_info, vulkan_compute_fence);
+                vkQueueSubmit2(vulkan_compute_queue, 1, &submit_info, vulkan_compute_fence);
             }
             else {
                 VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };

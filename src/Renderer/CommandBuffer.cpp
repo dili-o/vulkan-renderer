@@ -175,7 +175,7 @@ namespace Helix {
     void CommandBuffer::end_current_render_pass() {
         if (is_recording && current_render_pass != nullptr) {
             if (device->gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
-                device->cmd_end_rendering(vk_handle);
+                vkCmdEndRendering(vk_handle);
             }
             else {
                 vkCmdEndRenderPass(vk_handle);
@@ -201,8 +201,8 @@ namespace Helix {
 
             if (render_pass != current_render_pass) {
                 if (device->gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
-                    VkRenderingAttachmentInfoKHR color_attachments_info[8]; // max_number of attachments is 8
-                    memset(color_attachments_info, 0, sizeof(VkRenderingAttachmentInfoKHR) * framebuffer->num_color_attachments);
+                    VkRenderingAttachmentInfo color_attachments_info[8]; // max_number of attachments is 8
+                    memset(color_attachments_info, 0, sizeof(VkRenderingAttachmentInfo) * framebuffer->num_color_attachments);
 
                     for (u32 a = 0; a < framebuffer->num_color_attachments; ++a) {
                         Texture* texture = device->access_texture(framebuffer->color_attachments[a]);
@@ -222,17 +222,17 @@ namespace Helix {
                             break;
                         }
 
-                        VkRenderingAttachmentInfoKHR& color_attachment_info = color_attachments_info[a];
-                        color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+                        VkRenderingAttachmentInfo& color_attachment_info = color_attachments_info[a];
+                        color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
                         color_attachment_info.imageView = texture->vk_image_view;
-                        color_attachment_info.imageLayout = device->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2 ? VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                        color_attachment_info.imageLayout = device->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2 ? VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                         color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
                         color_attachment_info.loadOp = color_op;
                         color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
                         color_attachment_info.clearValue = render_pass->output.color_operations[a] == RenderPassOperation::Enum::Clear ? clears[0] : VkClearValue{ };
                     }
 
-                    VkRenderingAttachmentInfoKHR depth_attachment_info{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR };
+                    VkRenderingAttachmentInfo depth_attachment_info{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 
                     bool has_depth_attachment = framebuffer->depth_stencil_attachment.index != k_invalid_index;
 
@@ -255,15 +255,15 @@ namespace Helix {
                         texture->state = RESOURCE_STATE_DEPTH_WRITE;
 
                         depth_attachment_info.imageView = texture->vk_image_view;
-                        depth_attachment_info.imageLayout = device->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2 ? VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                        depth_attachment_info.imageLayout = device->gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2 ? VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                         depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
                         depth_attachment_info.loadOp = depth_op;
                         depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
                         depth_attachment_info.clearValue = render_pass->output.depth_operation == RenderPassOperation::Enum::Clear ? clears[1] : VkClearValue{ };
                     }
 
-                    VkRenderingInfoKHR rendering_info{ VK_STRUCTURE_TYPE_RENDERING_INFO_KHR };
-                    rendering_info.flags = use_secondary ? VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT_KHR : 0;
+                    VkRenderingInfo rendering_info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+                    rendering_info.flags = use_secondary ? VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT : 0;
                     rendering_info.renderArea = { 0, 0, framebuffer->width, framebuffer->height };
                     rendering_info.layerCount = 1;
                     rendering_info.viewMask = 0;
@@ -272,7 +272,7 @@ namespace Helix {
                     rendering_info.pDepthAttachment = has_depth_attachment ? &depth_attachment_info : nullptr;
                     rendering_info.pStencilAttachment = nullptr;
 
-                    device->cmd_begin_rendering(vk_handle, &rendering_info);
+                    vkCmdBeginRendering(vk_handle, &rendering_info);
                 }
                 else {
                     VkRenderPassBeginInfo render_pass_begin{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };

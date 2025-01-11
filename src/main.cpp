@@ -9,11 +9,7 @@
 #include <vendor/glm/glm/glm.hpp>
 #include <vendor/glm/glm/gtc/matrix_transform.hpp>
 #include <vendor/glm/glm/gtx/hash.hpp>
-
-
-
 #include "vendor/imgui/imgui.h"
-
 #include "vendor/tracy/tracy/Tracy.hpp"
 
 #include "Renderer/GPUDevice.hpp"
@@ -25,7 +21,7 @@
 #include "Renderer/Scene.hpp"
 #include "Renderer/FrameGraph.hpp"
 #include "Renderer/ResourcesLoader.hpp"
-
+#include "Renderer/Camera.hpp"
 
 #include "Core/File.hpp"
 #include "Core/Gltf.hpp"
@@ -33,22 +29,6 @@
 #include "Core/ResourceManager.hpp"
 #include "Core/Time.hpp"
 
-#include <stdlib.h> // for exit()
-
-
-
-f32 rx, ry;
-
-enum MaterialFeatures {
-    MaterialFeatures_ColorTexture = 1 << 0,
-    MaterialFeatures_NormalTexture = 1 << 1,
-    MaterialFeatures_RoughnessTexture = 1 << 2,
-    MaterialFeatures_OcclusionTexture = 1 << 3,
-    MaterialFeatures_EmissiveTexture = 1 << 4,
-
-    MaterialFeatures_TangentVertexAttribute = 1 << 5,
-    MaterialFeatures_TexcoordVertexAttribute = 1 << 6,
-};
 
 static void input_os_messages_callback(void* os_event, void* user_data) {
     Helix::InputService* input = (Helix::InputService*)user_data;
@@ -144,7 +124,6 @@ int main(int argc, char** argv)
 
 	Renderer renderer;
 	renderer.init({ &gpu, allocator });
-	//renderer.set_loaders(&rm);
 
 	ImGuiService* imgui = ImGuiService::instance();
 	ImGuiServiceConfiguration imgui_config{ &gpu, window.platform_handle };
@@ -240,13 +219,8 @@ int main(int argc, char** argv)
     i64 begin_frame_tick = Time::now();
     i64 absolute_begin_frame_tick = begin_frame_tick;
 
-    glm::vec3 eye = { 0.0f, 0.0f, 0.0f };
-    glm::vec3 look = { 0.0f, 0.0, -1.0f };
-    glm::vec3 right = { 1.0f, 0.0, 0.0f };
-    glm::vec3 up = { 0.0f, 1.0f, 0.0f };
-
-    f32 yaw = 0.0f;
-    f32 pitch = 0.0f;
+    Camera camera{};
+    camera.init({ 0.0f, 0.0f, 0.0f }, gpu.swapchain_width * 1.0f / gpu.swapchain_height);
 
     float model_scale = 1.0f;
     float light_range = 300.0f;
@@ -255,7 +229,6 @@ int main(int argc, char** argv)
     int frame_count = 0;
     double last_time = 0.0;
 
-    float aspect_ratio = gpu.swapchain_width * 1.0f / gpu.swapchain_height;
 
     while (!window.requested_exit) {
         ZoneScoped;
@@ -302,7 +275,7 @@ int main(int argc, char** argv)
               /*  if (ImGui::Begin("Scene")) {
                     ImGui::InputFloat("Model scale", &model_scale, 0.001f);
                     ImGui::SliderFloat3("Light position", light_position.raw, -30.f, 30.f);
-                    ImGui::InputFloat3("Camera position", eye.raw);
+                    ImGui::InputFloat3("Camera position", camera.position.raw);
                     ImGui::InputFloat("Light range", &light_range);
                     ImGui::InputFloat("Light intensity", &light_intensity);
                 }
@@ -311,12 +284,13 @@ int main(int argc, char** argv)
                 if (ImGui::Begin("Viewport")) {
                     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
                     ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle, { viewportPanelSize.x, viewportPanelSize.y });
-                    aspect_ratio = viewportPanelSize.x * 1.0f / viewportPanelSize.y;
+                    camera.aspect_ratio = viewportPanelSize.x * 1.0f / viewportPanelSize.y;
+                    camera.hovering_viewport = ImGui::IsWindowHovered();
                 }
                 ImGui::End();
 
                 if (ImGui::Begin("Scene Settings")) {
-                    ImGui::Text("x: %f, y: %f, z: %f", eye.x, eye.y, eye.z);
+                    ImGui::Text("x: %f, y: %f, z: %f", camera.position.x, camera.position.y, camera.position.z);
                     ImGui::Text("AABB \t minx: %f, miny: %f, maxx: %f, maxy: %f", scene->tester.x, scene->tester.y, scene->tester.z, scene->tester.w);
                     ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
                 }
@@ -337,90 +311,33 @@ int main(int argc, char** argv)
                 renderer.imgui_resources_draw();
 
                 scene->imgui_draw_node_property(scene->current_node);
-
+                camera.update(input_handler, delta_time);
+                window.center_mouse(camera.mouse_dragging);
             }
 
             {
-                
                 MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
                 //LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
                 {
-                    if (input_handler.is_mouse_down(MouseButtons::MOUSE_BUTTONS_RIGHT)) {
-                        pitch += (input_handler.mouse_position.y - input_handler.previous_mouse_position.y) * 0.1f;
-                        yaw += (input_handler.mouse_position.x - input_handler.previous_mouse_position.x) * 0.3f;
-
-                        pitch = clamp(pitch, -60.0f, 60.0f);
-
-                        if (yaw > 360.0f) {
-                            yaw -= 360.0f;
-                        }
-
-                        glm::mat3 rxm = glm::mat3(glm::rotate(glm::mat4(1.0f), glm::radians(-pitch), { 1.0f, 0.0f, 0.0f }));
-                        glm::mat3 rym = glm::mat3(glm::rotate(glm::mat4(1.0f), glm::radians(-yaw), { 0.0f, 1.0f, 0.0f }));
-
-                        look = rxm * glm::vec3( 0.0f, 0.0f, -1.0f );
-                        look = rym * look;
-
-                        right = glm::cross(look, glm::vec3( 0.0f, 1.0f, 0.0f ));
-                    }
-
-                    if (input_handler.is_key_down(Keys::KEY_W)) {
-                        eye += look * (5.0f * delta_time);
-                    }
-                    else if (input_handler.is_key_down(Keys::KEY_S)) {
-                        eye -= look * (5.0f * delta_time);
-                    }
-
-                    if (input_handler.is_key_down(Keys::KEY_D)) {
-                        eye += right * (5.0f * delta_time);
-                    }
-                    else if (input_handler.is_key_down(Keys::KEY_A)) {
-                        eye -= right * (5.0f * delta_time);
-                    }
-                    if (input_handler.is_key_down(Keys::KEY_E)) {
-                        eye += up * (5.0f * delta_time);
-                    }
-                    else if (input_handler.is_key_down(Keys::KEY_Q)) {
-                        eye -= up * (5.0f * delta_time);
-                    }
-
-                    glm::mat4 view = glm::lookAt(eye, (eye + look), glm::vec3( 0.0f, 1.0f, 0.0f ));
-                    float z_near = 0.01f;
-                    float z_far = 1000.0f;
-                    glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspect_ratio, z_near, z_far);
-
-                    // Calculate view projection matrix
-                    glm::mat4 view_projection = projection * view;
-
-                    // Rotate cube:
-                    rx += 1.0f * delta_time;
-                    ry += 2.0f * delta_time;
-
-                    glm::mat4 rxm = glm::rotate(glm::mat4(1.0f), rx, glm::vec3(1.0f, 0.0f, 0.0f));
-                    glm::mat4 rym = glm::rotate(glm::mat4(1.0f), glm::radians(45.0f), glm::vec3( 0.0f, 1.0f, 0.0f ));
-
-                    glm::mat4 sm = glm::scale(glm::mat4(1.0f), glm::vec3( model_scale));
-
-
                     // TODO: Fix Hard coded the light node handle
                     //LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
 
                     //cb_data->light_position = glm::vec4(light_node->world_transform.translation.x, light_node->world_transform.translation.y, light_node->world_transform.translation.z, 1.0f);
                     GPUSceneData& scene_data = scene->scene_data;
                     scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
-                    scene_data.view_projection = view_projection;
-                    scene_data.inverse_view_projection = projection;// TODO glm::inverse(view_projection);
-                    scene_data.view_matrix = view;
-                    scene_data.camera_position = glm::vec4(eye.x, eye.y, eye.z, 1.0f);
+                    scene_data.view_projection = camera.view_projection;
+                    scene_data.inverse_view_projection = camera.projection;// TODO glm::inverse(view_projection);
+                    scene_data.view_matrix = camera.view;
+                    scene_data.camera_position = glm::vec4(camera.position.x, camera.position.y, camera.position.z, 1.0f);
                     scene_data.light_position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
                     scene_data.light_range = light_range;
                     scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;
 
-                    scene_data.z_near = z_near;
-                    scene_data.z_far = z_far;
-                    scene_data.projection_00 = projection[0][0];
-                    scene_data.projection_11 = projection[1][1];
+                    scene_data.z_near = camera.z_near;
+                    scene_data.z_far = camera.z_far;
+                    scene_data.projection_00 = camera.projection[0][0];
+                    scene_data.projection_11 = camera.projection[1][1];
 
                     scene_data.frustum_cull_meshes = 1;
                     scene_data.frustum_cull_meshlets = 1;
@@ -437,7 +354,7 @@ int main(int argc, char** argv)
                         scene_data.camera_position_debug = scene_data.camera_position;
                         scene_data.view_matrix_debug = scene_data.view_matrix;
                         scene_data.view_projection_debug = scene_data.view_projection;
-                        projection_transpose = glm::transpose(projection);
+                        projection_transpose = glm::transpose(camera.projection);
                     }
 
                     scene_data.frustum_planes[0] = normalize_plane(projection_transpose[3] + projection_transpose[0]); // x + w  < 0;
@@ -457,7 +374,7 @@ int main(int argc, char** argv)
                     }
                     
                     //light_cb_data->view_projection = view_projection;
-                    //light_cb_data->camera_position_texture_index = glm::vec4(eye.x, eye.y, eye.z, scene->light_texture.handle.index);
+                    //light_cb_data->camera_position_texture_index = glm::vec4(camera.position.x, camera.position.y, camera.position.z, scene->light_texture.handle.index);
 
                     glm::mat4 model = glm::mat4(1.0f);
                     //model = glm::translate(model, light_node->world_transform.translation);

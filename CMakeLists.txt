@@ -24,7 +24,7 @@ file(GLOB_RECURSE SOURCE_LIST "src/*.h" "src/*.hpp" "src/*.cpp"
 # Create the shaders cache directory
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/cache")
 
-add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp" )
+add_executable (HelixEngine ${SOURCE_LIST}  "src/Renderer/FrameGraph.cpp"  "src/Renderer/Camera.cpp")
 
 find_package(Vulkan REQUIRED)
 
