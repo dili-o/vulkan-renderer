@@ -323,84 +323,7 @@ namespace Helix {
             RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, indirect_draw_commands_sb->size);
 
         util_add_buffer_barrier(renderer->gpu, gpu_commands->vk_handle, count_sb->vk_handle,
-            RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, count_sb->size);
-
-
-        FrameGraphNode* node = scene->frame_graph->get_node("gbuffer_late_pass");
-        Program* culling_program = renderer->resource_cache.programs.get(hash_calculate("culling"));
-
-        gpu_commands->push_marker(node->name);
-        // TODO(marco): add clear colour to json
-        gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
-        gpu_commands->clear_depth_stencil(1.0f, 0);
-
-        u32 width = 0;
-        u32 height = 0;
-
-        for (u32 i = 0; i < node->inputs.size; ++i) {
-            FrameGraphResource* input_resource = scene->frame_graph->builder->access_resource(node->inputs[i]);
-            FrameGraphResource* resource = scene->frame_graph->builder->access_resource(input_resource->output_handle);
-
-            if (input_resource->type == FrameGraphResourceType_Texture) {
-                Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
-
-                util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, /*RESOURCE_STATE_PIXEL_SHADER_RESOURCE*/RESOURCE_STATE_SHADER_RESOURCE, 0, 1, TextureFormat::has_depth(texture->vk_format));
-            }
-            else if (input_resource->type == FrameGraphResourceType_Attachment) {
-                Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
-
-                width = texture->width;
-                height = texture->height;
-
-                // For textures that are read-write check if a transition is needed.
-                if (!TextureFormat::has_depth_or_stencil(texture->vk_format)) {
-                    util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
-                }
-                else {
-                    util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_DEPTH_WRITE, 0, 1, true);
-                }
-            }
-        }
-
-        for (u32 o = 0; o < node->outputs.size; ++o) {
-            FrameGraphResource* resource = scene->frame_graph->builder->access_resource(node->outputs[o]);
-
-            if (resource->type == FrameGraphResourceType_Attachment) {
-                Texture* texture = gpu_commands->device->access_texture(resource->resource_info.texture.handle);
-
-                width = texture->width;
-                height = texture->height;
-
-                if (TextureFormat::has_depth(texture->vk_format)) {
-                    util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_DEPTH_WRITE, 0, 1, true);
-                }
-                else {
-                    util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
-                }
-            }
-        }
-
-        Rect2DInt scissor{ 0, 0,(u16)width, (u16)height };
-        gpu_commands->set_scissor(&scissor);
-
-        Viewport viewport{ };
-        viewport.rect = { 0, 0, (u16)width, (u16)height };
-        viewport.min_depth = 0.0f;
-        viewport.max_depth = 1.0f;
-
-        gpu_commands->set_viewport(&viewport);
-
-        node->graph_render_pass->pre_render(gpu_commands, scene);
-
-        gpu_commands->bind_pass(node->render_pass, node->framebuffer, false);
-
-        node->graph_render_pass->render(gpu_commands, scene);
-
-        gpu_commands->end_current_render_pass();
-
-        //node->graph_render_pass->post_render(current_frame_index, gpu_commands, this);
-
-        gpu_commands->pop_marker();
+            RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT, count_sb->size);      
     }
 
     void MeshLateCullingPass::prepare_draws(Scene& scene, FrameGraph* frame_graph, Allocator* resident_allocator) {
@@ -573,7 +496,6 @@ namespace Helix {
     //
     // GBufferLatePass ////////////////////////////////////////////////////////
     void GBufferLatePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-        //return;
         if (!enabled)
             return;
 
@@ -616,7 +538,6 @@ namespace Helix {
 
         FrameGraphNode* node = frame_graph->get_node("gbuffer_late_pass");
         HASSERT(node);
-        node->enabled = false;
 
         if (scene.opaque_meshes.size) {
             meshes = &scene.opaque_meshes[0];
@@ -910,7 +831,6 @@ namespace Helix {
         FrameGraphResource* normal_texture = get_output_texture(frame_graph, node->inputs[1]);
         FrameGraphResource* roughness_texture = get_output_texture(frame_graph, node->inputs[2]);
         FrameGraphResource* position_texture = get_output_texture(frame_graph, node->inputs[3]);
-        depth_texture = get_output_texture(frame_graph, node->inputs[4]);
 
         mesh.pbr_material.diffuse_texture_index = color_texture->resource_info.texture.handle.index;
         mesh.pbr_material.normal_texture_index = normal_texture->resource_info.texture.handle.index;

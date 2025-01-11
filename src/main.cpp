@@ -177,6 +177,10 @@ int main(int argc, char** argv)
             resources_loader.load_program(full_screen_pipeline_path);
 
             temporary_name_buffer.clear();
+            cstring culling_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/culling.json");
+            resources_loader.load_program(culling_pipeline_path);
+
+            temporary_name_buffer.clear();
 #if NVIDIA
             cstring meshlet_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/meshlet_nv.json");
 #else
@@ -188,9 +192,6 @@ int main(int argc, char** argv)
             cstring pbr_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/pbr_lighting.json");
             resources_loader.load_program(pbr_pipeline_path);
 
-            temporary_name_buffer.clear();
-            cstring culling_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/culling.json");
-            resources_loader.load_program(culling_pipeline_path);
 
             temporary_name_buffer.clear();
             cstring light_debug_pipeline_path = temporary_name_buffer.append_use_f("%s/%s", HELIX_SHADER_FOLDER, "programs/debug.json");

@@ -9,7 +9,7 @@
             [
                 {
                     "type": "buffer",
-                    "name": "mesh_indirect_draw_list"
+                    "name": "mesh_indirect_draw_early_list"
                 }
             ]
         },
@@ -23,7 +23,7 @@
                 },
                 {
                     "type": "buffer",
-                    "name": "mesh_indirect_draw_list"
+                    "name": "mesh_indirect_draw_early_list"
                 }
             ],
             "name": "mesh_cull_late_pass",
@@ -31,8 +31,8 @@
             "outputs":
             [
                 {
-                    "type": "reference",
-                    "name": "mesh_indirect_draw_list"
+                    "type": "buffer",
+                    "name": "mesh_indirect_draw_late_list"
                 }
             ]
         },
@@ -41,7 +41,7 @@
             [
                 {
                     "type": "buffer",
-                    "name": "mesh_indirect_draw_list"
+                    "name": "mesh_indirect_draw_early_list"
                 }
             ],
             "name": "gbuffer_pass",
@@ -90,7 +90,6 @@
                 }
             ]
         },
-        
         {
             "inputs":
             [
@@ -115,7 +114,7 @@
             [
                 {
                     "type": "buffer",
-                    "name": "mesh_indirect_draw_list"
+                    "name": "mesh_indirect_draw_late_list"
                 },
                 {
                     "type": "attachment",
@@ -195,10 +194,6 @@
                 {
                     "type": "texture",
                     "name": "gbuffer_emissive"
-                },
-                {
-                    "type": "texture",
-                    "name": "depth"
                 }
             ],
             "name": "lighting_pass",

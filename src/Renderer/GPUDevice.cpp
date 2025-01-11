@@ -58,10 +58,11 @@ namespace Helix {
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
+//#defne VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 
-//#define VULKAN_SYNCHRONIZATION_VALIDATION
+//#define VULKAN_EXTRA_VALIDATION
 
     static cstring s_requested_extensions[] = {
         VK_KHR_SURFACE_EXTENSION_NAME,
@@ -119,10 +120,13 @@ namespace Helix {
         VkDebugUtilsMessageTypeFlagsEXT types,
         const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
         void* user_data) {
-        HERROR(" MessageID: {} {}\nMessage: {}\n", callback_data->pMessageIdName, callback_data->messageIdNumber, callback_data->pMessage);
 
         if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+            HERROR(" MessageID: {} {}\nMessage: {}\n", callback_data->pMessageIdName, callback_data->messageIdNumber, callback_data->pMessage);
             __debugbreak();
+        }
+        else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+            HWARN(" MessageID: {} {}\nMessage: {}\n", callback_data->pMessageIdName, callback_data->messageIdNumber, callback_data->pMessage);
         }
 
         return VK_FALSE;
@@ -210,8 +214,8 @@ namespace Helix {
 #if defined(VULKAN_DEBUG_REPORT)
         const VkDebugUtilsMessengerCreateInfoEXT debug_create_info = create_debug_utils_messenger_info();
 
-#if defined(VULKAN_SYNCHRONIZATION_VALIDATION)
-        const VkValidationFeatureEnableEXT featuresRequested[] = { VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT/*, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT*/ };
+#if defined(VULKAN_EXTRA_VALIDATION)
+        const VkValidationFeatureEnableEXT featuresRequested[] = { VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT };
         VkValidationFeaturesEXT features = {};
         features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
         features.pNext = &debug_create_info;
@@ -220,7 +224,7 @@ namespace Helix {
         create_info.pNext = &features;
 #else
         create_info.pNext = &debug_create_info;
-#endif // VULKAN_SYNCHRONIZATION_VALIDATION
+#endif // VULKAN_EXTRA_VALIDATION
 #endif // VULKAN_DEBUG_REPORT
 
         //// Create Vulkan Instance
@@ -1467,10 +1471,10 @@ namespace Helix {
         // Compile to SPV
 #if defined(_MSC_VER)
         char* glsl_compiler_path = temp_string_buffer.append_use_f("%sglslangValidator.exe", vulkan_binaries_path);
-        char* final_spirv_filename = temp_string_buffer.append_use("shader_final.spv");
+        char* final_spirv_filename = temp_string_buffer.append_use_f("shader_final_%s.spv", to_compiler_extension(stage));
         // TODO: add optional debug information in shaders (option -g).
 #if NVIDIA
-        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -g -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
+        char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -g -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s --D NVIDIA=1 --auto-map-locations", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #else
         char* arguments = temp_string_buffer.append_use_f("glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s", temp_filename, final_spirv_filename, to_compiler_extension(stage), stage_define, to_stage_defines(stage));
 #endif // NVIDIA
@@ -1481,7 +1485,11 @@ namespace Helix {
 #endif
         process_execute(".", glsl_compiler_path, arguments, "");
 
+#ifdef _DEBUG
         bool optimize_shaders = false;
+#else
+        bool optimize_shaders = true;
+#endif // _DEBUG
 
         if (optimize_shaders) {
             // TODO: add optional optimization stage

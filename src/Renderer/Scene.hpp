@@ -536,8 +536,6 @@ namespace Helix {
         Mesh                mesh{ };
         Renderer*           renderer;
         bool                use_compute;
-
-        FrameGraphResource* depth_texture;
     }; // struct LightPass
 
     //
