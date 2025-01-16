@@ -58,7 +58,7 @@
                 {
                     "type": "attachment",
                     "name": "gbuffer_normals",
-                    "format": "VK_FORMAT_R16G16_SFLOAT",
+                    "format": "VK_FORMAT_B8G8R8A8_UNORM",
                     "resolution_scale": [ 1.0, 1.0 ],
                     "load_operation": "clear",
                     "clear_color":[0.3, 0.3, 0.3, 1]
@@ -73,7 +73,7 @@
                 },
                 {
                     "type": "attachment",
-                    "name": "gbuffer_emissive",
+                    "name": "gbuffer_position",
                     "format": "VK_FORMAT_R16G16B16A16_SFLOAT",
                     "resolution_scale": [ 1.0, 1.0 ],
                     "load_operation": "clear",
@@ -130,7 +130,7 @@
                 },
                 {
                     "type": "attachment",
-                    "name": "gbuffer_emissive"
+                    "name": "gbuffer_position"
                 },
                 {
                     "type": "attachment",
@@ -154,7 +154,7 @@
                 },
                 {
                     "type": "reference",
-                    "name": "gbuffer_emissive"
+                    "name": "gbuffer_position"
                 },
                 {
                     "type": "reference",
@@ -193,7 +193,7 @@
                 },
                 {
                     "type": "texture",
-                    "name": "gbuffer_emissive"
+                    "name": "gbuffer_position"
                 }
             ],
             "name": "lighting_pass",

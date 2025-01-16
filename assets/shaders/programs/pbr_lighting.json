@@ -23,12 +23,12 @@
 				{
 					"stage" : "vertex",
 					"shader" : "pbr.glsl",
-					"includes" : ["platform.h"]
+					"includes" : ["platform.h", "scene.h"]
 				},
 				{
 					"stage" : "fragment",
 					"shader" : "pbr.glsl",
-					"includes" : ["platform.h"]
+					"includes" : ["platform.h", "scene.h"]
 				}
 			]
 		}

@@ -71,6 +71,26 @@ glm::vec4 normalize_plane(glm::vec4 plane) {
     return (plane / glm::length(normal));
 }
 
+glm::vec2 sign_not_zero(glm::vec2 v) {
+    return glm::vec2((v.x >= 0.0) ? 1.0 : -1.0, (v.y >= 0.0) ? 1.0 : -1.0);
+}
+
+glm::vec2 encodeNormalOctahedron(glm::vec3 n) {
+    // Project the sphere onto the octahedron, and then onto the xy plane
+    glm::vec2 p = glm::vec2(n.x, n.y) * (1.0f / (abs(n.x) + abs(n.y) + abs(n.z)));
+    // Reflect the folds of the lower hemisphere over the diagonals
+    return (n.z < 0.0f) ? ((glm::vec2(1.0) - abs(glm::vec2(p.y, p.x))) * sign_not_zero(p)) : p;
+}
+
+glm::vec3 decodeNormalOctahedron(glm::vec2 f) {
+    glm::vec3 n = glm::vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = Helix::max(-n.z, 0.0f); // Also saturate
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+
+    return normalize(n);
+}
+
 int main(int argc, char** argv)
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -229,6 +249,8 @@ int main(int argc, char** argv)
     int frame_count = 0;
     double last_time = 0.0;
 
+    glm::vec3 light_position = glm::vec3(0, 0, 0.0f);
+
 
     while (!window.requested_exit) {
         ZoneScoped;
@@ -292,6 +314,7 @@ int main(int argc, char** argv)
                 if (ImGui::Begin("Scene Settings")) {
                     ImGui::Text("x: %f, y: %f, z: %f", camera.position.x, camera.position.y, camera.position.z);
                     ImGui::Text("AABB \t minx: %f, miny: %f, maxx: %f, maxy: %f", scene->tester.x, scene->tester.y, scene->tester.z, scene->tester.w);
+                    ImGui::SliderFloat3("Light position", (float*)&light_position, -30.f, 30.f);
                     ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
                 }
                 ImGui::End();
@@ -329,7 +352,7 @@ int main(int argc, char** argv)
                     scene_data.inverse_view_projection = camera.projection;// TODO glm::inverse(view_projection);
                     scene_data.view_matrix = camera.view;
                     scene_data.camera_position = glm::vec4(camera.position.x, camera.position.y, camera.position.z, 1.0f);
-                    scene_data.light_position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
+                    scene_data.light_position = glm::vec4(light_position, 1.0f);
                     scene_data.light_range = light_range;
                     scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;

@@ -47,7 +47,7 @@ namespace Helix {
         u32                             color;
         u32                             frame_index;
 
-        cstring name;
+        cstring                         name;
     }; // struct GPUTimestamp
 
 

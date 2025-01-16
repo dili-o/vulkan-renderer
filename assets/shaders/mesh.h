@@ -18,7 +18,7 @@ struct MeshDraw {
     // x = diffuse index, y = roughness index, z = normal index, w = occlusion index.
     // Occlusion and roughness are encoded in the same texture
     uvec4       textures;
-    vec4        emissive;
+    //vec4        emissive;
     vec4        base_color_factor;
     vec4        metallic_roughness_occlusion_factor;
 

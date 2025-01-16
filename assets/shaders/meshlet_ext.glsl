@@ -353,15 +353,16 @@ layout (location = 5) in vec4 vColour;
 #endif
 
 layout (location = 0) out vec4 color_out;
-layout (location = 1) out vec2 normal_out;
-layout (location = 2) out vec4 occlusion_roughness_metalness_out;
-layout (location = 3) out vec4 emissive_out;
+layout (location = 1) out vec4 normal_out;
+layout (location = 2) out vec4 roughness_metallic_occlusion_out;
+layout (location = 3) out vec4 position_out;
 
 void main() {
     MeshDraw mesh_draw = mesh_draws[mesh_draw_index];
     uint flags = mesh_draw.flags;
 
     vec3 world_position = vPosition_BiTanZ.xyz;
+    position_out.xyz = world_position;
     vec3 normal = normalize(vNormal_BiTanX.xyz);
     if ( (flags & DrawFlags_HasNormals) == 0 ) {
         normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
@@ -422,7 +423,9 @@ void main() {
         normal = normalize(TBN * normalize(bump_normal));
     }
 
-    normal_out.rg = octahedral_encode(normal);
+    // Encode then convert from [-1, 1] -> [0, 1]
+    normal_out.xy = octahedral_encode(normal);
+    normal_out.xy = (normal_out.xy + vec2(1.0f)) * 0.5f;
 
     float metalness = 0.0;
     float roughness = 0.0;
@@ -431,7 +434,6 @@ void main() {
         // TODO(marco): better conversion
         metalness = 0.5;
         roughness = max(pow((1 - mesh_draw.specular_exp), 2), 0.0001);
-        emissive_out = vec4( 0, 0, 0, 1 );
     } else {
         roughness = mesh_draw.metallic_roughness_occlusion_factor.x;
         metalness = mesh_draw.metallic_roughness_occlusion_factor.y;
@@ -452,15 +454,9 @@ void main() {
             // Red channel for occlusion value
             occlusion *= o.r;
         }
-
-        emissive_out = vec4( mesh_draw.emissive.rgb, 1.0 );
-        uint emissive_texture = uint(mesh_draw.emissive.w);
-        if ( emissive_texture != INVALID_TEXTURE_INDEX ) {
-            emissive_out *= vec4( decode_srgb( texture(global_textures[nonuniformEXT(emissive_texture)], vTexcoord0).rgb ), 1.0 );
-        }
     }
 
-    occlusion_roughness_metalness_out.rgb = vec3( occlusion, roughness, metalness );
+    roughness_metallic_occlusion_out.rgb = vec3( roughness, metalness, occlusion );
 #if DEBUG
     color_out = vColour;
 #else
@@ -578,12 +574,6 @@ void main() {
             vec4 o = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0);
             // Red channel for occlusion value
             occlusion *= o.r;
-        }
-
-        emissive_colour = mesh_draw.emissive.rgb;
-        uint emissive_texture = uint(mesh_draw.emissive.w);
-        if ( emissive_texture != INVALID_TEXTURE_INDEX ) {
-            emissive_colour *= decode_srgb( texture(global_textures[nonuniformEXT(emissive_texture)], vTexcoord0).rgb );
         }
     }
 

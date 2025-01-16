@@ -131,7 +131,7 @@ namespace Helix {
         //gpu_mesh_data.emissive = { mesh.pbr_material.emissive_factor.x, mesh.pbr_material.emissive_factor.y, mesh.pbr_material.emissive_factor.z, (float)mesh.pbr_material.emissive_texture_index };
 
         gpu_mesh_data.base_color_factor = mesh.pbr_material.base_color_factor;
-        gpu_mesh_data.metallic_roughness_occlusion_factor = mesh.pbr_material.metallic_roughness_occlusion_factor;
+        gpu_mesh_data.roughness_metallic_occlusion_factor = mesh.pbr_material.roughness_metallic_occlusion_factor;
         gpu_mesh_data.alpha_cutoff = mesh.pbr_material.alpha_cutoff;
 
         //gpu_mesh_data.diffuse_colour = mesh.pbr_material.diffuse_colour;
@@ -852,7 +852,7 @@ namespace Helix {
                 mesh_data->textures[3] = mesh.pbr_material.occlusion_texture_index;
 
                 mesh_data->base_color_factor = mesh.pbr_material.base_color_factor;
-                mesh_data->metallic_roughness_occlusion_factor = mesh.pbr_material.metallic_roughness_occlusion_factor;
+                mesh_data->roughness_metallic_occlusion_factor = mesh.pbr_material.roughness_metallic_occlusion_factor;
                 mesh_data->alpha_cutoff = mesh.pbr_material.alpha_cutoff;
                 mesh_data->flags = mesh.pbr_material.flags;
 
@@ -1566,7 +1566,7 @@ namespace Helix {
                 u16* indices = (u16*)((u8*)buffers_data[indices_buffer_view.buffer] + indicies_data_offset);
 
 
-                meshopt_optimizeVertexCache(indices, indices, indices_accessor.count, position_accessor.count);
+                //meshopt_optimizeVertexCache(indices, indices, indices_accessor.count, position_accessor.count);
                 //meshopt_optimizeVertexFetch(vertices, indices, indices_accessor.count, vertices, position_accessor.count, sizeof(glm::vec3));
                 //if(normals)
                 //    meshopt_optimizeVertexFetch(normals, indices, indices_accessor.count, normals, position_accessor.count, sizeof(glm::vec3));
@@ -1960,8 +1960,8 @@ namespace Helix {
                 pbr_material.base_color_factor = { 1.0f, 1.0f, 1.0f, 1.0f };
             }
 
-            pbr_material.metallic_roughness_occlusion_factor.x = material.pbr_metallic_roughness->roughness_factor != glTF::INVALID_FLOAT_VALUE ? material.pbr_metallic_roughness->roughness_factor : 1.f;
-            pbr_material.metallic_roughness_occlusion_factor.y = material.pbr_metallic_roughness->metallic_factor != glTF::INVALID_FLOAT_VALUE ? material.pbr_metallic_roughness->metallic_factor : 1.f;
+            pbr_material.roughness_metallic_occlusion_factor.x = material.pbr_metallic_roughness->roughness_factor != glTF::INVALID_FLOAT_VALUE ? material.pbr_metallic_roughness->roughness_factor : 1.f;
+            pbr_material.roughness_metallic_occlusion_factor.y = material.pbr_metallic_roughness->metallic_factor != glTF::INVALID_FLOAT_VALUE ? material.pbr_metallic_roughness->metallic_factor : 1.f;
 
             pbr_material.diffuse_texture_index = get_material_texture(gpu, material.pbr_metallic_roughness->base_color_texture);
             pbr_material.roughness_texture_index = get_material_texture(gpu, material.pbr_metallic_roughness->metallic_roughness_texture);
@@ -1972,10 +1972,10 @@ namespace Helix {
 
         if (material.occlusion_texture != nullptr) {
             if (material.occlusion_texture->strength != glTF::INVALID_FLOAT_VALUE) {
-                pbr_material.metallic_roughness_occlusion_factor.z = material.occlusion_texture->strength;
+                pbr_material.roughness_metallic_occlusion_factor.z = material.occlusion_texture->strength;
             }
             else {
-                pbr_material.metallic_roughness_occlusion_factor.z = 1.0f;
+                pbr_material.roughness_metallic_occlusion_factor.z = 1.0f;
             }
         }
     }

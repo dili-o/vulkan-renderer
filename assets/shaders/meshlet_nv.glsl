@@ -40,7 +40,7 @@ struct Meshlet
 };
 
 
-#if defined (TASK_DEPTH_PRE) || defined(TASK_GBUFFER_CULLING) || defined(TASK_TRANSPARENT_NO_CULL)
+#if defined (TASK)
 
 #define CULL 1
 
@@ -323,7 +323,7 @@ void main()
         gl_MeshVerticesNV[ i ].gl_Position = view_projection * (model * vec4(position, 1));
 
         vec4 worldPosition = model * vec4(position, 1.0);
-        vPosition_BiTanZ[ i ].xyz = worldPosition.xyz / worldPosition.w;
+        vPosition_BiTanZ[ i ].xyz = worldPosition.xyz;
 
         mesh_draw_index[ i ] = meshlets[meshlet_index].mesh_index;
 
@@ -346,83 +346,6 @@ void main()
 
 #endif // MESH
 
-
-#if defined(MESH_DEPTH_PRE)
-
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 64, max_primitives = 124) out;
-
-layout(set = MATERIAL_SET, binding = 1) readonly buffer Meshlets
-{
-    Meshlet meshlets[];
-};
-
-layout(set = MATERIAL_SET, binding = 3) readonly buffer MeshletData
-{
-    uint meshletData[];
-};
-
-layout(set = MATERIAL_SET, binding = 4) readonly buffer VertexPositions
-{
-    VertexPosition vertex_positions[];
-};
-
-layout(set = MATERIAL_SET, binding = 5) readonly buffer VertexData
-{
-    VertexExtraData vertex_data[];
-};
-
-layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
-{
-    MeshDrawCommand draw_commands[];
-};
-
-in taskNV block
-{
-    uint meshletIndices[32];
-};
-
-void main()
-{
-    uint mesh_index = meshletIndices[gl_WorkGroupID.x];
-
-    MeshDraw mesh_draw = mesh_draws[ meshlets[mesh_index].mesh_index ];
-
-    uint vertexCount = uint(meshlets[mesh_index].vertexCount);
-    uint triangleCount = uint(meshlets[mesh_index].triangleCount);
-    uint indexCount = triangleCount * 3;
-
-    uint dataOffset = meshlets[mesh_index].dataOffset;
-    uint vertexOffset = dataOffset;
-    uint indexOffset = dataOffset + vertexCount;
-
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
-    mat4 model = mesh_instance_draws[mesh_instance_index].model;
-
-    // TODO: if we have meshlets with 62 or 63 vertices then we pay a small penalty for branch divergence here - we can instead redundantly xform the last vertex
-    uint task_invo = gl_LocalInvocationID.x;
-    for (uint i = task_invo; i < vertexCount; i += 32)
-    {
-        uint vi = meshletData[vertexOffset + i]; + mesh_draw.vertexOffset;
-
-        vec3 position = vec3(vertex_positions[vi].v.x, vertex_positions[vi].v.y, vertex_positions[vi].v.z);
-
-        gl_MeshVerticesNV[ i ].gl_Position = view_projection * (model * vec4(position, 1));
-    }
-
-    uint indexGroupCount = (indexCount + 3) / 4;
-
-    for (uint i = task_invo; i < indexGroupCount; i += 32)
-    {
-        writePackedPrimitiveIndices4x8NV(i * 4, meshletData[indexOffset + i]);
-    }
-
-    if (task_invo == 0)
-        gl_PrimitiveCountNV = uint(meshlets[mesh_index].triangleCount);
-}
-
-#endif // MESH
-
 #if defined(FRAGMENT_GBUFFER_CULLING) || defined(FRAGMENT_MESH)
 
 layout (location = 0) in vec2 vTexcoord0;
@@ -436,15 +359,16 @@ layout (location = 5) in vec4 vColour;
 #endif
 
 layout (location = 0) out vec4 color_out;
-layout (location = 1) out vec2 normal_out;
-layout (location = 2) out vec4 occlusion_roughness_metalness_out;
-layout (location = 3) out vec4 emissive_out;
+layout (location = 1) out vec4 normal_out;
+layout (location = 2) out vec4 roughness_metallic_occlusion_out;
+layout (location = 3) out vec4 position_out;
 
 void main() {
     MeshDraw mesh_draw = mesh_draws[mesh_draw_index];
     uint flags = mesh_draw.flags;
 
     vec3 world_position = vPosition_BiTanZ.xyz;
+    position_out.xyz = world_position;
     vec3 normal = normalize(vNormal_BiTanX.xyz);
     if ( (flags & DrawFlags_HasNormals) == 0 ) {
         normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
@@ -505,7 +429,9 @@ void main() {
         normal = normalize(TBN * normalize(bump_normal));
     }
 
-    normal_out.rg = octahedral_encode(normal);
+    // Encode then convert from [-1, 1] -> [0, 1]
+    normal_out.xy = octahedral_encode(normal);
+    normal_out.xy = (normal_out.xy + vec2(1.0f)) * 0.5f;
 
     float metalness = 0.0;
     float roughness = 0.0;
@@ -514,7 +440,6 @@ void main() {
         // TODO(marco): better conversion
         metalness = 0.5;
         roughness = max(pow((1 - mesh_draw.specular_exp), 2), 0.0001);
-        emissive_out = vec4( 0, 0, 0, 1 );
     } else {
         roughness = mesh_draw.metallic_roughness_occlusion_factor.x;
         metalness = mesh_draw.metallic_roughness_occlusion_factor.y;
@@ -535,15 +460,9 @@ void main() {
             // Red channel for occlusion value
             occlusion *= o.r;
         }
-
-        emissive_out = vec4( mesh_draw.emissive.rgb, 1.0 );
-        uint emissive_texture = uint(mesh_draw.emissive.w);
-        if ( emissive_texture != INVALID_TEXTURE_INDEX ) {
-            emissive_out *= vec4( decode_srgb( texture(global_textures[nonuniformEXT(emissive_texture)], vTexcoord0).rgb ), 1.0 );
-        }
     }
 
-    occlusion_roughness_metalness_out.rgb = vec3( occlusion, roughness, metalness );
+    roughness_metallic_occlusion_out.rgb = vec3( roughness, metalness, occlusion );
 #if DEBUG
     color_out = vColour;
 #else
@@ -661,12 +580,6 @@ void main() {
             vec4 o = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0);
             // Red channel for occlusion value
             occlusion *= o.r;
-        }
-
-        emissive_colour = mesh_draw.emissive.rgb;
-        uint emissive_texture = uint(mesh_draw.emissive.w);
-        if ( emissive_texture != INVALID_TEXTURE_INDEX ) {
-            emissive_colour *= decode_srgb( texture(global_textures[nonuniformEXT(emissive_texture)], vTexcoord0).rgb );
         }
     }
 

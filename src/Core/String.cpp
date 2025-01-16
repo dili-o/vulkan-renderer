@@ -190,8 +190,8 @@ namespace Helix {
     char* StringBuffer::append_use_substring(cstring string, u32 start_index, u32 end_index) {
         u32 size = end_index - start_index;
         if (current_size + size >= buffer_size) {
+            HERROR("Buffer full! Please allocate more size. Current size: {}, String Size: {}", current_size, size);
             HASSERT_OVERFLOW();
-            HERROR("Buffer full! Please allocate more size.");
             return nullptr;
         }
 

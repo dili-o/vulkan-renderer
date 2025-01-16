@@ -17,14 +17,6 @@ void main() {
 
 #if defined (FRAGMENT_PBR)
 
-layout ( std140, set = MATERIAL_SET, binding = 0 ) uniform LocalConstants {
-    mat4        view_projection;
-    vec4        eye;
-    vec4        light;
-    float       light_range;
-    float       light_intensity;
-};
-
 uint DrawFlags_AlphaMask = 1 << 0;
 
 layout ( std140, set = MATERIAL_SET, binding = 1 ) uniform Mesh {
@@ -49,16 +41,19 @@ void main() {
     vec4 base_colour = texture(global_textures[nonuniformEXT(textures.x)], vTexcoord0);
     vec3 rmo = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0).rgb;
     vec3 normal = texture(global_textures[nonuniformEXT(textures.z)], vTexcoord0).rgb;
+    // Convert from [0, 1] -> [-1, 1] then decode
+    normal.rg = (normal.rg * 2.0f) - vec2(1.0f);
+    normal = octahedral_decode(normal.rg);
     vec3 vPosition = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0).rgb;
 
     vec3 V = normalize( eye.xyz - vPosition );
     vec3 L = normalize( light.xyz - vPosition );
-    vec3 N = normal;
+    vec3 N = normalize( normal );
     vec3 H = normalize( L + V );
 
-    float occlusion = rmo.r;
-    float roughness = rmo.g;
-    float metalness = rmo.b;
+    float roughness = rmo.r;
+    float metalness = rmo.g;
+    float occlusion = rmo.b;
 
     float alpha = pow(roughness, 2.0);
 
@@ -74,7 +69,7 @@ void main() {
     float HdotV = clamp(dot(H, V), 0, 1);
 
     float distance = length(light.xyz - vPosition);
-    float intensity = 80.0f * max(min(1.0 - pow(distance / 20.0f, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+    float intensity = 5.0f * max(min(1.0 - pow(distance / 20.0f, 4.0), 1.0), 0.0) / pow(distance, 2.0);
 
     vec3 material_colour = vec3(0, 0, 0);
     if (NdotL > 0.0 || NdotV > 0.0)
@@ -96,8 +91,7 @@ void main() {
         material_colour = mix( fresnel_mix, conductor_fresnel, metalness );
     }
 
-    //frag_color = vec4( encode_srgb( material_colour ), base_colour.a );
-    frag_color = base_colour;
+    frag_color = vec4( encode_srgb( material_colour ), base_colour.a );
 }
 
 #endif // FRAGMENT

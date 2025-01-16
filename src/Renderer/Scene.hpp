@@ -91,7 +91,7 @@ namespace Helix {
         u16                 occlusion_texture_index;
 
         glm::vec4           base_color_factor;
-        glm::vec4           metallic_roughness_occlusion_factor;
+        glm::vec4           roughness_metallic_occlusion_factor;
 
         f32                 alpha_cutoff;
         u32                 flags;
@@ -171,11 +171,11 @@ namespace Helix {
 
     struct alignas(16) GPUMaterialData {
 
-        u32                     textures[4]; // diffuse, roughness, normal, occlusion
+        u32                     textures[4]; // base_color , roughness, normal, occlusion
         // PBR
-        glm::vec4               emissive; // emissive_color_factor + emissive texture index
+        //glm::vec4               emissive; // emissive_color_factor + emissive texture index
         glm::vec4               base_color_factor;
-        glm::vec4               metallic_roughness_occlusion_factor; // metallic, roughness, occlusion
+        glm::vec4               roughness_metallic_occlusion_factor; // metallic, roughness, occlusion
 
         u32                     flags;
         f32                     alpha_cutoff;
@@ -214,7 +214,7 @@ namespace Helix {
 
         u32                 textures[4]; // diffuse, roughness, normal, occlusion
         glm::vec4           base_color_factor;
-        glm::vec4           metallic_roughness_occlusion_factor; // metallic, roughness, occlusion
+        glm::vec4           roughness_metallic_occlusion_factor;
         float               alpha_cutoff;
         float               padding_[3];
 
