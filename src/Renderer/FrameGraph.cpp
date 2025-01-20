@@ -582,6 +582,30 @@ namespace Helix {
 
                     output_creation.resource_info.texture.compute = node_creation.compute;
 
+                    // Parse depth/stencil values
+                    if (TextureFormat::has_depth(output_creation.resource_info.texture.format)) {
+                        output_creation.resource_info.texture.clear_values[0] = pass_output.value("clear_depth", 1.0f);
+                        output_creation.resource_info.texture.clear_values[1] = pass_output.value("clear_stencil", 0.0f);
+                    }
+                    else {
+                        // Parse color array
+                        json clear_color_array = pass_output["clear_color"];
+                        if (clear_color_array.is_array()) {
+                            for (u32 c = 0; c < clear_color_array.size(); ++c) {
+                                output_creation.resource_info.texture.clear_values[c] = clear_color_array[c];
+                            }
+                        }
+                        else {
+                            if (output_creation.resource_info.texture.load_op == RenderPassOperation::Clear) {
+                                HERROR("Error parsing output texture {}: load operation is clear, but clear color not specified. Defaulting to 0,0,0,0.", output_creation.name);
+                            }
+                            output_creation.resource_info.texture.clear_values[0] = 0.0f;
+                            output_creation.resource_info.texture.clear_values[1] = 0.0f;
+                            output_creation.resource_info.texture.clear_values[2] = 0.0f;
+                            output_creation.resource_info.texture.clear_values[3] = 0.0f;
+                        }
+                    }
+
                 } break;
                 case FrameGraphResourceType_Buffer:
                 {
@@ -913,8 +937,8 @@ namespace Helix {
             else {
                 gpu_commands->push_marker(node->name);
                 // TODO(marco): add clear colour to json
-                gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
-                gpu_commands->clear_depth_stencil(1.0f, 0);
+                //gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
+                //gpu_commands->clear_depth_stencil(1.0f, 0);
 
                 u32 width = 0;
                 u32 height = 0;
@@ -955,9 +979,14 @@ namespace Helix {
 
                         if (TextureFormat::has_depth(texture->vk_format)) {
                             util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_DEPTH_WRITE, 0, 1, true);
+
+                            f32* clear_color = resource->resource_info.texture.clear_values;
+                            gpu_commands->clear_depth_stencil(clear_color[0], (u8)clear_color[1]);
                         }
                         else {
                             util_add_image_barrier(gpu_commands->device, gpu_commands->vk_handle, texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
+                            f32* clear_color = resource->resource_info.texture.clear_values;
+                            gpu_commands->clear(clear_color[0], clear_color[1], clear_color[2], clear_color[3], o);
                         }
                     }
                 }

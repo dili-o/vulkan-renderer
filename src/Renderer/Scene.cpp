@@ -122,26 +122,21 @@ namespace Helix {
         return 0; // both are the same (both double-sided or both not double-sided)
     }
 
-    static void copy_gpu_material_data(GPUMaterialData& gpu_mesh_data, const Mesh& mesh) {
-        gpu_mesh_data.textures[0] = mesh.pbr_material.diffuse_texture_index;
-        gpu_mesh_data.textures[1] = mesh.pbr_material.roughness_texture_index;
-        gpu_mesh_data.textures[2] = mesh.pbr_material.normal_texture_index;
-        gpu_mesh_data.textures[3] = mesh.pbr_material.occlusion_texture_index;
+    static void copy_gpu_material_data(GPUMaterialData& gpu_material_data, const Mesh& mesh) {
+        gpu_material_data.textures[0] = mesh.pbr_material.diffuse_texture_index;
+        gpu_material_data.textures[1] = mesh.pbr_material.roughness_texture_index;
+        gpu_material_data.textures[2] = mesh.pbr_material.normal_texture_index;
+        gpu_material_data.textures[3] = mesh.pbr_material.occlusion_texture_index;
 
-        //gpu_mesh_data.emissive = { mesh.pbr_material.emissive_factor.x, mesh.pbr_material.emissive_factor.y, mesh.pbr_material.emissive_factor.z, (float)mesh.pbr_material.emissive_texture_index };
+        gpu_material_data.base_color_factor = mesh.pbr_material.base_color_factor;
+        gpu_material_data.roughness_metallic_occlusion_factor = mesh.pbr_material.roughness_metallic_occlusion_factor;
+        gpu_material_data.alpha_cutoff = mesh.pbr_material.alpha_cutoff;
 
-        gpu_mesh_data.base_color_factor = mesh.pbr_material.base_color_factor;
-        gpu_mesh_data.roughness_metallic_occlusion_factor = mesh.pbr_material.roughness_metallic_occlusion_factor;
-        gpu_mesh_data.alpha_cutoff = mesh.pbr_material.alpha_cutoff;
-
-        //gpu_mesh_data.diffuse_colour = mesh.pbr_material.diffuse_colour;
-        //gpu_mesh_data.specular_colour = mesh.pbr_material.specular_colour;
-        //gpu_mesh_data.specular_exp = mesh.pbr_material.specular_exp;
-        //gpu_mesh_data.ambient_colour = mesh.pbr_material.ambient_colour;
-
-        gpu_mesh_data.flags = mesh.pbr_material.flags;
-
-        gpu_mesh_data.mesh_index = mesh.gpu_mesh_index;
+        gpu_material_data.flags = mesh.pbr_material.flags;
+    }
+    //
+    // 
+    static void copy_gpu_mesh_data(GPUMeshData& gpu_mesh_data, const Mesh& mesh) {
         gpu_mesh_data.meshlet_offset = mesh.meshlet_offset;
         gpu_mesh_data.meshlet_count = mesh.meshlet_count;
     }
@@ -155,10 +150,9 @@ namespace Helix {
 
         return output_resource;
     }
-
     //
     //
-    static void copy_gpu_mesh_matrix(GPUMeshData& gpu_mesh_data, const Mesh& mesh, const f32 global_scale, const ResourcePool* mesh_nodes) {
+    static void copy_gpu_mesh_matrix(MeshData& gpu_mesh_data, const Mesh& mesh, const f32 global_scale, const ResourcePool* mesh_nodes) {
 
         // Apply global scale matrix
         glm::mat4 scale_mat = glm::scale(glm::mat4(1.0f), glm::vec3(global_scale, global_scale, global_scale));
@@ -166,7 +160,6 @@ namespace Helix {
         gpu_mesh_data.model = mesh_node->world_transform.calculate_matrix() * scale_mat;
         gpu_mesh_data.inverse_model = glm::inverse(glm::transpose(gpu_mesh_data.model));
     }
-
     //
     // MeshEarlyCullingPass /////////////////////////////////////////////////////////
     void MeshEarlyCullingPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
@@ -260,7 +253,8 @@ namespace Helix {
                 DescriptorSetCreation ds_creation{};
                 ds_creation
                     .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_early_command_buffers[i], 1)
-                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_indirect_draw_late_command_buffers[i], 3).buffer(scene.mesh_instances_buffer, 10)
+                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_data_buffer, 3)
+                    .buffer(scene.mesh_indirect_draw_late_command_buffers[i], 4).buffer(scene.mesh_instances_buffer, 10)
                     .buffer(scene.mesh_draw_count_buffers[i], 11).buffer(scene.mesh_bounds_buffer, 12)
                     .buffer(scene.debug_line_buffer, 20).buffer(scene.debug_line_count_buffer, 21)
                     .buffer(scene.debug_line_indirect_command_buffer, 22).set_layout(layout);
@@ -352,7 +346,8 @@ namespace Helix {
                 DescriptorSetCreation ds_creation{};
                 ds_creation
                     .buffer(scene.scene_constant_buffer, 0).buffer(scene.mesh_indirect_draw_early_command_buffers[i], 1)
-                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_indirect_draw_late_command_buffers[i], 3).buffer(scene.mesh_instances_buffer, 10)
+                    .buffer(scene.material_data_buffer, 2).buffer(scene.mesh_data_buffer, 3)
+                    .buffer(scene.mesh_indirect_draw_late_command_buffers[i], 4).buffer(scene.mesh_instances_buffer, 10)
                     .buffer(scene.mesh_draw_count_buffers[i], 11).buffer(scene.mesh_bounds_buffer, 12)
                     .buffer(scene.debug_line_buffer, 20).buffer(scene.debug_line_count_buffer, 21)
                     .buffer(scene.debug_line_indirect_command_buffer, 22).set_layout(layout);
@@ -598,10 +593,6 @@ namespace Helix {
             TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
             Texture* depth_texture = gpu->access_texture(depth_handle);
 
-            Mesh& mesh = p_scene->opaque_meshes[0];
-            MeshNode* mesh_node_primitive = (MeshNode*)p_scene->node_pool.access_node({ mesh.node_index, NodeType::MeshNode });
-
-
             util_add_image_barrier(gpu, gpu_commands->vk_handle, depth_texture, RESOURCE_STATE_SHADER_RESOURCE, 0, 1, true);
 
             for (u32 mip_index = 0; mip_index < depth_pyramid_texture->mip_level_count; ++mip_index) {
@@ -637,24 +628,23 @@ namespace Helix {
     void DepthPyramidPass::on_resize(GpuDevice& gpu, FrameGraph* frame_graph, u32 new_width, u32 new_height) {
 
         // Destroy old resources
-        gpu.destroy_texture(depth_pyramid);
-        // Use old depth pyramid levels value
-        for (u32 i = 0; i < depth_pyramid_levels; ++i) {
-            gpu.destroy_descriptor_set(depth_hierarchy_descriptor_set[i]);
-            gpu.destroy_texture(depth_pyramid_views[i]);
-        }
-
-        FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
-        TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
-        Texture* depth_texture = gpu.access_texture(depth_handle);
-
-        create_depth_pyramid_resource(depth_texture);
+        //gpu.destroy_texture(depth_pyramid);
+        //// Use old depth pyramid levels value
+        //for (u32 i = 0; i < depth_pyramid_levels; ++i) {
+        //    gpu.destroy_descriptor_set(depth_hierarchy_descriptor_set[i]);
+        //    gpu.destroy_texture(depth_pyramid_views[i]);
+        //}
+        //
+        //FrameGraphResource* depth_resource = (FrameGraphResource*)frame_graph->get_resource("depth");
+        //TextureHandle depth_handle = depth_resource->resource_info.texture.handle;
+        //Texture* depth_texture = gpu.access_texture(depth_handle);
+        //
+        //create_depth_pyramid_resource(depth_texture);
     }
 
     void DepthPyramidPass::prepare_draws(Scene& scene_, FrameGraph* frame_graph, Allocator* resident_allocator) {
         glTFScene& scene = (glTFScene&)scene_;
 
-        p_scene = &scene;
         renderer = scene.renderer;
 
         FrameGraphNode* node = frame_graph->get_node("depth_pyramid_pass");
@@ -772,18 +762,18 @@ namespace Helix {
         if (renderer) {
 
             if (/*use_compute*/false) {
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 1);
-                gpu_commands->bind_pipeline(pipeline);
-                gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
-
-                gpu_commands->dispatch(ceilu32(renderer->gpu->swapchain_width * 1.f / 8), ceilu32(renderer->gpu->swapchain_height * 1.f / 8), 1);
+                //PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 1);
+                //gpu_commands->bind_pipeline(pipeline);
+                //gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
+                //
+                //gpu_commands->dispatch(ceilu32(renderer->gpu->swapchain_width * 1.f / 8), ceilu32(renderer->gpu->swapchain_height * 1.f / 8), 1);
             }
             else {
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 0);
-
-                gpu_commands->bind_pipeline(pipeline);
-                gpu_commands->bind_vertex_buffer(mesh.position_buffer, 0, 0);
-                gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1, nullptr, 0);
+                gpu_commands->bind_pipeline(pipeline_handle);
+                gpu_commands->bind_vertex_buffer(renderer->gpu->get_fullscreen_vertex_buffer(), 0, 0);
+                gpu_commands->bind_descriptor_set(&d_set, 1, nullptr, 0);
+                Pipeline* pipeline = renderer->gpu->access_pipeline(pipeline_handle);
+                vkCmdPushConstants(gpu_commands->vk_handle, pipeline->vk_pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(LightingData), &lighting_data);
 
                 gpu_commands->draw(3, 1, 0, 0);
             }
@@ -806,67 +796,34 @@ namespace Helix {
             return;
 
 
-
         const u64 hashed_name = hash_calculate("pbr_lighting");
         Program* lighting_program = renderer->resource_cache.programs.get(hashed_name);
-
-        MaterialCreation material_creation;
-
-        material_creation.set_name("material_pbr").set_program(lighting_program).set_render_index(0);
-        Material* material_pbr = renderer->create_material(material_creation);
-
-        BufferCreation buffer_creation;
-        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData)).set_name("light_mesh_data");
-        mesh.pbr_material.material_buffer = renderer->create_buffer(buffer_creation)->handle;
+        pipeline_handle = lighting_program->passes[0].pipeline;
 
         DescriptorSetCreation ds_creation{};
         DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(lighting_program->passes[0].pipeline, k_material_descriptor_set_index);
-        ds_creation.buffer(scene.scene_constant_buffer, 0).buffer(mesh.pbr_material.material_buffer, 1).set_layout(layout);
-        mesh.pbr_material.descriptor_set = renderer->gpu->create_descriptor_set(ds_creation);
-
-        BufferHandle fs_vb = renderer->gpu->get_fullscreen_vertex_buffer();
-        mesh.position_buffer = fs_vb;
+        ds_creation.buffer(scene.scene_constant_buffer, 0).set_layout(layout);
+        d_set = renderer->gpu->create_descriptor_set(ds_creation);
 
         FrameGraphResource* color_texture = get_output_texture(frame_graph, node->inputs[0]);
         FrameGraphResource* normal_texture = get_output_texture(frame_graph, node->inputs[1]);
         FrameGraphResource* roughness_texture = get_output_texture(frame_graph, node->inputs[2]);
         FrameGraphResource* position_texture = get_output_texture(frame_graph, node->inputs[3]);
 
-        mesh.pbr_material.diffuse_texture_index = color_texture->resource_info.texture.handle.index;
-        mesh.pbr_material.normal_texture_index = normal_texture->resource_info.texture.handle.index;
-        mesh.pbr_material.roughness_texture_index = roughness_texture->resource_info.texture.handle.index;
-        mesh.pbr_material.occlusion_texture_index = position_texture->resource_info.texture.handle.index;
-        mesh.pbr_material.material = material_pbr;
+        lighting_data.gbuffer_color_index = color_texture->resource_info.texture.handle.index;
+        lighting_data.gbuffer_rmo_index = roughness_texture->resource_info.texture.handle.index;
+        lighting_data.gbuffer_normal_index = normal_texture->resource_info.texture.handle.index;
+        lighting_data.gbuffer_position_index = position_texture->resource_info.texture.handle.index;
     }
 
     void LightPass::fill_gpu_material_buffer() {
-
-        if (renderer) {
-            MapBufferParameters cb_map = { mesh.pbr_material.material_buffer, 0, 0 };
-            GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(cb_map);
-            if (mesh_data) {
-                //copy_gpu_material_data(*mesh_data, mesh);
-                mesh_data->textures[0] = mesh.pbr_material.diffuse_texture_index;
-                mesh_data->textures[1] = mesh.pbr_material.roughness_texture_index;
-                mesh_data->textures[2] = mesh.pbr_material.normal_texture_index;
-                mesh_data->textures[3] = mesh.pbr_material.occlusion_texture_index;
-
-                mesh_data->base_color_factor = mesh.pbr_material.base_color_factor;
-                mesh_data->roughness_metallic_occlusion_factor = mesh.pbr_material.roughness_metallic_occlusion_factor;
-                mesh_data->alpha_cutoff = mesh.pbr_material.alpha_cutoff;
-                mesh_data->flags = mesh.pbr_material.flags;
-
-                renderer->gpu->unmap_buffer(cb_map);
-            }
-        }
     }
 
     void LightPass::free_gpu_resources() {
         if (renderer) {
             GpuDevice& gpu = *renderer->gpu;
-
-            //gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-            gpu.destroy_descriptor_set(mesh.pbr_material.descriptor_set);
+        
+            gpu.destroy_descriptor_set(d_set);
         }
     }
 
@@ -1035,7 +992,7 @@ namespace Helix {
 
 
         gpu_commands->push_marker("Fullscreen");
-        gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
+        gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f, 0);
         gpu_commands->clear_depth_stencil(1.0f, 0);
         
         Framebuffer* fullscreen_fb = gpu->access_framebuffer(gpu->fullscreen_framebuffer);
@@ -1583,7 +1540,7 @@ namespace Helix {
                 // Create material buffer
                 BufferCreation buffer_creation;
                 cstring mesh_data_name = renderer->resource_name_buffer.append_use_f("mesh_data_%u", opaque_meshes.size + transparent_meshes.size);
-                buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData)).set_name(mesh_data_name);
+                buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(MeshData)).set_name(mesh_data_name);
                 mesh.pbr_material.material_buffer = renderer->create_buffer(buffer_creation)->handle;
 
                 // Meshlets
@@ -1851,6 +1808,9 @@ namespace Helix {
         buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMaterialData) * total_meshes).set_name("material_data_buffer");
         material_data_buffer = renderer->create_buffer(buffer_creation)->handle;
 
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshData) * total_meshes).set_name("mesh_data_buffer");
+        mesh_data_buffer = renderer->create_buffer(buffer_creation)->handle;
+
         buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshInstanceData) * total_meshes).set_name("mesh_instances_buffer");
         mesh_instances_buffer = renderer->create_buffer(buffer_creation)->handle;
 
@@ -1910,10 +1870,11 @@ namespace Helix {
 
             for (u32 i = 0; i < k_max_frames; ++i) {
                 DescriptorSetCreation ds_creation{};
-                ds_creation.buffer(scene_constant_buffer, 0).buffer(meshlets_buffer, 1).buffer(material_data_buffer, 2)
-                    .buffer(meshlet_vertex_and_index_indices_buffer, 3).buffer(meshlets_vertex_pos_buffer, 4).buffer(meshlets_vertex_data_buffer, 5)
-                    .buffer(mesh_indirect_draw_early_command_buffers[i], 6).buffer(mesh_draw_count_buffers[i], 7).buffer(mesh_instances_buffer, 10)
-                    .buffer(mesh_bounds_buffer, 12).buffer(debug_line_buffer, 20).buffer(debug_line_count_buffer, 21).buffer(debug_line_indirect_command_buffer, 22).set_layout(layout);
+                ds_creation.buffer(scene_constant_buffer, 0).buffer(meshlets_buffer, 1).buffer(material_data_buffer, 2).buffer(mesh_data_buffer, 3)
+                    .buffer(meshlet_vertex_and_index_indices_buffer, 4).buffer(meshlets_vertex_pos_buffer, 5).buffer(meshlets_vertex_data_buffer, 6)
+                    .buffer(mesh_indirect_draw_early_command_buffers[i], 7).buffer(mesh_draw_count_buffers[i], 8).buffer(mesh_instances_buffer, 10)
+                    .buffer(mesh_bounds_buffer, 12).buffer(debug_line_buffer, 20).buffer(debug_line_count_buffer, 21).buffer(debug_line_indirect_command_buffer, 22)
+                    .set_layout(layout);
 
                 mesh_shader_descriptor_set[i] = renderer->gpu->create_descriptor_set(ds_creation);
             }
@@ -2021,18 +1982,24 @@ namespace Helix {
     void glTFScene::fill_gpu_data_buffers(float model_scale) {
         // Update per mesh material buffer
 
-        MapBufferParameters cb_map = { material_data_buffer, 0, 0 };
-        GPUMaterialData* gpu_mesh_data = (GPUMaterialData*)renderer->gpu->map_buffer(cb_map);
+        MapBufferParameters material_buffer_map = { material_data_buffer, 0, 0 };
+        GPUMaterialData* gpu_material_data = (GPUMaterialData*)renderer->gpu->map_buffer(material_buffer_map);
+
+        MapBufferParameters mesh_buffer_map = { mesh_data_buffer, 0, 0 };
+        GPUMeshData* gpu_mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(mesh_buffer_map);
+
         MapBufferParameters mesh_instance_map = { mesh_instances_buffer, 0, 0 };
         GPUMeshInstanceData* gpu_mesh_instance_data = (GPUMeshInstanceData*)renderer->gpu->map_buffer(mesh_instance_map);
-        if (gpu_mesh_data) {
+
+        if (gpu_material_data && gpu_mesh_data) {
             for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
-                copy_gpu_material_data(gpu_mesh_data[mesh_index], opaque_meshes[mesh_index]);
+                copy_gpu_material_data(gpu_material_data[mesh_index], opaque_meshes[mesh_index]);
+                copy_gpu_mesh_data(gpu_mesh_data[mesh_index], opaque_meshes[mesh_index]);
                 Mesh& mesh = opaque_meshes[mesh_index];
 
                 MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
-                GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(material_buffer_map);
-                if (mesh_data) {
+                MeshData* mesh_data = (MeshData*)renderer->gpu->map_buffer(material_buffer_map);
+                if (gpu_mesh_instance_data && mesh_data) {
                     copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
                     gpu_mesh_instance_data[mesh_index].world = mesh_data->model;
                     gpu_mesh_instance_data[mesh_index].inverse_world = mesh_data->inverse_model;
@@ -2040,47 +2007,38 @@ namespace Helix {
                     renderer->gpu->unmap_buffer(material_buffer_map);
                 }
             }
-            //for (u32 mesh_index = opaque_meshes.size; mesh_index < (opaque_meshes.size + transparent_meshes.size); ++mesh_index) {
-            //    copy_gpu_material_data(gpu_mesh_data[mesh_index], transparent_meshes[mesh_index - opaque_meshes.size]);
-            //}
-            renderer->gpu->unmap_buffer(cb_map);
+            for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
+                copy_gpu_material_data(gpu_material_data[mesh_index + opaque_meshes.size], transparent_meshes[mesh_index]);
+                copy_gpu_mesh_data(gpu_mesh_data[mesh_index + opaque_meshes.size], transparent_meshes[mesh_index]);
+                Mesh& mesh = transparent_meshes[mesh_index];
+
+                MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
+                MeshData* mesh_data = (MeshData*)renderer->gpu->map_buffer(material_buffer_map);
+                if (mesh_data) {
+                    copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
+                    gpu_mesh_instance_data[mesh_index + opaque_meshes.size].world = mesh_data->model;
+                    gpu_mesh_instance_data[mesh_index + opaque_meshes.size].inverse_world = mesh_data->inverse_model;
+                    gpu_mesh_instance_data[mesh_index + opaque_meshes.size].mesh_index = mesh_index;
+                    renderer->gpu->unmap_buffer(material_buffer_map);
+                }
+            }
+            renderer->gpu->unmap_buffer(material_buffer_map);
+            renderer->gpu->unmap_buffer(mesh_buffer_map);
             renderer->gpu->unmap_buffer(mesh_instance_map);
         }
 
         // Copy mesh bounding spheres
-        cb_map.buffer = mesh_bounds_buffer;
-        glm::vec4* gpu_bounds_data = (glm::vec4*)renderer->gpu->map_buffer(cb_map);
+        mesh_buffer_map.buffer = mesh_bounds_buffer;
+        glm::vec4* gpu_bounds_data = (glm::vec4*)renderer->gpu->map_buffer(mesh_buffer_map);
         if (gpu_bounds_data) {
             for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
                 gpu_bounds_data[mesh_index] = opaque_meshes[mesh_index].bounding_sphere;
             }
-            renderer->gpu->unmap_buffer(cb_map);
-        }
-
-        /*for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
-            Mesh& mesh = opaque_meshes[mesh_index];
-
-            MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
-            GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(material_buffer_map);
-            if (mesh_data) {
-                copy_gpu_material_data(*mesh_data, mesh);
-                copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
-
-                renderer->gpu->unmap_buffer(material_buffer_map);
+            for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
+                gpu_bounds_data[mesh_index + opaque_meshes.size] = transparent_meshes[mesh_index].bounding_sphere;
             }
+            renderer->gpu->unmap_buffer(mesh_buffer_map);
         }
-        for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
-            Mesh& mesh = transparent_meshes[mesh_index];
-
-            MapBufferParameters material_buffer_map = { mesh.pbr_material.material_buffer, 0, 0 };
-            GPUMeshData* mesh_data = (GPUMeshData*)renderer->gpu->map_buffer(material_buffer_map);
-            if (mesh_data) {
-                copy_gpu_material_data(*mesh_data, mesh);
-                copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
-
-                renderer->gpu->unmap_buffer(material_buffer_map);
-            }
-        }*/
 
         light_pass.fill_gpu_material_buffer();
     }

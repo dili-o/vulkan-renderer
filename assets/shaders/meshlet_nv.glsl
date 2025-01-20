@@ -39,24 +39,33 @@ struct Meshlet
     uint8_t triangleCount;
 };
 
-
-#if defined (TASK)
-
-#define CULL 1
-
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-
+#if defined(TASK) || defined(MESH)
 layout(set = MATERIAL_SET, binding = 1) readonly buffer Meshlets
 {
     Meshlet meshlets[];
 };
 
-layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
+layout(set = MATERIAL_SET, binding = 4) readonly buffer MeshletData
+{
+    uint meshletData[];
+};
+
+layout(set = MATERIAL_SET, binding = 5) readonly buffer VertexPositions
+{
+    VertexPosition vertex_positions[];
+};
+
+layout(set = MATERIAL_SET, binding = 6) readonly buffer VertexData
+{
+    VertexExtraData vertex_data[];
+};
+
+layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshInstances
 {
     MeshDrawCommand draw_commands[];
 };
 
-layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
+layout(set = MATERIAL_SET, binding = 8) readonly buffer VisibleMeshCount
 {
     uint opaque_mesh_visible_count;
 	uint opaque_mesh_culled_count;
@@ -67,6 +76,13 @@ layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
 	uint depth_pyramid_texture_index;
     uint late_flag;
 };
+#endif // TASK || MESH
+
+#if defined (TASK)
+
+#define CULL 1
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 out taskNV block
 {
@@ -199,43 +215,6 @@ void main()
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
 
-layout(set = MATERIAL_SET, binding = 1) readonly buffer Meshlets
-{
-    Meshlet meshlets[];
-};
-
-layout(set = MATERIAL_SET, binding = 3) readonly buffer MeshletData
-{
-    uint meshletData[];
-};
-
-layout(set = MATERIAL_SET, binding = 4) readonly buffer VertexPositions
-{
-    VertexPosition vertex_positions[];
-};
-
-layout(set = MATERIAL_SET, binding = 5) readonly buffer VertexData
-{
-    VertexExtraData vertex_data[];
-};
-
-layout(set = MATERIAL_SET, binding = 6) readonly buffer VisibleMeshInstances
-{
-    MeshDrawCommand draw_commands[];
-};
-
-layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshCount
-{
-    uint opaque_mesh_visible_count;
-	uint opaque_mesh_culled_count;
-	uint transparent_mesh_visible_count;
-	uint transparent_mesh_culled_count;
-
-	uint total_count;
-	uint depth_pyramid_texture_index;
-    uint late_flag;
-};
-
 in taskNV block
 {
     uint meshletIndices[32];
@@ -267,7 +246,7 @@ void main()
     uint task_invo = gl_LocalInvocationID.x;
     uint meshlet_index = meshletIndices[gl_WorkGroupID.x];
 
-    MeshDraw mesh_draw = mesh_draws[ meshlets[meshlet_index].mesh_index ];
+    MaterialData material = material_data[ meshlets[meshlet_index].mesh_index ];
 
     uint vertexCount = uint(meshlets[meshlet_index].vertexCount);
     uint triangleCount = uint(meshlets[meshlet_index].triangleCount);
@@ -277,8 +256,8 @@ void main()
     uint vertexOffset = dataOffset;
     uint indexOffset = dataOffset + vertexCount;
 
-    bool has_normals = (mesh_draw.flags & DrawFlags_HasNormals) != 0;
-    bool has_tangents = (mesh_draw.flags & DrawFlags_HasTangents) != 0;
+    bool has_normals = (material.flags & DrawFlags_HasNormals) != 0;
+    bool has_tangents = (material.flags & DrawFlags_HasTangents) != 0;
 
     float i8_inverse = 1.0 / 127.0;
 
@@ -299,7 +278,7 @@ void main()
     // TODO: if we have meshlets with 62 or 63 vertices then we pay a small penalty for branch divergence here - we can instead redundantly xform the last vertex
     for (uint i = task_invo; i < vertexCount; i += 32)
     {
-        uint vi = meshletData[vertexOffset + i];// + mesh_draw.vertexOffset;
+        uint vi = meshletData[vertexOffset + i];
 
         vec3 position = vec3(vertex_positions[vi].v.x, vertex_positions[vi].v.y, vertex_positions[vi].v.z);
 
@@ -364,8 +343,8 @@ layout (location = 2) out vec4 roughness_metallic_occlusion_out;
 layout (location = 3) out vec4 position_out;
 
 void main() {
-    MeshDraw mesh_draw = mesh_draws[mesh_draw_index];
-    uint flags = mesh_draw.flags;
+    MaterialData material = material_data[mesh_draw_index];
+    uint flags = material.flags;
 
     vec3 world_position = vPosition_BiTanZ.xyz;
     position_out.xyz = world_position;
@@ -388,17 +367,15 @@ void main() {
         bitangent = cross( normal, tangent );
     }
 
-    bool phong = ( flags & DrawFlags_Phong ) != 0;
-
-    uvec4 textures = mesh_draw.textures;
-    vec4 base_colour = phong ? mesh_draw.diffuse : mesh_draw.base_color_factor;
+    uvec4 textures = material.textures;
+    vec4 base_colour = material.base_color_factor;
     if (textures.x != INVALID_TEXTURE_INDEX) {
         vec3 texture_colour = decode_srgb( texture(global_textures[nonuniformEXT(textures.x)], vTexcoord0).rgb );
         base_colour *= vec4( texture_colour, 1.0 );
     }
 
     bool useAlphaMask = (flags & DrawFlags_AlphaMask) != 0;
-    if (useAlphaMask && base_colour.a < mesh_draw.alpha_cutoff) {
+    if (useAlphaMask && base_colour.a < material.alpha_cutoff) {
         discard;
     }
 
@@ -436,30 +413,25 @@ void main() {
     float metalness = 0.0;
     float roughness = 0.0;
     float occlusion = 0.0;
-    if (phong) {
-        // TODO(marco): better conversion
-        metalness = 0.5;
-        roughness = max(pow((1 - mesh_draw.specular_exp), 2), 0.0001);
-    } else {
-        roughness = mesh_draw.metallic_roughness_occlusion_factor.x;
-        metalness = mesh_draw.metallic_roughness_occlusion_factor.y;
 
-        if (textures.y != INVALID_TEXTURE_INDEX) {
-            vec4 rm = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0);
+    roughness = material.roughness_metallic_occlusion_factor.x;
+    metalness = material.roughness_metallic_occlusion_factor.y;
 
-            // Green channel contains roughness values
-            roughness *= rm.g;
+    if (textures.y != INVALID_TEXTURE_INDEX) {
+        vec4 rm = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0);
 
-            // Blue channel contains metalness
-            metalness *= rm.b;
-        }
+        // Green channel contains roughness values
+        roughness *= rm.g;
 
-        occlusion = mesh_draw.metallic_roughness_occlusion_factor.z;
-        if (textures.w != INVALID_TEXTURE_INDEX) {
-            vec4 o = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0);
-            // Red channel for occlusion value
-            occlusion *= o.r;
-        }
+        // Blue channel contains metalness
+        metalness *= rm.b;
+    }
+
+    occlusion = material.roughness_metallic_occlusion_factor.z;
+    if (textures.w != INVALID_TEXTURE_INDEX) {
+        vec4 o = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0);
+        // Red channel for occlusion value
+        occlusion *= o.r;
     }
 
     roughness_metallic_occlusion_out.rgb = vec3( roughness, metalness, occlusion );
@@ -488,8 +460,8 @@ layout (location = 5) in vec4 vColour;
 layout (location = 0) out vec4 color_out;
 
 void main() {
-    MeshDraw mesh_draw = mesh_draws[mesh_draw_index];
-    uint flags = mesh_draw.flags;
+    MaterialData material = material_data[mesh_draw_index];
+    uint flags = material.flags;
 
     vec3 world_position = vPosition_BiTanZ.xyz;
     vec3 normal = normalize(vNormal_BiTanX.xyz);
@@ -511,17 +483,15 @@ void main() {
         bitangent = cross( normal, tangent );
     }
 
-    bool phong = ( flags & DrawFlags_Phong ) != 0;
-
-    uvec4 textures = mesh_draw.textures;
-    vec4 base_colour = phong ? mesh_draw.diffuse : mesh_draw.base_color_factor;
+    uvec4 textures = material.textures;
+    vec4 base_colour = material.base_color_factor;
     if (textures.x != INVALID_TEXTURE_INDEX) {
         vec4 texture_colour = texture(global_textures[nonuniformEXT(textures.x)], vTexcoord0);
         base_colour *= vec4( decode_srgb( texture_colour.rgb ), texture_colour.a );
     }
 
     bool useAlphaMask = (flags & DrawFlags_AlphaMask) != 0;
-    if (useAlphaMask && base_colour.a < mesh_draw.alpha_cutoff) {
+    if (useAlphaMask && base_colour.a < material.alpha_cutoff) {
         discard;
     }
 
@@ -556,31 +526,25 @@ void main() {
     float roughness = 0.0;
     float occlusion = 0.0;
     vec3 emissive_colour = vec3(0);
-    if (phong) {
-        // TODO(marco): better conversion
-        metalness = 0.5;
-        roughness = max(pow((1 - mesh_draw.specular_exp), 2), 0.0001);
-        emissive_colour = vec3( 0 );
-    } else {
-        roughness = mesh_draw.metallic_roughness_occlusion_factor.x;
-        metalness = mesh_draw.metallic_roughness_occlusion_factor.y;
 
-        if (textures.y != INVALID_TEXTURE_INDEX) {
-            vec4 rm = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0);
+    roughness = material.roughness_metallic_occlusion_factor.x;
+    metalness = material.roughness_metallic_occlusion_factor.y;
 
-            // Green channel contains roughness values
-            roughness *= rm.g;
+    if (textures.y != INVALID_TEXTURE_INDEX) {
+        vec4 rm = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0);
 
-            // Blue channel contains metalness
-            metalness *= rm.b;
-        }
+        // Green channel contains roughness values
+        roughness *= rm.g;
 
-        occlusion = mesh_draw.metallic_roughness_occlusion_factor.z;
-        if (textures.w != INVALID_TEXTURE_INDEX) {
-            vec4 o = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0);
-            // Red channel for occlusion value
-            occlusion *= o.r;
-        }
+        // Blue channel contains metalness
+        metalness *= rm.b;
+    }
+
+    occlusion = material.roughness_metallic_occlusion_factor.z;
+    if (textures.w != INVALID_TEXTURE_INDEX) {
+        vec4 o = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0);
+        // Red channel for occlusion value
+        occlusion *= o.r;
     }
 
 #if DEBUG

@@ -1,6 +1,6 @@
 
-#ifndef RAPTOR_GLSL_DEBUG_RENDERING_H
-#define RAPTOR_GLSL_DEBUG_RENDERING_H
+#ifndef HELIX_GLSL_DEBUG_RENDERING_H
+#define HELIX_GLSL_DEBUG_RENDERING_H
 
 struct DebugLineVertex {
 	vec3            position;
@@ -136,4 +136,4 @@ void debug_draw_2d_box( vec2 min, vec2 max, vec4 color ) {
 }
 
 
-#endif // RAPTOR_GLSL_DEBUG_RENDERING_H
+#endif // HELIX_GLSL_DEBUG_RENDERING_H

@@ -108,6 +108,7 @@ namespace Helix {
     static const u8                     k_max_descriptors_per_set = 16;         // Maximum list elements for both descriptor set layout and descriptor sets.
     static const u8                     k_max_vertex_streams = 16;
     static const u8                     k_max_vertex_attributes = 16;
+    static const u32                    k_depth_stencil_clear_index = k_max_image_outputs;
 
     static const u32                    k_submit_header_sentinel = 0xfefeb7ba;
     static const u32                    k_max_resource_deletions = 64;

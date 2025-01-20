@@ -46,6 +46,7 @@ constexpr const T& helix_max(const T& a, const T& b) {
 // SDL and Vulkan headers
 #include <SDL.h>
 #include <SDL_vulkan.h>
+#include <regex>
 
 namespace Helix {
 
@@ -1384,7 +1385,7 @@ namespace Helix {
         return(result);
     }
 
-    void dump_shader_code(StringBuffer& temp_string_buffer, cstring code, VkShaderStageFlagBits stage, cstring name) {
+    void dump_shader_code(StringBuffer& temp_string_buffer, cstring code, VkShaderStageFlagBits stage, cstring name, int* error_lines, u32 error_count) {
         HERROR("Error in creation of shader {}, stage {}. Writing shader:", name, to_stage_defines(stage));
 
         cstring current_code = code;
@@ -1404,10 +1405,19 @@ namespace Helix {
             if (*end_of_line == '\n') {
                 ++end_of_line;
             }
-
+            bool error_line = false;
             temp_string_buffer.clear();
             char* line = temp_string_buffer.append_use_substring(current_code, 0, (u32)(end_of_line - current_code));
-            HERROR("{}: {}", line_index++, line);
+            for (u32 i = 0; i < error_count; i++) {
+                if (error_lines[i] == line_index) {
+                    error_line = true;
+                    break;
+                }
+            }
+            if(error_line)
+                HCRITICAL_NO_BREAK("{}: {}", line_index++, line);
+            else
+                HTRACE("{}: {}", line_index++, line);
 
             current_code = end_of_line;
         }
@@ -1498,8 +1508,26 @@ namespace Helix {
 
         // Handling compilation error
         if (shader_create_info.pCode == nullptr) {
-            dump_shader_code(temp_string_buffer, code, stage, name);
-            
+            // Pattern: Look for "ERROR: <filename>:<line>:"
+            std::regex lineRegex(R"((?:ERROR: .*?:)(\d+):)");
+
+            // Vector to store extracted line numbers
+            std::vector<int> lineNumbers;
+
+            std::string errorLog(process_get_output());
+
+            // Use regex to iterate through matches in the log
+            std::sregex_iterator begin(errorLog.begin(), errorLog.end(), lineRegex);
+            std::sregex_iterator end;
+
+            for (std::sregex_iterator it = begin; it != end; ++it) {
+                // Extract the line number from the first capturing group
+                int lineNumber = std::stoi((*it)[1].str());
+                lineNumbers.push_back(lineNumber);
+            }
+
+            dump_shader_code(temp_string_buffer, code, stage, name, lineNumbers.data(), lineNumbers.size());
+
             HERROR("{}", process_get_output());
             HASSERT(false);
         }

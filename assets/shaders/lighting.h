@@ -1,6 +1,6 @@
 
-#ifndef RAPTOR_GLSL_LIGHTING_H
-#define RAPTOR_GLSL_LIGHTING_H
+#ifndef HELIX_GLSL_LIGHTING_H
+#define HELIX_GLSL_LIGHTING_H
 
 vec4 calculate_lighting(vec4 base_colour, vec3 orm, vec3 normal, vec3 emissive, vec3 vPosition) {
 
@@ -54,4 +54,4 @@ vec4 calculate_lighting(vec4 base_colour, vec3 orm, vec3 normal, vec3 emissive, 
     return vec4( encode_srgb( material_colour ), base_colour.a );
 }
 
-#endif // RAPTOR_GLSL_LIGHTING_H
+#endif // HELIX_GLSL_LIGHTING_H

@@ -117,7 +117,7 @@ int main(int argc, char** argv)
     task_scheduler.Initialize(config);
 
 	// window
-	WindowConfiguration wconf{ 1280, 800, "Engine Test", allocator };
+	WindowConfiguration wconf{ 1280, 720, "Engine Test", allocator };
 	Window window;
 	window.init(&wconf);
 
@@ -243,8 +243,8 @@ int main(int argc, char** argv)
     camera.init({ 0.0f, 0.0f, 0.0f }, gpu.swapchain_width * 1.0f / gpu.swapchain_height);
 
     float model_scale = 1.0f;
-    float light_range = 300.0f;
-    float light_intensity = 1000.f;
+    float light_range = 10.f;
+    float light_intensity = 20.f;
 
     int frame_count = 0;
     double last_time = 0.0;
@@ -315,6 +315,8 @@ int main(int argc, char** argv)
                     ImGui::Text("x: %f, y: %f, z: %f", camera.position.x, camera.position.y, camera.position.z);
                     ImGui::Text("AABB \t minx: %f, miny: %f, maxx: %f, maxy: %f", scene->tester.x, scene->tester.y, scene->tester.z, scene->tester.w);
                     ImGui::SliderFloat3("Light position", (float*)&light_position, -30.f, 30.f);
+                    ImGui::SliderFloat("Light Intensity", &light_intensity, 0.f, 30.f);
+                    ImGui::SliderFloat("Light Range", &light_range, 0.f, 30.f);
                     ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
                 }
                 ImGui::End();

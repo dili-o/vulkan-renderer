@@ -1,6 +1,6 @@
 
-#ifndef RAPTOR_GLSL_SCENE_H
-#define RAPTOR_GLSL_SCENE_H
+#ifndef HELIX_GLSL_SCENE_H
+#define HELIX_GLSL_SCENE_H
 
 // Scene common code
 
@@ -50,4 +50,4 @@ float linearize_depth(float depth) {
     return z_near * z_far / (z_far + depth * (z_near - z_far));
 }
 
-#endif // RAPTOR_GLSL_SCENE_H
+#endif // HELIX_GLSL_SCENE_H

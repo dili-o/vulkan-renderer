@@ -61,7 +61,7 @@ namespace Helix {
                 RenderPassOperation::Enum   load_op;
 
                 TextureHandle               handle;
-
+                f32                         clear_values[4];
                 bool                        compute;
             } texture;
         };

@@ -13,33 +13,6 @@ uint DrawFlags_HasJoints    = 1 << 7;
 uint DrawFlags_HasWeights   = 1 << 8;
 uint DrawFlags_AlphaDither  = 1 << 9;
 
-struct MeshDraw {
-
-    // x = diffuse index, y = roughness index, z = normal index, w = occlusion index.
-    // Occlusion and roughness are encoded in the same texture
-    uvec4       textures;
-    //vec4        emissive;
-    vec4        base_color_factor;
-    vec4        metallic_roughness_occlusion_factor;
-
-    uint        flags;
-    float       alpha_cutoff;
-    uint        vertexOffset; // == meshes[meshIndex].vertexOffset, helps data locality in mesh shader
-    uint        meshIndex;
-
-    uint        meshlet_offset;
-    uint        meshlet_count;
-    uint        pad000;
-    uint        pad001;
-
-    vec4        diffuse;
-
-    vec3        specular_colour;
-    float       specular_exp;
-
-    vec4        ambient_colour;
-};
-
 struct MeshInstanceDraw {
     mat4        model;
     mat4        model_inverse;
@@ -48,6 +21,25 @@ struct MeshInstanceDraw {
     uint        pad000;
     uint        pad001;
     uint        pad002;
+};
+
+struct MaterialData{
+    uvec4       textures; // base_color , roughness, normal, occlusion
+
+    vec4        base_color_factor;
+
+    vec4        roughness_metallic_occlusion_factor;
+
+    uint        flags;
+    float       alpha_cutoff;
+    uint        padding[2];
+};
+
+struct MeshData{
+    uint        vertex_offset;
+    uint        meshlet_offset;
+    uint        meshlet_count;
+    uint        padding0_;
 };
 
 #if NVIDIA
@@ -86,9 +78,19 @@ struct MeshDrawCommand
 
 #endif // NVIDIA
 
-layout ( std430, set = MATERIAL_SET, binding = 2 ) readonly buffer MeshDraws {
+//layout ( std430, set = MATERIAL_SET, binding = 2 ) readonly buffer MeshDraws {
+//
+//    MeshDraw    mesh_draws[];
+//};
 
-    MeshDraw    mesh_draws[];
+layout ( std430, set = MATERIAL_SET, binding = 2 ) readonly buffer MaterialDataBuffer {
+
+    MaterialData    material_data[];
+};
+
+layout ( std430, set = MATERIAL_SET, binding = 3 ) readonly buffer MeshDataBuffer {
+
+    MeshData    mesh_data[];
 };
 
 layout ( std430, set = MATERIAL_SET, binding = 10 ) readonly buffer MeshInstanceDraws {

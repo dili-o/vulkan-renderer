@@ -7,7 +7,7 @@ layout(set = MATERIAL_SET, binding = 1) writeonly buffer VisibleMeshInstances
 	MeshDrawCommand draw_early_commands[];
 };
 
-layout(set = MATERIAL_SET, binding = 3) buffer CulledMeshInstances
+layout(set = MATERIAL_SET, binding = 4) buffer CulledMeshInstances
 {
 	MeshDrawCommand draw_late_commands[];
 };
@@ -52,18 +52,12 @@ void main() {
 	uint mesh_instance_index = gl_GlobalInvocationID.x;
 	uint count = total_count;
 	// TODO: Transparent meshes
-	if(late_flag == 1){
-		count = opaque_mesh_culled_count;
-	}
 
 	if (mesh_instance_index < count) {
-		if(late_flag == 1){
-			mesh_instance_index = draw_late_commands[mesh_instance_index].drawId;
-		}
-
 		uint mesh_draw_index = mesh_instance_draws[mesh_instance_index].mesh_draw_index;
 
-		MeshDraw mesh_draw = mesh_draws[mesh_draw_index];
+		MeshData mesh = mesh_data[mesh_draw_index];
+		MaterialData material = material_data[mesh_draw_index];
 
 		vec4 bounding_sphere = mesh_bounds[mesh_draw_index];
 		mat4 model = mesh_instance_draws[mesh_instance_index].model;
@@ -115,7 +109,7 @@ void main() {
 	    	}
 	    }
 
-	    uint flags = mesh_draw.flags;
+	    uint flags = material.flags;
 	    if (frustum_visible && occlusion_visible) {
 	    	// Add opaque draws
 			if ( /*(flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0*/ true ) {
@@ -125,29 +119,29 @@ void main() {
 				draw_early_commands[draw_index].indexCount = 0;
 				draw_early_commands[draw_index].instanceCount = 1;
 				draw_early_commands[draw_index].firstIndex = 0;
-				draw_early_commands[draw_index].vertexOffset = mesh_draw.vertexOffset;
+				draw_early_commands[draw_index].vertexOffset = mesh.vertex_offset;
 				draw_early_commands[draw_index].firstInstance = 0;
 #if NVIDIA
-				draw_early_commands[draw_index].taskCount = (mesh_draw.meshlet_count + 31) / 32;
-				draw_early_commands[draw_index].firstTask = (mesh_draw.meshlet_offset) / 32;
+				draw_early_commands[draw_index].taskCount = (mesh.meshlet_count + 31) / 32;
+				draw_early_commands[draw_index].firstTask = (mesh.meshlet_offset) / 32;
 #else
-				draw_early_commands[draw_index].x = (mesh_draw.meshlet_count + 31) / 32;
+				draw_early_commands[draw_index].x = (mesh.meshlet_count + 31) / 32;
 				draw_early_commands[draw_index].y = 1;
 				draw_early_commands[draw_index].z = 1;
-				draw_early_commands[draw_index].firstTask = (mesh_draw.meshlet_offset) / 32;
+				draw_early_commands[draw_index].firstTask = (mesh.meshlet_offset) / 32;
 #endif // NVIDIA
 			}
 	    } else if (late_flag == 0){
 			uint draw_index = atomicAdd( opaque_mesh_culled_count, 1 );
 			draw_late_commands[draw_index].drawId = mesh_instance_index;
 #if NVIDIA
-			draw_late_commands[draw_index].taskCount = (mesh_draw.meshlet_count + 31) / 32;
-			draw_late_commands[draw_index].firstTask = mesh_draw.meshlet_offset / 32;
+			draw_late_commands[draw_index].taskCount = (mesh.meshlet_count + 31) / 32;
+			draw_late_commands[draw_index].firstTask = mesh.meshlet_offset / 32;
 #else
-			draw_late_commands[draw_index].x = (mesh_draw.meshlet_count + 31) / 32;
+			draw_late_commands[draw_index].x = (mesh.meshlet_count + 31) / 32;
 			draw_late_commands[draw_index].y = 1;
 			draw_late_commands[draw_index].z = 1;
-			draw_late_commands[draw_index].firstTask = (mesh_draw.meshlet_offset) / 32;
+			draw_late_commands[draw_index].firstTask = (mesh.meshlet_offset) / 32;
 #endif // NVIDIA
 		}
 	}

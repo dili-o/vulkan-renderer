@@ -134,6 +134,21 @@ namespace Helix {
         u32                 material_pass_index;
     }; // struct MeshInstance
 
+    struct MeshData {
+        glm::mat4           model;
+
+        glm::mat4           inverse_model;
+
+        u32                 textures[4]; // diffuse, roughness, normal, occlusion
+
+        glm::vec4           base_color_factor;
+
+        glm::vec4           roughness_metallic_occlusion_factor;
+
+        f32                 alpha_cutoff;
+        u32                 flags;
+        f32                 padding_[2];
+    }; // struct MeshData
 
     // Gpu Data Structs /////////////////////////////////////////////////////////////////////////
     struct alignas(16) GPUMeshDrawCounts {
@@ -169,35 +184,8 @@ namespace Helix {
         u32                     count; // TODO: Maybe store the texture index as a u16 and the count as a u16
     };
 
-    struct alignas(16) GPUMaterialData {
 
-        u32                     textures[4]; // base_color , roughness, normal, occlusion
-        // PBR
-        //glm::vec4               emissive; // emissive_color_factor + emissive texture index
-        glm::vec4               base_color_factor;
-        glm::vec4               roughness_metallic_occlusion_factor; // metallic, roughness, occlusion
-
-        u32                     flags;
-        f32                     alpha_cutoff;
-        u32                     vertex_offset;
-        u32                     mesh_index; // Not used
-
-        u32                     meshlet_offset;
-        u32                     meshlet_count;
-        u32                     padding0_;
-        u32                     padding1_;
-
-        // Phong
-        glm::vec4               diffuse_colour;
-
-        glm::vec3               specular_colour;
-        f32                     specular_exp;
-
-        glm::vec3               ambient_colour;
-        f32                     padding2_;
-
-    }; // struct GpuMaterialData
-
+    // Contains the data for an instance of a single GPUMeshData
     struct alignas(16) GPUMeshInstanceData {
         glm::mat4               world;
         glm::mat4               inverse_world;
@@ -208,20 +196,26 @@ namespace Helix {
         u32                     pad002;
     }; // struct GpuMeshInstanceData
 
-    struct GPUMeshData {
-        glm::mat4           model;
-        glm::mat4           inverse_model;
+    // Data used by the fragment shader to colour the geometry
+    struct alignas(16) GPUMaterialData {
+        u32                     textures[4]; // base_color , roughness, normal, occlusion
+        // PBR
+        glm::vec4               base_color_factor;
 
-        u32                 textures[4]; // diffuse, roughness, normal, occlusion
-        glm::vec4           base_color_factor;
-        glm::vec4           roughness_metallic_occlusion_factor;
-        float               alpha_cutoff;
-        float               padding_[3];
+        glm::vec4               roughness_metallic_occlusion_factor; // metallic, roughness, occlusion
 
-        u32                 flags;
-        float               padding_2[3];
+        u32                     flags;
+        f32                     alpha_cutoff;
+        u32                     padding[2];
+    }; // struct GPUMaterialData
+
+    // Data used by the mesh/vertex shader to draw the geometry
+    struct alignas(16) GPUMeshData {
+        u32                     vertex_offset;
+        u32                     meshlet_offset;
+        u32                     meshlet_count;
+        u32                     padding0_;
     }; // struct GPUMeshData
-
 
     struct alignas(16) GPUMeshlet {
 
@@ -239,8 +233,8 @@ namespace Helix {
 
     struct GPUMeshletVertexPosition {
 
-        float                   position[3];
-        float                   padding;
+        f32                   position[3];
+        f32                   padding;
     }; // struct GPUMeshletVertexPosition
 
     struct GPUMeshletVertexData {
@@ -248,7 +242,7 @@ namespace Helix {
         u8                      normal[4];
         u8                      tangent[4];
         u16                     uv_coords[2];
-        float                   padding;
+        f32                   padding;
     }; // struct GPUMeshletVertexData
 
     struct GPUSceneData {
@@ -378,7 +372,7 @@ namespace Helix {
         virtual void            register_render_passes(FrameGraph* frame_graph) { };
         virtual void            prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) { };
 
-        virtual void            fill_gpu_data_buffers(float model_scale) { };
+        virtual void            fill_gpu_data_buffers(f32 model_scale) { };
         virtual void            submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) { };
 
         Array<GPUMeshlet>       meshlets;
@@ -388,6 +382,7 @@ namespace Helix {
 
         // Gpu buffers
         BufferHandle            material_data_buffer = k_invalid_buffer; // Contains the material data for opaque meshes and transparent meshes
+        BufferHandle            mesh_data_buffer = k_invalid_buffer;
         BufferHandle            mesh_instances_buffer = k_invalid_buffer;
         BufferHandle            mesh_bounds_buffer = k_invalid_buffer;
         BufferHandle            scene_constant_buffer = k_invalid_buffer;
@@ -518,8 +513,6 @@ namespace Helix {
 
         u32                     depth_pyramid_levels = 0;
 
-        glTFScene* p_scene = nullptr; // TODO: Remove
-
         bool                    update_depth_pyramid;
     }; // struct DepthPrePass
 
@@ -533,9 +526,18 @@ namespace Helix {
         void                fill_gpu_material_buffer();
         void                free_gpu_resources();
 
-        Mesh                mesh{ };
+        DescriptorSetHandle d_set;
+        PipelineHandle      pipeline_handle;
         Renderer*           renderer;
         bool                use_compute;
+
+        struct              LightingData {
+            u32             gbuffer_color_index;
+            u32             gbuffer_rmo_index;
+            u32             gbuffer_normal_index;
+            u32             gbuffer_position_index;
+        };
+        LightingData        lighting_data;
     }; // struct LightPass
 
     //
@@ -584,7 +586,7 @@ namespace Helix {
         u16                     get_material_texture(GpuDevice& gpu, glTF::TextureInfo* texture_info);
         u16                     get_material_texture(GpuDevice& gpu, i32 gltf_texture_index);
 
-        void                    fill_gpu_data_buffers(float model_scale) override;
+        void                    fill_gpu_data_buffers(f32 model_scale) override;
         void                    submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler, enki::TaskScheduler* task_scheduler) override;
 
         void                    draw_mesh(CommandBuffer* gpu_commands, Mesh& mesh);

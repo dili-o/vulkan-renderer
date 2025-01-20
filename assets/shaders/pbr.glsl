@@ -2,8 +2,6 @@
 
 #if defined(VERTEX_PBR)
 
-layout(location=0) in vec3 position;
-
 layout (location = 0) out vec2 vTexcoord0;
 
 void main() {
@@ -17,34 +15,39 @@ void main() {
 
 #if defined (FRAGMENT_PBR)
 
-uint DrawFlags_AlphaMask = 1 << 0;
-
-layout ( std140, set = MATERIAL_SET, binding = 1 ) uniform Mesh {
-
-    mat4        model;
-    mat4        model_inverse;
+layout( push_constant ) uniform LightingData {
 
     // x = diffuse index, y = roughness index, z = normal index, w = occlusion index.
     // Occlusion and roughness are encoded in the same texture
-    uvec4       textures;
-    vec4        base_color_factor;
-    vec4        metallic_roughness_occlusion_factor;
-    float       alpha_cutoff;
-    uint        flags;
+    uvec4       gbuffer_textures;
 };
 
 layout (location = 0) in vec2 vTexcoord0;
 
 layout (location = 0) out vec4 frag_color;
 
+bool decimalPlacesMatch(vec4 a, vec4 b) {
+    // Extract the first decimal place for each component and compare
+    vec4 aDecimals = floor(fract(a) * 10.0); // First decimal place of 'a'
+    vec4 bDecimals = floor(fract(b) * 10.0); // First decimal place of 'b'
+
+    return all(equal(aDecimals, bDecimals)); // Check if all components match
+}
+
+
 void main() {
-    vec4 base_colour = texture(global_textures[nonuniformEXT(textures.x)], vTexcoord0);
-    vec3 rmo = texture(global_textures[nonuniformEXT(textures.y)], vTexcoord0).rgb;
-    vec3 normal = texture(global_textures[nonuniformEXT(textures.z)], vTexcoord0).rgb;
+    vec4 base_colour = texture(global_textures[nonuniformEXT(gbuffer_textures.x)], vTexcoord0);
+    if (decimalPlacesMatch(base_colour, vec4(0.52941, 0.80784, 0.92157, 1.00))){
+        frag_color = vec4( encode_srgb( base_colour.xyz ), base_colour.a );
+        return;
+    }
+
+    vec3 rmo = texture(global_textures[nonuniformEXT(gbuffer_textures.y)], vTexcoord0).rgb;
+    vec3 normal = texture(global_textures[nonuniformEXT(gbuffer_textures.z)], vTexcoord0).rgb;
     // Convert from [0, 1] -> [-1, 1] then decode
     normal.rg = (normal.rg * 2.0f) - vec2(1.0f);
     normal = octahedral_decode(normal.rg);
-    vec3 vPosition = texture(global_textures[nonuniformEXT(textures.w)], vTexcoord0).rgb;
+    vec3 vPosition = texture(global_textures[nonuniformEXT(gbuffer_textures.w)], vTexcoord0).rgb;
 
     vec3 V = normalize( eye.xyz - vPosition );
     vec3 L = normalize( light.xyz - vPosition );
@@ -69,7 +72,7 @@ void main() {
     float HdotV = clamp(dot(H, V), 0, 1);
 
     float distance = length(light.xyz - vPosition);
-    float intensity = 5.0f * max(min(1.0 - pow(distance / 20.0f, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+    float intensity = light_intensity * max(min(1.0 - pow(distance / light_range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
 
     vec3 material_colour = vec3(0, 0, 0);
     if (NdotL > 0.0 || NdotV > 0.0)

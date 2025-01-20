@@ -229,7 +229,7 @@ namespace Helix {
                         color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
                         color_attachment_info.loadOp = color_op;
                         color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                        color_attachment_info.clearValue = render_pass->output.color_operations[a] == RenderPassOperation::Enum::Clear ? clears[0] : VkClearValue{ };
+                        color_attachment_info.clearValue = render_pass->output.color_operations[a] == RenderPassOperation::Enum::Clear ? clears[a] : VkClearValue{ };
                     }
 
                     VkRenderingAttachmentInfo depth_attachment_info{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
@@ -259,7 +259,7 @@ namespace Helix {
                         depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
                         depth_attachment_info.loadOp = depth_op;
                         depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                        depth_attachment_info.clearValue = render_pass->output.depth_operation == RenderPassOperation::Enum::Clear ? clears[1] : VkClearValue{ };
+                        depth_attachment_info.clearValue = render_pass->output.depth_operation == RenderPassOperation::Enum::Clear ? clears[k_depth_stencil_clear_index] : VkClearValue{ };
                     }
 
                     VkRenderingInfo rendering_info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
@@ -282,23 +282,15 @@ namespace Helix {
                     render_pass_begin.renderArea.offset = { 0, 0 };
                     render_pass_begin.renderArea.extent = { framebuffer->width, framebuffer->height };
 
-                    VkClearValue clear_values[k_max_image_outputs + 1];
+                    //VkClearValue clear_values[k_max_image_outputs + 1];
 
-                    u32 clear_values_count = 0;
-                    for (u32 o = 0; o < render_pass->output.num_color_formats; ++o) {
-                        if (render_pass->output.color_operations[o] == RenderPassOperation::Enum::Clear) {
-                            clear_values[clear_values_count++] = clears[0];
-                        }
-                    }
-
-                    if (render_pass->output.depth_stencil_format != VK_FORMAT_UNDEFINED) {
-                        if (render_pass->output.depth_operation == RenderPassOperation::Enum::Clear) {
-                            clear_values[clear_values_count++] = clears[1];
-                        }
+                    u32 clear_values_count = render_pass->output.num_color_formats;
+                    if ((render_pass->output.depth_stencil_format != VK_FORMAT_UNDEFINED) && (render_pass->output.depth_operation == RenderPassOperation::Enum::Clear)) {
+                        clears[clear_values_count++] = clears[k_depth_stencil_clear_index];
                     }
 
                     render_pass_begin.clearValueCount = clear_values_count;
-                    render_pass_begin.pClearValues = clear_values;
+                    render_pass_begin.pClearValues = clears;
 
                     vkCmdBeginRenderPass(vk_handle, &render_pass_begin, use_secondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
                 }
@@ -475,13 +467,13 @@ namespace Helix {
         vkCmdSetScissor(vk_handle, 0, 1, &vk_scissor);
     }
 
-    void CommandBuffer::clear(f32 red, f32 green, f32 blue, f32 alpha) {
-        clears[0].color = { red, green, blue, alpha };
+    void CommandBuffer::clear(f32 red, f32 green, f32 blue, f32 alpha, u32 attachment_index) {
+        clears[attachment_index].color = { red, green, blue, alpha };
     }
 
     void CommandBuffer::clear_depth_stencil(f32 depth, u8 value) {
-        clears[1].depthStencil.depth = depth;
-        clears[1].depthStencil.stencil = value;
+        clears[k_depth_stencil_clear_index].depthStencil.depth = depth;
+        clears[k_depth_stencil_clear_index].depthStencil.stencil = value;
     }
 
     void CommandBuffer::draw(u32 vertex_count, u32 instance_count, u32 first_vertex, u32 first_instance) {

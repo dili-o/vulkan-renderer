@@ -32,7 +32,7 @@ namespace Helix {
         void                            set_viewport(const Viewport* viewport);
         void                            set_scissor(const Rect2DInt* rect);
 
-        void                            clear(f32 red, f32 green, f32 blue, f32 alpha);
+        void                            clear(f32 red, f32 green, f32 blue, f32 alpha, u32 attachment_index);
         void                            clear_depth_stencil(f32 depth, u8 stencil);
 
         void                            draw(u32 vertex_count, u32 instance_count, u32 first_vertex, u32 first_instance);
@@ -74,7 +74,7 @@ namespace Helix {
         RenderPass*                     current_render_pass;
         Framebuffer*                    current_framebuffer;
         Pipeline*                       current_pipeline;
-        VkClearValue                    clears[2];          // 0 = color, 1 = depth stencil
+        VkClearValue                    clears[k_depth_stencil_clear_index + 1];          // 0 = color, 1 = depth stencil
         bool                            is_recording;
     }; // struct CommandBuffer
 
