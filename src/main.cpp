@@ -351,7 +351,7 @@ int main(int argc, char** argv)
                     GPUSceneData& scene_data = scene->scene_data;
                     scene_data.previous_view_projection = scene_data.view_projection;   // Cache previous view projection
                     scene_data.view_projection = camera.view_projection;
-                    scene_data.inverse_view_projection = camera.projection;// TODO glm::inverse(view_projection);
+                    scene_data.inverse_view_projection = glm::inverse(camera.view_projection);// TODO glm::inverse(view_projection);
                     scene_data.view_matrix = camera.view;
                     scene_data.camera_position = glm::vec4(camera.position.x, camera.position.y, camera.position.z, 1.0f);
                     scene_data.light_position = glm::vec4(light_position, 1.0f);

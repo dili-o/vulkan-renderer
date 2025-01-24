@@ -20,6 +20,7 @@ layout(set = MATERIAL_SET, binding = 11) buffer VisibleMeshCount
 	uint transparent_mesh_culled_count;
 
 	uint total_count;
+	uint total_opaque_mesh_count;
 	uint depth_pyramid_texture_index;
 	uint late_flag;
 };
@@ -112,9 +113,29 @@ void main() {
 	    uint flags = material.flags;
 	    if (frustum_visible && occlusion_visible) {
 	    	// Add opaque draws
-			if ( /*(flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0*/ true ) {
+			if ( (flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0) {
 				uint draw_index = atomicAdd( opaque_mesh_visible_count, 1 );
 	
+				draw_early_commands[draw_index].drawId = mesh_instance_index;
+				draw_early_commands[draw_index].indexCount = 0;
+				draw_early_commands[draw_index].instanceCount = 1;
+				draw_early_commands[draw_index].firstIndex = 0;
+				draw_early_commands[draw_index].vertexOffset = mesh.vertex_offset;
+				draw_early_commands[draw_index].firstInstance = 0;
+#if NVIDIA
+				draw_early_commands[draw_index].taskCount = (mesh.meshlet_count + 31) / 32;
+				draw_early_commands[draw_index].firstTask = (mesh.meshlet_offset) / 32;
+#else
+				draw_early_commands[draw_index].x = (mesh.meshlet_count + 31) / 32;
+				draw_early_commands[draw_index].y = 1;
+				draw_early_commands[draw_index].z = 1;
+				draw_early_commands[draw_index].firstTask = (mesh.meshlet_offset) / 32;
+#endif // NVIDIA
+			}
+			else{
+				// Transparent draws are written after total_count commands in the same buffer.
+				uint draw_index = atomicAdd( transparent_mesh_visible_count, 1 ) + total_opaque_mesh_count;
+
 				draw_early_commands[draw_index].drawId = mesh_instance_index;
 				draw_early_commands[draw_index].indexCount = 0;
 				draw_early_commands[draw_index].instanceCount = 1;

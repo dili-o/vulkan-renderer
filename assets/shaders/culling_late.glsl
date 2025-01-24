@@ -20,8 +20,9 @@ layout(set = MATERIAL_SET, binding = 11) buffer VisibleMeshCount
 	uint transparent_mesh_culled_count;
 
 	uint total_count;
+	uint total_opaque_mesh_count;
 	uint depth_pyramid_texture_index;
-	uint late_flag; // TODO: Currently using this as the count buffer for the late mesh draw
+	uint late_flag;
 };
 
 // 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
@@ -114,7 +115,7 @@ void main() {
 	    uint flags = material.flags;
 	    if (frustum_visible && occlusion_visible) {
 	    	// Add opaque draws
-			if ( /*(flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0*/ true ) {
+			if ( (flags & (DrawFlags_AlphaMask | DrawFlags_Transparent)) == 0 ) {
 				uint draw_index = atomicAdd( late_flag, 1 );
 	
 				draw_late_commands[draw_index].drawId = mesh_instance_index;

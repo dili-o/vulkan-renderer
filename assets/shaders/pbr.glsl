@@ -17,7 +17,7 @@ void main() {
 
 layout( push_constant ) uniform LightingData {
 
-    // x = diffuse index, y = roughness index, z = normal index, w = occlusion index.
+    // x = colour index, y = roughness index, z = normal index, w = depth index.
     // Occlusion and roughness are encoded in the same texture
     uvec4       gbuffer_textures;
 };
@@ -37,7 +37,9 @@ bool decimalPlacesMatch(vec4 a, vec4 b) {
 
 void main() {
     vec4 base_colour = texture(global_textures[nonuniformEXT(gbuffer_textures.x)], vTexcoord0);
-    if (decimalPlacesMatch(base_colour, vec4(0.52941, 0.80784, 0.92157, 1.00))){
+    float raw_depth = texture(global_textures[nonuniformEXT(gbuffer_textures.w)], vTexcoord0).r;
+
+    if (raw_depth == 1.0f){
         frag_color = vec4( encode_srgb( base_colour.xyz ), base_colour.a );
         return;
     }
@@ -47,8 +49,8 @@ void main() {
     // Convert from [0, 1] -> [-1, 1] then decode
     normal.rg = (normal.rg * 2.0f) - vec2(1.0f);
     normal = octahedral_decode(normal.rg);
-    vec3 vPosition = texture(global_textures[nonuniformEXT(gbuffer_textures.w)], vTexcoord0).rgb;
 
+    vec3 vPosition = world_position_from_depth( vTexcoord0, raw_depth, inverse_view_projection);
     vec3 V = normalize( eye.xyz - vPosition );
     vec3 L = normalize( light.xyz - vPosition );
     vec3 N = normalize( normal );

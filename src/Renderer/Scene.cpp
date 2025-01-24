@@ -179,6 +179,7 @@ namespace Helix {
         mesh_draw_counts.transparent_mesh_culled_count = 0;
 
         mesh_draw_counts.total_count = scene->opaque_meshes.size + scene->transparent_meshes.size;
+        mesh_draw_counts.total_opaque_mesh_count = scene->opaque_meshes.size;
         mesh_draw_counts.depth_pyramid_texture_index = depth_pyramid_texture_index;
         mesh_draw_counts.late_flag = 0;
 
@@ -299,14 +300,14 @@ namespace Helix {
             RESOURCE_STATE_INDIRECT_ARGUMENT, RESOURCE_STATE_UNORDERED_ACCESS, count_sb->size);
 
         // TODO: Right now setting this to 0 and updating the buffer does nothing since it uses late_flag as the count buffer in the gbuffer_late pass.
-        scene->mesh_draw_counts.opaque_mesh_visible_count = 0;
-        // TODO: Make an API wrapper around this
-        vkCmdUpdateBuffer(
-            gpu_commands->vk_handle,
-            count_sb->vk_handle,
-            offsetof(GPUMeshDrawCounts, opaque_mesh_visible_count),
-            sizeof(u32),
-            &scene->mesh_draw_counts.opaque_mesh_visible_count);
+        //scene->mesh_draw_counts.opaque_mesh_visible_count = 0;
+        //// TODO: Make an API wrapper around this
+        //vkCmdUpdateBuffer(
+        //    gpu_commands->vk_handle,
+        //    count_sb->vk_handle,
+        //    offsetof(GPUMeshDrawCounts, opaque_mesh_visible_count),
+        //    sizeof(u32),
+        //    &scene->mesh_draw_counts.opaque_mesh_visible_count);
 
         gpu_commands->bind_descriptor_set(&frustum_cull_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
@@ -808,12 +809,12 @@ namespace Helix {
         FrameGraphResource* color_texture = get_output_texture(frame_graph, node->inputs[0]);
         FrameGraphResource* normal_texture = get_output_texture(frame_graph, node->inputs[1]);
         FrameGraphResource* roughness_texture = get_output_texture(frame_graph, node->inputs[2]);
-        FrameGraphResource* position_texture = get_output_texture(frame_graph, node->inputs[3]);
+        FrameGraphResource* depth_texture = get_output_texture(frame_graph, node->inputs[3]);
 
         lighting_data.gbuffer_color_index = color_texture->resource_info.texture.handle.index;
         lighting_data.gbuffer_rmo_index = roughness_texture->resource_info.texture.handle.index;
         lighting_data.gbuffer_normal_index = normal_texture->resource_info.texture.handle.index;
-        lighting_data.gbuffer_position_index = position_texture->resource_info.texture.handle.index;
+        lighting_data.depth_texture_index = depth_texture->resource_info.texture.handle.index;
     }
 
     void LightPass::fill_gpu_material_buffer() {
@@ -830,41 +831,34 @@ namespace Helix {
     //
     // TransparentPass ////////////////////////////////////////////////////////
     void TransparentPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        return;
+        if (!renderer)
+            return;
         glTFScene* scene = (glTFScene*)scene_;
 
-        Material* last_material = nullptr;
-        for (u32 mesh_index = 0; mesh_index < double_sided_mesh_count; ++mesh_index) {
-            //MeshInstance& mesh_instance = mesh_instances[mesh_index];
-            Mesh& mesh = meshes[mesh_index];
+        Renderer* renderer = scene->renderer;
 
-            if (mesh.pbr_material.material != last_material) {
-                // TODO: Right now all transparent objects are drawn using the 4th pipeline in the program.
-                //       Make more configurable
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 4);
+#if NVIDIA
+        const u64 meshlet_hashed_name = hash_calculate("meshlet_nv");
+#else
+        const u64 meshlet_hashed_name = hash_calculate("meshlet_ext");
+#endif // NVIDIA
+        Program* meshlet_program = renderer->resource_cache.programs.get(meshlet_hashed_name);
 
-                gpu_commands->bind_pipeline(pipeline);
+        PipelineHandle pipeline = meshlet_program->passes[meshlet_program_index].pipeline;
 
-                last_material = mesh.pbr_material.material;
-            }
+        gpu_commands->bind_pipeline(pipeline);
 
-            //scene->draw_mesh(gpu_commands, mesh);
-        }
-        for (u32 mesh_index = double_sided_mesh_count; mesh_index < mesh_count; ++mesh_index) {
-            Mesh& mesh = meshes[mesh_index];
+        u32 buffer_frame_index = renderer->gpu->current_frame;
+        gpu_commands->bind_descriptor_set(&scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-            if (mesh.pbr_material.material != last_material) {
-                // TODO: Right now all transparent objects are drawn using the 2nd pipeline (no_cull) in the program.
-                //       Make more configurable
-                PipelineHandle pipeline = renderer->get_pipeline(mesh.pbr_material.material, 3);
-
-                gpu_commands->bind_pipeline(pipeline);
-
-                last_material = mesh.pbr_material.material;
-            }
-
-            //scene->draw_mesh(gpu_commands, mesh);
-        }
-
+        gpu_commands->draw_mesh_task_indirect_count(
+            scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index],
+            offsetof(GPUMeshDrawCommand, indirectMS),
+            scene->mesh_draw_count_buffers[buffer_frame_index],
+            offsetof(GPUMeshDrawCounts,transparent_mesh_visible_count),
+            scene->transparent_meshes.size,
+            sizeof(GPUMeshDrawCommand));
     }
 
     void TransparentPass::init() {
@@ -879,26 +873,20 @@ namespace Helix {
 
         FrameGraphNode* node = frame_graph->get_node("transparent_pass");
         HASSERT(node);
-        // Create pipeline state
-        //PipelineCreation pipeline_creation;
 
-        //const u64 hashed_name = hash_calculate("geometry");
-        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
+        enabled = true;
 
-        //glTF::glTF& gltf_scene = scene.gltf_scene;
-
-        //mesh_instances.init(resident_allocator, 16);
-
-        // Copy all mesh draws and change only material.
-
-        if (scene.transparent_meshes.size) {
-            meshes = &scene.transparent_meshes[0];
-            mesh_count = scene.transparent_meshes.size;
+        if (renderer->gpu->gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
+#if NVIDIA
+            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet_nv"));
+#else
+            Program* main_program = renderer->resource_cache.programs.get(hash_calculate("meshlet_ext"));
+#endif // NVIDIA
+            meshlet_program_index = main_program->get_pass_index("transparent_no_cull");
         }
     }
 
     void TransparentPass::free_gpu_resources() {
-        //mesh_instances.shutdown();
     }
 
     cstring node_type_to_cstring(NodeType type) {
@@ -1647,7 +1635,7 @@ namespace Helix {
                         meshlet.cone_axis[2] = meshlet_bounds.cone_axis_s8[2];
 
                         meshlet.cone_cutoff = meshlet_bounds.cone_cutoff_s8;
-                        meshlet.mesh_index = opaque_meshes.size - 1; // TODO: What about transparent meshes?
+                        meshlet.mesh_index = mesh.is_transparent() ? opaque_meshes.size + transparent_meshes.size - 1 : opaque_meshes.size - 1; // TODO: What about transparent meshes?
 #if NVIDIA
 
                         // Resize data array
@@ -1722,17 +1710,6 @@ namespace Helix {
     void glTFScene::free_gpu_resources(Renderer* renderer) {
         GpuDevice& gpu = *renderer->gpu;
 
-        //for (u32 mesh_index = 0; mesh_index < transparent_meshes.size; ++mesh_index) {
-        //    Mesh& mesh = transparent_meshes[mesh_index];
-        //    gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-        //    // TODO: Destroy the images.
-        //}
-        //for (u32 mesh_index = 0; mesh_index < opaque_meshes.size; ++mesh_index) {
-        //    Mesh& mesh = opaque_meshes[mesh_index];
-        //    gpu.destroy_buffer(mesh.pbr_material.material_buffer);
-        //    // TODO: Destroy the images.
-        //}
-
         //depth_pre_pass.free_gpu_resources();
         mesh_cull_pass.free_gpu_resources();
         mesh_cull_late_pass.free_gpu_resources();
@@ -1795,12 +1772,9 @@ namespace Helix {
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
-        BufferCreation buffer_creation;
-
-        u32 siz = sizeof(GPUMeshDrawCommand);
-
         u32 total_meshes = opaque_meshes.size + transparent_meshes.size;
-
+        
+        BufferCreation buffer_creation;
         // Meshlets buffers
         buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Immutable, sizeof(GPUMeshlet) * meshlets.size).set_name("meshlets_buffer").set_data(meshlets.data);
         meshlets_buffer = renderer->create_buffer(buffer_creation)->handle;
@@ -2018,7 +1992,7 @@ namespace Helix {
                     copy_gpu_mesh_matrix(*mesh_data, mesh, model_scale, &node_pool.mesh_nodes);
                     gpu_mesh_instance_data[mesh_index + opaque_meshes.size].world = mesh_data->model;
                     gpu_mesh_instance_data[mesh_index + opaque_meshes.size].inverse_world = mesh_data->inverse_model;
-                    gpu_mesh_instance_data[mesh_index + opaque_meshes.size].mesh_index = mesh_index;
+                    gpu_mesh_instance_data[mesh_index + opaque_meshes.size].mesh_index = mesh_index + opaque_meshes.size;
                     renderer->gpu->unmap_buffer(material_buffer_map);
                 }
             }

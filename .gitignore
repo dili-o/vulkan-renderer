@@ -5,3 +5,4 @@ assets/shaders/cache
 /.vs
 .idea/
 CMakeSettings.json
+Session.vim

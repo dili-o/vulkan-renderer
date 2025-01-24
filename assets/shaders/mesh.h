@@ -46,11 +46,11 @@ struct MeshData{
 struct MeshDrawCommand
 {
     uint        drawId;
-
     // VkDrawIndexedIndirectCommand
     uint        indexCount;
     uint        instanceCount;
     uint        firstIndex;
+
     uint        vertexOffset;
     uint        firstInstance;
     // VkDrawMeshTasksIndirectCommandNV
@@ -62,15 +62,16 @@ struct MeshDrawCommand
 {
     uint        drawId;
     uint        firstTask;      
-
     // VkDrawIndexedIndirectCommand
     uint        indexCount;
     uint        instanceCount;
+
     uint        firstIndex;
     uint        vertexOffset;
     uint        firstInstance;
         // VkDrawMeshTasksIndirectCommandEXT
     uint        x;
+    
     uint        y;
     uint        z;
     uint        padding[2];

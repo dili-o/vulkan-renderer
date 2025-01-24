@@ -158,9 +158,9 @@ namespace Helix {
         u32                     transparent_mesh_culled_count;
 
         u32                     total_count;
+        u32                     total_opaque_mesh_count;
         u32                     depth_pyramid_texture_index;
         u32                     late_flag;
-        u32                     pad001;
     }; // struct GPUMeshDrawCounts Draw count buffer used in indirect draw calls
 #if NVIDIA
     struct alignas(16) GPUMeshDrawCommand {
@@ -233,8 +233,8 @@ namespace Helix {
 
     struct GPUMeshletVertexPosition {
 
-        f32                   position[3];
-        f32                   padding;
+        f32                     position[3];
+        f32                     padding;
     }; // struct GPUMeshletVertexPosition
 
     struct GPUMeshletVertexData {
@@ -242,7 +242,7 @@ namespace Helix {
         u8                      normal[4];
         u8                      tangent[4];
         u16                     uv_coords[2];
-        f32                   padding;
+        f32                     padding;
     }; // struct GPUMeshletVertexData
 
     struct GPUSceneData {
@@ -535,7 +535,7 @@ namespace Helix {
             u32             gbuffer_color_index;
             u32             gbuffer_rmo_index;
             u32             gbuffer_normal_index;
-            u32             gbuffer_position_index;
+            u32             depth_texture_index;
         };
         LightingData        lighting_data;
     }; // struct LightPass
@@ -553,6 +553,7 @@ namespace Helix {
         u32                 mesh_count;
         Mesh*               meshes;
         Renderer*           renderer;
+        u32                 meshlet_program_index;
     }; // struct TransparentPass
 
     //

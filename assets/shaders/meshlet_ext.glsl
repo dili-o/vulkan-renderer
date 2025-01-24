@@ -1,4 +1,4 @@
-
+#extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_EXT_shader_16bit_storage: require
 #extension GL_EXT_shader_8bit_storage: require
 #extension GL_KHR_shader_subgroup_ballot: require
@@ -65,16 +65,17 @@ layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshInstances
     MeshDrawCommand draw_commands[];
 };
 
-layout(set = MATERIAL_SET, binding = 8) readonly buffer VisibleMeshCount
+layout(set = MATERIAL_SET, binding = 8) buffer VisibleMeshCount
 {
-    uint opaque_mesh_visible_count;
+	uint opaque_mesh_visible_count;
 	uint opaque_mesh_culled_count;
 	uint transparent_mesh_visible_count;
 	uint transparent_mesh_culled_count;
 
 	uint total_count;
+	uint total_opaque_mesh_count;
 	uint depth_pyramid_texture_index;
-    uint late_flag;
+	uint late_flag;
 };
 #endif // TASK MESH
 
@@ -126,7 +127,7 @@ void main()
     uint meshlet_index = task_group * 32 + task_invo;
 
 #if defined(TASK_TRANSPARENT_NO_CULL)
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB + total_count].drawId;
+    uint mesh_instance_index = 0;
 #else
     uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
 #endif
@@ -274,7 +275,7 @@ void main()
 #endif
 
 #if defined(MESH_TRANSPARENT_NO_CULL)
-    uint mesh_instance_index = draw_commands[gl_DrawIDARB + total_count].drawId;
+    uint mesh_instance_index = 0;
 #else
     uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
 #endif
@@ -321,7 +322,7 @@ void main()
 
     for (uint i = 0; i < uint(meshlets[meshlet_index].triangleCount); ++i)
 	{
-		// TODO: possibly bad for perf, consider writePackedPrimitiveIndices4x8NV
+		// TODO:May need improvement for more effiecient primitive writing 
 		gl_PrimitiveTriangleIndicesEXT[i] = uvec3(meshletData[indexOffset + (i * 3)], meshletData[indexOffset + (i * 3) + 1], meshletData[indexOffset + (i * 3) + 2]);
 	}
     
@@ -343,16 +344,14 @@ layout (location = 5) in vec4 vColour;
 #endif
 
 layout (location = 0) out vec4 color_out;
-layout (location = 1) out vec4 normal_out;
+layout (location = 1) out vec2 normal_out;
 layout (location = 2) out vec4 roughness_metallic_occlusion_out;
-layout (location = 3) out vec4 position_out;
 
 void main() {
     MaterialData material = material_data[mesh_draw_index];
     uint flags = material.flags;
 
     vec3 world_position = vPosition_BiTanZ.xyz;
-    position_out.xyz = world_position;
     vec3 normal = normalize(vNormal_BiTanX.xyz);
     if ( (flags & DrawFlags_HasNormals) == 0 ) {
         normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
@@ -556,7 +555,7 @@ void main() {
 #if DEBUG
     color_out = vColour;
 #else
-    color_out = calculate_lighting( base_colour, vec3(occlusion, roughness, metalness), normal, emissive_colour.rgb, world_position );
+    color_out = vec4(1.0f);//calculate_lighting( base_colour, vec3(occlusion, roughness, metalness), normal, emissive_colour.rgb, world_position );
 #endif
 }
 
