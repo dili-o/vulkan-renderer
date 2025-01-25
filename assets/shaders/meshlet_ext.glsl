@@ -122,17 +122,21 @@ bool project_sphere(vec3 C, float r, float znear, float P00, float P11, out vec4
 void main()
 {
     uint task_invo = gl_LocalInvocationID.x;
-    uint task_group = gl_WorkGroupID.x + draw_commands[gl_DrawIDARB].firstTask;
 
-    uint meshlet_index = task_group * 32 + task_invo;
+    
 
 #if defined(TASK_TRANSPARENT_NO_CULL)
-    uint mesh_instance_index = 0;
+    uint mesh_instance_index = draw_commands[gl_DrawIDARB + total_opaque_mesh_count].drawId;
+    uint task_group = gl_WorkGroupID.x + draw_commands[gl_DrawIDARB + total_opaque_mesh_count].firstTask;
+
 #else
     uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
+    uint task_group = gl_WorkGroupID.x + draw_commands[gl_DrawIDARB].firstTask;
+
 #endif
     mat4 model = mesh_instance_draws[mesh_instance_index].model;
 
+    uint meshlet_index = task_group * 32 + task_invo;
 #if CULL
     vec4 world_center = model * vec4(meshlets[meshlet_index].center, 1);
     float scale = length( model[0] );
@@ -275,7 +279,7 @@ void main()
 #endif
 
 #if defined(MESH_TRANSPARENT_NO_CULL)
-    uint mesh_instance_index = 0;
+    uint mesh_instance_index = draw_commands[gl_DrawIDARB + total_opaque_mesh_count].drawId;
 #else
     uint mesh_instance_index = draw_commands[gl_DrawIDARB].drawId;
 #endif
@@ -555,7 +559,7 @@ void main() {
 #if DEBUG
     color_out = vColour;
 #else
-    color_out = vec4(1.0f);//calculate_lighting( base_colour, vec3(occlusion, roughness, metalness), normal, emissive_colour.rgb, world_position );
+    color_out = calculate_lighting( base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position );
 #endif
 }
 

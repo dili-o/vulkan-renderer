@@ -2,16 +2,16 @@
 #ifndef HELIX_GLSL_LIGHTING_H
 #define HELIX_GLSL_LIGHTING_H
 
-vec4 calculate_lighting(vec4 base_colour, vec3 orm, vec3 normal, vec3 emissive, vec3 vPosition) {
+vec4 calculate_lighting(vec4 base_colour, vec3 rmo, vec3 normal, vec3 emissive, vec3 vPosition) {
 
     vec3 V = normalize( eye.xyz - vPosition );
     vec3 L = normalize( light.xyz - vPosition );
     vec3 N = normal;
     vec3 H = normalize( L + V );
 
-    float occlusion = orm.r;
-    float roughness = orm.g;
-    float metalness = orm.b;
+    float roughness = rmo.r;
+    float metalness = rmo.g;
+    float occlusion = rmo.b;
 
     float alpha = pow(roughness, 2.0);
 

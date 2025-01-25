@@ -26,15 +26,6 @@ layout (location = 0) in vec2 vTexcoord0;
 
 layout (location = 0) out vec4 frag_color;
 
-bool decimalPlacesMatch(vec4 a, vec4 b) {
-    // Extract the first decimal place for each component and compare
-    vec4 aDecimals = floor(fract(a) * 10.0); // First decimal place of 'a'
-    vec4 bDecimals = floor(fract(b) * 10.0); // First decimal place of 'b'
-
-    return all(equal(aDecimals, bDecimals)); // Check if all components match
-}
-
-
 void main() {
     vec4 base_colour = texture(global_textures[nonuniformEXT(gbuffer_textures.x)], vTexcoord0);
     float raw_depth = texture(global_textures[nonuniformEXT(gbuffer_textures.w)], vTexcoord0).r;

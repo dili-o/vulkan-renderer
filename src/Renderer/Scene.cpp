@@ -12,6 +12,9 @@
 #include <imgui/imgui.h>
 #include <Core/Numerics.hpp>
 
+// TODO: Remove
+static u32 max_mesh = 100000;
+
 namespace Helix {
     float square(float r) {
         return r * r;
@@ -433,7 +436,6 @@ namespace Helix {
 
         Material* last_material = nullptr;
 
-        
         Renderer* renderer = scene->renderer;
 
 #if NVIDIA
@@ -450,7 +452,13 @@ namespace Helix {
         u32 buffer_frame_index = renderer->gpu->current_frame;
         gpu_commands->bind_descriptor_set(&scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], 0, scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
+        gpu_commands->draw_mesh_task_indirect_count(
+            scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index],
+            offsetof(GPUMeshDrawCommand, indirectMS), 
+            scene->mesh_draw_count_buffers[buffer_frame_index], 
+            0, 
+            scene->opaque_meshes.size,
+            sizeof(GPUMeshDrawCommand));
         
     }
 
@@ -516,7 +524,13 @@ namespace Helix {
         u32 buffer_frame_index = renderer->gpu->current_frame;
         gpu_commands->bind_descriptor_set(&scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
 
-        gpu_commands->draw_mesh_task_indirect_count(scene->mesh_indirect_draw_late_command_buffers[buffer_frame_index], offsetof(GPUMeshDrawCommand, indirectMS), scene->mesh_draw_count_buffers[buffer_frame_index], offsetof(GPUMeshDrawCounts, late_flag), scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
+        gpu_commands->draw_mesh_task_indirect_count(
+            scene->mesh_indirect_draw_late_command_buffers[buffer_frame_index], 
+            offsetof(GPUMeshDrawCommand, indirectMS), 
+            scene->mesh_draw_count_buffers[buffer_frame_index], 
+            offsetof(GPUMeshDrawCounts, late_flag), 
+            scene->opaque_meshes.size, 
+            sizeof(GPUMeshDrawCommand));
 
     }
 
@@ -831,7 +845,6 @@ namespace Helix {
     //
     // TransparentPass ////////////////////////////////////////////////////////
     void TransparentPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-        return;
         if (!renderer)
             return;
         glTFScene* scene = (glTFScene*)scene_;
@@ -854,7 +867,7 @@ namespace Helix {
 
         gpu_commands->draw_mesh_task_indirect_count(
             scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index],
-            offsetof(GPUMeshDrawCommand, indirectMS),
+            offsetof(GPUMeshDrawCommand, indirectMS) + (sizeof(GPUMeshDrawCommand) * scene->opaque_meshes.size),
             scene->mesh_draw_count_buffers[buffer_frame_index],
             offsetof(GPUMeshDrawCounts,transparent_mesh_visible_count),
             scene->transparent_meshes.size,
@@ -1432,7 +1445,7 @@ namespace Helix {
             for (u32 primitive_index = 0; primitive_index < gltf_mesh.primitives_count; ++primitive_index) {
                 Mesh mesh{ };
 
-                mesh.gpu_mesh_index = opaque_meshes.size;
+                //mesh.gpu_mesh_index = opaque_meshes.size;
 
                 glTF::MeshPrimitive& mesh_primitive = gltf_mesh.primitives[primitive_index];
 
@@ -1635,7 +1648,7 @@ namespace Helix {
                         meshlet.cone_axis[2] = meshlet_bounds.cone_axis_s8[2];
 
                         meshlet.cone_cutoff = meshlet_bounds.cone_cutoff_s8;
-                        meshlet.mesh_index = mesh.is_transparent() ? opaque_meshes.size + transparent_meshes.size - 1 : opaque_meshes.size - 1; // TODO: What about transparent meshes?
+                        //meshlet.mesh_index = mesh.is_transparent() ? opaque_meshes.size + transparent_meshes.size - 1 : opaque_meshes.size - 1; // TODO: What about transparent meshes?
 #if NVIDIA
 
                         // Resize data array
@@ -1675,6 +1688,8 @@ namespace Helix {
                 // 
                 while (meshlets.size % 32)
                     meshlets.push(GPUMeshlet());
+                if(primitive_index == max_mesh)
+                    break;
             }
         }
 
@@ -1686,8 +1701,8 @@ namespace Helix {
         current_samplers_count += gltf_scene.samplers_count;
 
 
-        qsort(transparent_meshes.data, transparent_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
-        qsort(opaque_meshes.data, opaque_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
+        //qsort(transparent_meshes.data, transparent_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
+        //qsort(opaque_meshes.data, opaque_meshes.size, sizeof(Mesh), gltf_mesh_doublesided_compare);
         node_pool.get_root_node()->update_transform(&node_pool);
 
         
@@ -1772,6 +1787,20 @@ namespace Helix {
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {
+        for (u32 i = 0; i < opaque_meshes.size; ++i) {
+            Mesh& mesh = opaque_meshes[i];
+            for (u32 m = 0; m < mesh.meshlet_count; ++m) {
+                meshlets[m + mesh.meshlet_offset].mesh_index = i;
+            }
+        }
+
+        for (u32 i = 0; i < transparent_meshes.size; ++i) {
+            Mesh& mesh = transparent_meshes[i];
+            for (u32 m = 0; m < mesh.meshlet_count; ++m) {
+                meshlets[m + mesh.meshlet_offset].mesh_index = i + opaque_meshes.size;
+            }
+        }
+
         u32 total_meshes = opaque_meshes.size + transparent_meshes.size;
         
         BufferCreation buffer_creation;

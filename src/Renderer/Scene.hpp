@@ -121,7 +121,7 @@ namespace Helix {
         u32                 meshlet_offset;
         u32                 meshlet_count;
 
-        u32                 gpu_mesh_index = u32_max;
+        //u32                 gpu_mesh_index = u32_max;
 
         glm::vec4           bounding_sphere;
 

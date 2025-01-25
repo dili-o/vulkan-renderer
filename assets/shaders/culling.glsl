@@ -152,7 +152,8 @@ void main() {
 				draw_early_commands[draw_index].firstTask = (mesh.meshlet_offset) / 32;
 #endif // NVIDIA
 			}
-	    } else if (late_flag == 0){
+	    }
+		else {
 			uint draw_index = atomicAdd( opaque_mesh_culled_count, 1 );
 			draw_late_commands[draw_index].drawId = mesh_instance_index;
 #if NVIDIA
