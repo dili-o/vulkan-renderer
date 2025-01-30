@@ -59,7 +59,7 @@ namespace Helix {
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-//#defne VULKAN_EXTRA_VALIDATION
+//#define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 
@@ -91,7 +91,6 @@ namespace Helix {
     #endif // VK_USE_PLATFORM_WIN32_KHR
 
     #if defined (VULKAN_DEBUG_REPORT)
-        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
     #endif // VULKAN_DEBUG_REPORT
     };
@@ -430,19 +429,8 @@ namespace Helix {
         Array<const char*> device_extensions;
         device_extensions.init(allocator, 2);
         device_extensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-        device_extensions.push(VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME);
+        //device_extensions.push(VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME);
 
-        if (gpu_device_features & GpuDeviceFeature_DYNAMIC_RENDERING) {
-            device_extensions.push(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-        }
-
-        if (gpu_device_features & GpuDeviceFeature_TIMELINE_SEMAPHORE) {
-            device_extensions.push(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
-        }
-
-        if (gpu_device_features & GpuDeviceFeature_SYNCHRONIZATION2) {
-            device_extensions.push(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-        }
 #if NVIDIA
         if (gpu_device_features & GpuDeviceFeature_MESH_SHADER) {
             device_extensions.push(VK_NV_MESH_SHADER_EXTENSION_NAME);

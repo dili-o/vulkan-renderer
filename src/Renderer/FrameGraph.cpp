@@ -1,6 +1,7 @@
 #include "FrameGraph.hpp"
 
 #include "Core/File.hpp"
+#include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Core/String.hpp"
 
@@ -758,9 +759,6 @@ namespace Helix {
         Array<TextureHandle> free_list;
         free_list.init(&linear_allocator, (u32)resource_count);
 
-        size_t peak_memory = 0;
-        size_t instant_memory = 0;
-
         for (u32 i = 0; i < nodes.size; ++i) {
             FrameGraphNode* node = builder->access_node(nodes[i]);
             if (!node->enabled) {
@@ -798,7 +796,6 @@ namespace Helix {
                             info.texture.height = (u32)(builder->device->swapchain_height * info.texture.scale_height);
                         }
 
-                        TextureFlags::Mask texture_creation_flags = info.texture.compute ? (TextureFlags::Mask)(TextureFlags::RenderTarget_mask | TextureFlags::Compute_mask) : TextureFlags::RenderTarget_mask;
 
                         if (free_list.size > 0) {
                             // TODO(marco): find best fit
@@ -889,6 +886,9 @@ namespace Helix {
             if (!node->enabled) {
                 continue;
             }
+            if(!node->graph_render_pass){
+             HCRITICAL("Node: \"{}\" does not have a registered graph_render_pass!", node->name);
+            }
 
             if (node->compute) {
                 gpu_commands->push_marker(node->name);
@@ -936,9 +936,6 @@ namespace Helix {
             }
             else {
                 gpu_commands->push_marker(node->name);
-                // TODO(marco): add clear colour to json
-                //gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f);
-                //gpu_commands->clear_depth_stencil(1.0f, 0);
 
                 u32 width = 0;
                 u32 height = 0;

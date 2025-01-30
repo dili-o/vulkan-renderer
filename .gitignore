@@ -6,3 +6,9 @@ assets/shaders/cache
 .idea/
 CMakeSettings.json
 Session.vim
+.cache/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json

@@ -40,7 +40,7 @@ namespace Helix {
             return local_matrix;
         }
 
-        void               set_transform(glm::mat4& model) {
+        void               set_transform(const glm::mat4& model) {
             translation = glm::vec3(model[3]);
 
             glm::mat3 rotation_matrix = glm::mat3(
@@ -567,8 +567,8 @@ namespace Helix {
         void                    upload_materials() {};
         void                    free_gpu_resources();
 
-        PipelineHandle          icon_debug_pipeline;
-        DescriptorSetHandle     icon_debug_descriptor_set;
+        PipelineHandle          debug_light_pipeline;
+        DescriptorSetHandle     debug_light_dset;
         BufferHandle            debug_icons_buffer;
         Renderer*               renderer;
     }; // struct DebugPass
@@ -626,7 +626,7 @@ namespace Helix {
         DepthPyramidPass        depth_pyramid_pass;
         LightPass               light_pass;
         TransparentPass         transparent_pass;
-        //DebugPass             light_debug_pass;
+        DebugPass               debug_pass;
 
         // Fullscreen data
         Program*                fullscreen_program = nullptr;
@@ -644,7 +644,6 @@ namespace Helix {
 
 
         // Buffers
-        BufferHandle            light_cb;
         TextureResource         light_texture;
 
     }; // struct GltfScene

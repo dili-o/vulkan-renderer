@@ -104,9 +104,6 @@ namespace Helix {
             for (u32 i = 0; i < sets.size(); ++i) {
                 bool image_detected = false;
                 DescriptorSetLayoutCreation& creation = parse_result->sets[sets[i]->set];
-                // Skip the first descriptor set because it contains bindless textures.
-                /*if (sets[i]->set == 0)
-                    continue;*/
                 creation.set_set_index(sets[i]->set);
                 for (u32 j = 0; j < sets[i]->binding_count; ++j) {
                     DescriptorSetLayoutCreation::Binding binding{ };
@@ -118,7 +115,6 @@ namespace Helix {
                     binding.type = (VkDescriptorType)spirv_binding->descriptor_type;
                     image_detected = (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || binding.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
-                    //creation.add_binding(binding);
                     add_binding_if_unique(creation, binding);
                 }
             }

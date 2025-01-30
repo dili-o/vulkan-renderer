@@ -19,7 +19,7 @@
 #include "Core/Service.hpp"
 #include "Core/Array.hpp"
 
-#define NVIDIA 1
+#define NVIDIA 0
 
 namespace Helix {
 

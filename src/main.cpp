@@ -341,8 +341,6 @@ int main(int argc, char** argv)
             }
 
             {
-                MapBufferParameters light_cb_map = { scene->light_cb, 0, 0 };
-                //LightUniform* light_cb_data = (LightUniform*)gpu.map_buffer(light_cb_map);
                 {
                     // TODO: Fix Hard coded the light node handle
                     //LightNode* light_node = (LightNode*)scene->node_pool.access_node({0, NodeType::LightNode});
@@ -354,7 +352,8 @@ int main(int argc, char** argv)
                     scene_data.inverse_view_projection = glm::inverse(camera.view_projection);// TODO glm::inverse(view_projection);
                     scene_data.view_matrix = camera.view;
                     scene_data.camera_position = glm::vec4(camera.position.x, camera.position.y, camera.position.z, 1.0f);
-                    scene_data.light_position = glm::vec4(light_position, 1.0f);
+                    LightNode* l = (LightNode*)scene->node_pool.access_node({ 0, NodeType::LightNode });
+                    scene_data.light_position = glm::vec4(l->world_transform.translation, scene->light_texture.handle.index);
                     scene_data.light_range = light_range;
                     scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;
@@ -405,7 +404,6 @@ int main(int argc, char** argv)
                     //model = glm::translate(model, light_node->world_transform.translation);
                     //light_cb_data->model = model;
 
-                    gpu.unmap_buffer(light_cb_map);
                 }
                 
                 scene->fill_gpu_data_buffers(model_scale);

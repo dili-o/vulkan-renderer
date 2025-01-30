@@ -12,9 +12,6 @@
 #include <imgui/imgui.h>
 #include <Core/Numerics.hpp>
 
-// TODO: Remove
-static u32 max_mesh = 100000;
-
 namespace Helix {
     float square(float r) {
         return r * r;
@@ -29,9 +26,6 @@ namespace Helix {
 
         glm::vec4 min_p = glm::vec4(C.x - r, C.y - r, C.z, 1.0f);
         glm::vec4 max_p = glm::vec4(C.x + r, C.y + r, C.z, 1.0f);
-
-        glm::vec4 min_clip = P * min_p;
-        glm::vec4 max_clip = P * max_p;
 
         //aabb = glm::vec4(min_clip.x / min_clip.w, min_clip.y / min_clip.w, max_clip.x / max_clip.w, max_clip.y / max_clip.w);
 
@@ -924,11 +918,9 @@ namespace Helix {
     //
     // DebugPass ////////////////////////////////////////////////////////
     void DebugPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-        glTFScene* scene = (glTFScene*)scene_;
-
-        gpu_commands->bind_pipeline(icon_debug_pipeline);
-        gpu_commands->bind_descriptor_set(&icon_debug_descriptor_set, 1, nullptr, 0);
-        gpu_commands->draw(6, 2, 0, 0);
+        gpu_commands->bind_pipeline(debug_light_pipeline);
+        gpu_commands->bind_descriptor_set(&debug_light_dset, 1, nullptr, 0);
+        gpu_commands->draw(6, 1, 0, 0);
     }
 
     void DebugPass::init() {
@@ -943,30 +935,30 @@ namespace Helix {
         FrameGraphNode* node = frame_graph->get_node("debug_pass");
         HASSERT(node);
 
-        const u64 hashed_name = hash_calculate("icon_debug");
+        const u64 hashed_name = hash_calculate("debug");
         Program* debug_program = scene.renderer->resource_cache.programs.get(hashed_name);
 
-        icon_debug_pipeline = debug_program->passes[0].pipeline;
+        debug_light_pipeline = debug_program->passes[debug_program->get_pass_index("debug_light")].pipeline;
 
-        glm::vec4 positions[2] = { {glm::vec4(0, 10, 0, 6)}, {glm::vec4(10, 10, 0, 7)} };
-        GPUDebugIcon debug_icons{};
-        debug_icons.position_texture_index[0] = positions[0];
-        debug_icons.position_texture_index[1] = positions[1];
-        debug_icons.count = 2;
+        //glm::vec4 positions[2] = { {glm::vec4(0, 10, 0, 6)}, {glm::vec4(10, 10, 0, 7)} };
+        //GPUDebugIcon debug_icons{};
+        //debug_icons.position_texture_index[0] = positions[0];
+        //debug_icons.position_texture_index[1] = positions[1];
+        //debug_icons.count = 2;
 
-        BufferCreation buffer_creation{};
-        buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUDebugIcon)).set_name("debug_icons_buffer").set_data(&debug_icons);
-        debug_icons_buffer = renderer->create_buffer(buffer_creation)->handle;
+        //BufferCreation buffer_creation{};
+        //buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUDebugIcon)).set_name("debug_icons_buffer").set_data(&debug_icons);
+        //debug_icons_buffer = renderer->create_buffer(buffer_creation)->handle;
 
         DescriptorSetCreation ds_creation{};
-        DescriptorSetLayoutHandle layout = scene.renderer->gpu->get_descriptor_set_layout(debug_program->passes[0].pipeline, 1);
-        ds_creation.buffer(scene.light_cb, 0).buffer(debug_icons_buffer, 1).set_layout(layout);
-        icon_debug_descriptor_set = scene.renderer->gpu->create_descriptor_set(ds_creation);
+        DescriptorSetLayoutHandle layout = scene.renderer->gpu->get_descriptor_set_layout(debug_light_pipeline, 1);
+        ds_creation.buffer(scene.scene_constant_buffer, 0).set_layout(layout);
+        debug_light_dset = scene.renderer->gpu->create_descriptor_set(ds_creation);
         
     }
 
     void DebugPass::free_gpu_resources() {
-        renderer->gpu->destroy_descriptor_set(icon_debug_descriptor_set);
+        renderer->gpu->destroy_descriptor_set(debug_light_dset);
     }
 
     // glTFDrawTask //////////////////////////////////
@@ -996,8 +988,6 @@ namespace Helix {
         gpu_commands->clear(0.3f, 0.3f, 0.3f, 1.f, 0);
         gpu_commands->clear_depth_stencil(1.0f, 0);
         
-        Framebuffer* fullscreen_fb = gpu->access_framebuffer(gpu->fullscreen_framebuffer);
-        Texture* fullscreen_texture = gpu->access_texture(fullscreen_fb->color_attachments[0]);
 
         //util_add_image_barrier(gpu, gpu_commands->vk_handle, fullscreen_texture, RESOURCE_STATE_RENDER_TARGET, 0, 1, false);
 
@@ -1064,9 +1054,7 @@ namespace Helix {
         names.init(hmega(1), main_allocator);
 
         // Creating the light image
-        stbi_set_flip_vertically_on_load(true);
         TextureResource* tr = renderer->create_texture("Light", HELIX_TEXTURE_FOLDER"lights/point_light.png", true);
-        stbi_set_flip_vertically_on_load(false);
         HASSERT(tr != nullptr);
         light_texture = *tr;
 
@@ -1079,15 +1067,15 @@ namespace Helix {
         //buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
         //light_cb = renderer->create_buffer(buffer_creation);
 
-        //NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
+        NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
 
-        //LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
-        //light_node->name = "Point Light";
-        //light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
-        //light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
-        //light_node->world_transform.translation.y = 1.0f;
+        LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
+        light_node->name = "Point Light";
+        light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
+        light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
+        light_node->world_transform.translation.y = 1.0f;
 
-        //node_pool.get_root_node()->add_child(light_node);
+        node_pool.get_root_node()->add_child(light_node);
 
         // Constant buffer
         buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUSceneData)).set_name("scene_constant_buffer");
@@ -1098,7 +1086,7 @@ namespace Helix {
         gbuffer_pass.init();
         transparent_pass.init();
         light_pass.init();
-        //light_debug_pass.init();
+        debug_pass.init();
 
         fullscreen_program = renderer->resource_cache.programs.get(hash_calculate("fullscreen"));
 
@@ -1688,8 +1676,6 @@ namespace Helix {
                 // 
                 while (meshlets.size % 32)
                     meshlets.push(GPUMeshlet());
-                if(primitive_index == max_mesh)
-                    break;
             }
         }
 
@@ -1733,7 +1719,7 @@ namespace Helix {
         light_pass.free_gpu_resources();
         transparent_pass.free_gpu_resources();
         depth_pyramid_pass.free_gpu_resources();
-        //light_debug_pass.free_gpu_resources();
+        debug_pass.free_gpu_resources();
 
         for (u32 i = 0; i < k_max_frames; ++i) {
             gpu.destroy_descriptor_set(mesh_shader_descriptor_set[i]);
@@ -1781,9 +1767,9 @@ namespace Helix {
         frame_graph->builder->register_render_pass("lighting_pass", &light_pass);
         frame_graph->builder->register_render_pass("transparent_pass", &transparent_pass);
         frame_graph->builder->register_render_pass("depth_pyramid_pass", &depth_pyramid_pass);
-        //frame_graph->builder->register_render_pass("light_debug_pass", &light_debug_pass);
+        frame_graph->builder->register_render_pass("debug_pass", &debug_pass);
 
-        //light_debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+        debug_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
     }
 
     void glTFScene::prepare_draws(Renderer* renderer, StackAllocator* stack_allocator) {

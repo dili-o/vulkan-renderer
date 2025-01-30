@@ -164,6 +164,20 @@
             "inputs":
             [
                 {
+                    "type": "attachment",
+                    "name": "final"
+                },
+                {
+                    "type": "attachment",
+                    "name": "depth"
+                }
+            ],
+            "name": "debug_pass"
+        },
+        {
+            "inputs":
+            [
+                {
                     "type": "texture",
                     "name": "gbuffer_colour"
                 },

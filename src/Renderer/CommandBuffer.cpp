@@ -1,4 +1,5 @@
 #include "CommandBuffer.hpp"
+#include "Core/Assert.hpp"
 #include "Renderer/GPUDevice.hpp"
 
 #include "vendor/tracy/tracy/Tracy.hpp"
@@ -305,8 +306,9 @@ namespace Helix {
     void CommandBuffer::bind_pipeline(PipelineHandle handle_) {
 
         Pipeline* pipeline = device->access_pipeline(handle_);
-        vkCmdBindPipeline(vk_handle, pipeline->vk_bind_point, pipeline->vk_pipeline);
+        HASSERT_MSG(pipeline, "Failed to bind pipeline: Invalid pipeline handle");
 
+        vkCmdBindPipeline(vk_handle, pipeline->vk_bind_point, pipeline->vk_pipeline);
         // Cache pipeline
         current_pipeline = pipeline;
     }
