@@ -2,10 +2,10 @@
 #ifndef HELIX_GLSL_LIGHTING_H
 #define HELIX_GLSL_LIGHTING_H
 
-vec4 calculate_lighting(vec4 base_colour, vec3 rmo, vec3 normal, vec3 emissive, vec3 vPosition) {
+vec4 calculate_lighting(vec4 base_colour, vec3 rmo, vec3 normal, vec3 emissive, vec3 vPosition, Light light) {
 
     vec3 V = normalize( eye.xyz - vPosition );
-    vec3 L = normalize( light.xyz - vPosition );
+    vec3 L = normalize( light.position.xyz - vPosition );
     vec3 N = normal;
     vec3 H = normalize( L + V );
 
@@ -26,8 +26,8 @@ vec4 calculate_lighting(vec4 base_colour, vec3 rmo, vec3 normal, vec3 emissive, 
     float HdotL = clamp(dot(H, L), 0, 1);
     float HdotV = clamp(dot(H, V), 0, 1);
 
-    float distance = length(light.xyz - vPosition);
-    float intensity = light_intensity * max(min(1.0 - pow(distance / light_range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+    float distance = length(light.position.xyz - vPosition);
+    float intensity = light.intensity * max(min(1.0 - pow(distance / light.range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
 
     vec3 material_colour = vec3(0, 0, 0);
     if (NdotL > 0.0 || NdotV > 0.0)

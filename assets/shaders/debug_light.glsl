@@ -2,6 +2,11 @@
 
 #if defined(VERTEX)
 
+layout(set = MATERIAL_SET, binding = 1) buffer LightData
+{
+	Light lights[];
+};
+
 struct Vertex{
   vec2 position;
   vec2 tex_coord;
@@ -17,17 +22,19 @@ const Vertex VERTICES[6] = Vertex[](
 );
 
 layout(location = 0) out vec2 vTexCoord;
+layout(location = 1) flat out int texture_index;
 
 void main() {
   float radius = 0.1f;
   Vertex vertex = VERTICES[gl_VertexIndex];
 
   vTexCoord = vertex.tex_coord;
+  texture_index = int( lights[gl_InstanceIndex].position.w );
 
   vec3 cam_right = vec3(world_to_camera[0][0], world_to_camera[1][0], world_to_camera[2][0]);
   vec3 cam_up = vec3(world_to_camera[0][1], world_to_camera[1][1], world_to_camera[2][1]);
 
-  vec3 world_position = light.xyz 
+  vec3 world_position = lights[gl_InstanceIndex].position.xyz
     + radius * vertex.position.x * cam_right
     + radius * vertex.position.y * cam_up;
 
@@ -38,12 +45,15 @@ void main() {
 
 #if defined(FRAGMENT)
 
+
+
 layout(location = 0) in vec2 vTexCoord;
+layout(location = 1) flat in int texture_index;
 
 layout(location = 0) out vec4 outColor;
 
 void main(){
-    outColor = texture(global_textures[nonuniformEXT(int(light.w))], vTexCoord);  
+    outColor = texture(global_textures[nonuniformEXT(texture_index)], vTexCoord);  
 }
 
 #endif // FRAGMENT

@@ -16,7 +16,7 @@ layout ( std140, set = MATERIAL_SET, binding = 0 ) uniform SceneConstants {
     vec4        eye_debug;
     vec4        light;
 
-    float       light_range;
+    float       current_light_count;
     float       light_intensity;
     uint        dither_texture_index;
     float       z_near;
@@ -38,6 +38,13 @@ layout ( std140, set = MATERIAL_SET, binding = 0 ) uniform SceneConstants {
     vec4        frustum_planes[6];
 };
 
+struct Light{
+  vec4          position;
+
+  float         range;
+  float         intensity;
+  float         padding_[2];
+};
 
 float dither(vec2 screen_pixel_position, float value)
 {

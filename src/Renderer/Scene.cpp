@@ -5,12 +5,15 @@
 #include "Core/Gltf.hpp"
 #include "Core/Time.hpp"
 #include "Core/File.hpp"
+#include "Renderer/GPUEnum.hpp"
 
 #include <vendor/tracy/tracy/Tracy.hpp>
 #include <vendor/meshoptimizer/meshoptimizer.h>
 
 #include <imgui/imgui.h>
 #include <Core/Numerics.hpp>
+
+const u32 MAX_LIGHTS = 256;
 
 namespace Helix {
     float square(float r) {
@@ -47,31 +50,6 @@ namespace Helix {
         return aabb;
     }
 
-
-    // Node
-    static void update_transform(Node* node, NodePool* node_pool) {
-
-        if (node->parent.index != k_invalid_index) {
-            Node* parent_node = (Node*)node_pool->access_node(node->parent);
-            glm::mat4 combined_matrix = parent_node->world_transform.calculate_matrix() * node->local_transform.calculate_matrix();
-            node->world_transform.set_transform(combined_matrix);
-        }
-        else {
-            node->world_transform.set_transform(node->local_transform.calculate_matrix());
-        }
-
-        for (u32 i = 0; i < node->children.size; i++) {
-            Node* child_node = (Node*)node_pool->access_node(node->children[i]);
-            child_node->update_transform(node_pool);
-        }
-    }
-
-    static void update_mesh_transform(Node* node, NodePool* node_pool) {
-        update_transform(node, node_pool);
-
-        MeshNode* mesh_node = static_cast<MeshNode*>(node);
-        //mesh_node->gpu_mesh_data->model = node->world_transform.calculate_matrix();
-    }
 
     // Helper functions //////////////////////////////////////////////////
 
@@ -811,7 +789,7 @@ namespace Helix {
 
         DescriptorSetCreation ds_creation{};
         DescriptorSetLayoutHandle layout = renderer->gpu->get_descriptor_set_layout(lighting_program->passes[0].pipeline, k_material_descriptor_set_index);
-        ds_creation.buffer(scene.scene_constant_buffer, 0).set_layout(layout);
+        ds_creation.buffer(scene.scene_constant_buffer, 0).buffer(scene.light_data_buffer, 1).set_layout(layout);
         d_set = renderer->gpu->create_descriptor_set(ds_creation);
 
         FrameGraphResource* color_texture = get_output_texture(frame_graph, node->inputs[0]);
@@ -918,9 +896,10 @@ namespace Helix {
     //
     // DebugPass ////////////////////////////////////////////////////////
     void DebugPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+        glTFScene* scene = (glTFScene*)scene_;
         gpu_commands->bind_pipeline(debug_light_pipeline);
         gpu_commands->bind_descriptor_set(&debug_light_dset, 1, nullptr, 0);
-        gpu_commands->draw(6, 1, 0, 0);
+        gpu_commands->draw(6, scene->node_pool.light_nodes.used_indices, 0, 0);
     }
 
     void DebugPass::init() {
@@ -952,7 +931,7 @@ namespace Helix {
 
         DescriptorSetCreation ds_creation{};
         DescriptorSetLayoutHandle layout = scene.renderer->gpu->get_descriptor_set_layout(debug_light_pipeline, 1);
-        ds_creation.buffer(scene.scene_constant_buffer, 0).set_layout(layout);
+        ds_creation.buffer(scene.scene_constant_buffer, 0).buffer(scene.light_data_buffer, 1).set_layout(layout);
         debug_light_dset = scene.renderer->gpu->create_descriptor_set(ds_creation);
         
     }
@@ -1042,14 +1021,7 @@ namespace Helix {
         meshlets_vertex_positions.init(resident_allocator, 16);
         meshlets_vertex_data.init(resident_allocator, 16);
 
-        // Create material
-        //u64 hashed_name = hash_calculate("geometry");
-        //Program* geometry_program = renderer->resource_cache.programs.get(hashed_name);
-
-        //MaterialCreation material_creation;
-        //material_creation.set_name("material_no_cull_opaque").set_program(geometry_program).set_render_index(0);
-
-        //pbr_material = renderer->create_material(material_creation);
+        lights.init(resident_allocator, MAX_LIGHTS);
 
         names.init(hmega(1), main_allocator);
 
@@ -1058,25 +1030,9 @@ namespace Helix {
         HASSERT(tr != nullptr);
         light_texture = *tr;
 
-        //hashed_name = hash_calculate("light_debug");
-        //Program* light_program = renderer->resource_cache.programs.get(hashed_name);
-
-        //light_pipeline = light_program->passes[0].pipeline;
-
         BufferCreation buffer_creation;
-        //buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(LightUniform)).set_name("light_uniform_buffer");
-        //light_cb = renderer->create_buffer(buffer_creation);
 
-        NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
-
-        LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
-        light_node->name = "Point Light";
-        light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
-        light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
-        light_node->world_transform.translation.y = 1.0f;
-
-        node_pool.get_root_node()->add_child(light_node);
-
+        add_light();
         // Constant buffer
         buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUSceneData)).set_name("scene_constant_buffer");
         scene_constant_buffer = renderer->create_buffer(buffer_creation)->handle;
@@ -1099,6 +1055,10 @@ namespace Helix {
         if (texture != nullptr) {
             fullscreen_texture_index = texture->resource_info.texture.handle.index;
         }
+
+        buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPULight) * MAX_LIGHTS).set_name("lights_data_buffer");
+        light_data_buffer = renderer->create_buffer(buffer_creation)->handle;
+
     }
 
     void glTFScene::load(cstring filename, cstring path, Allocator* resident_allocator, StackAllocator* temp_allocator, AsynchronousLoader* async_loader) {
@@ -1746,7 +1706,7 @@ namespace Helix {
         meshlets_vertex_positions.shutdown();
         meshlets_vertex_data.shutdown();
         meshlet_vertex_and_index_indices.shutdown();
-
+        lights.shutdown();
         
 
         // NOTE(marco): we can't destroy this sooner as textures and buffers
@@ -1803,6 +1763,7 @@ namespace Helix {
         buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(GPUMeshInstanceData) * total_meshes).set_name("mesh_instances_buffer");
         mesh_instances_buffer = renderer->create_buffer(buffer_creation)->handle;
 
+        
         // Create mesh bound ssbo
         buffer_creation.reset().set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(glm::vec4) * total_meshes).set_name("mesh_bounds_buffer");
         mesh_bounds_buffer = renderer->create_buffer(buffer_creation)->handle;
@@ -1861,8 +1822,11 @@ namespace Helix {
                 DescriptorSetCreation ds_creation{};
                 ds_creation.buffer(scene_constant_buffer, 0).buffer(meshlets_buffer, 1).buffer(material_data_buffer, 2).buffer(mesh_data_buffer, 3)
                     .buffer(meshlet_vertex_and_index_indices_buffer, 4).buffer(meshlets_vertex_pos_buffer, 5).buffer(meshlets_vertex_data_buffer, 6)
-                    .buffer(mesh_indirect_draw_early_command_buffers[i], 7).buffer(mesh_draw_count_buffers[i], 8).buffer(mesh_instances_buffer, 10)
-                    .buffer(mesh_bounds_buffer, 12).buffer(debug_line_buffer, 20).buffer(debug_line_count_buffer, 21).buffer(debug_line_indirect_command_buffer, 22)
+                    .buffer(mesh_indirect_draw_early_command_buffers[i], 7).buffer(mesh_draw_count_buffers[i], 8).buffer(light_data_buffer, 9)
+                    .buffer(mesh_instances_buffer, 10)
+                    .buffer(mesh_bounds_buffer, 12).buffer(debug_line_buffer, 20)
+                    .buffer(debug_line_count_buffer, 21)
+                    .buffer(debug_line_indirect_command_buffer, 22)
                     .set_layout(layout);
 
                 mesh_shader_descriptor_set[i] = renderer->gpu->create_descriptor_set(ds_creation);
@@ -2029,6 +1993,18 @@ namespace Helix {
             renderer->gpu->unmap_buffer(mesh_buffer_map);
         }
 
+        mesh_buffer_map.buffer = light_data_buffer;
+        GPULight* lights_data = (GPULight*)renderer->gpu->map_buffer(mesh_buffer_map);
+        if(lights_data){
+          for(u32 i = 0; i < node_pool.light_nodes.used_indices; ++i){
+            glm::vec3 light_pos = ((LightNode*)node_pool.access_node({i, NodeType::LightNode}))->world_transform.translation;
+            lights[i].position = glm::vec4(light_pos, light_texture.handle.index);
+            lights_data[i] = lights[i]; 
+          }
+          renderer->gpu->unmap_buffer(mesh_buffer_map);
+        }
+  
+
         light_pass.fill_gpu_material_buffer();
     }
 
@@ -2108,6 +2084,13 @@ namespace Helix {
                 ImGui::InputFloat3("scale##world", (float*)&node->world_transform.scale);
                 ImGui::InputFloat3("rotation##world", (float*)&world_rotation);
 
+                if(node_handle.type == NodeType::LightNode){
+                  LightNode* light_node = (LightNode*)node;
+                  GPULight& light = lights[light_node->light_index]; 
+                  ImGui::SliderFloat("Light Intensity", &light.intensity, 0.f, 100.f);
+                  ImGui::SliderFloat("Light Range", &light.range, 0.f, 100.f);
+                }
+
                 if (modified) {
                     node->local_transform.rotation = glm::quat(glm::radians(local_rotation));
                     node->update_transform(&node_pool);
@@ -2115,6 +2098,25 @@ namespace Helix {
             }
         }
         ImGui::End();
+    }
+
+    void glTFScene::add_light(){
+      NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
+
+      LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
+      light_node->name = names.append_use_f("Point Light_%d", node_pool.light_nodes.used_indices - 1);
+      light_node->local_transform.scale = { 1.0f, 1.0f, 1.0f };
+      light_node->world_transform.scale = { 1.0f, 1.0f, 1.0f };
+      light_node->world_transform.translation.y = 1.0f;
+      light_node->light_index = lights.size;
+      
+      node_pool.get_root_node()->add_child(light_node);
+      
+      GPULight light;
+      light.range = 50.f;
+      light.intensity = 50.f;
+      light.position.w = light_texture.handle.index;
+      lights.push(light);
     }
 
     void glTFScene::imgui_draw_node(NodeHandle node_handle) {
@@ -2169,6 +2171,9 @@ namespace Helix {
                     delete[] filename, file_path;
                 }
             }
+            if (ImGui::Button("Add Light", { viewportPanelSize.x, 30 })){
+              add_light();
+            }
 
             imgui_draw_node(node_pool.root_node);
             ImGui::End();
@@ -2177,79 +2182,5 @@ namespace Helix {
 
     // Nodes //////////////////////////////////////////
 
-    void NodePool::init(Allocator* allocator_) {
-        allocator = allocator_;
 
-        mesh_nodes.init(allocator_, 300, sizeof(MeshNode));
-        base_nodes.init(allocator_, 50, sizeof(Node));
-        light_nodes.init(allocator_, 5, sizeof(LightNode));
-
-        root_node = obtain_node(NodeType::Node);
-
-        Node* root = (Node*)access_node(root_node);
-        root->children.init(allocator, 4);
-        root->parent = { k_invalid_index, NodeType::Node };
-        root->name = "Root_Node";
-        root->world_transform = Transform{};
-        root->local_transform = Transform{};
-    }
-
-    void NodePool::shutdown() {
-        mesh_nodes.shutdown();
-        base_nodes.shutdown();
-        light_nodes.shutdown();
-    }
-
-    void* NodePool::access_node(NodeHandle handle) {
-        switch (handle.type)
-        {
-        case NodeType::Node:
-            return base_nodes.access_resource(handle.index);
-        case NodeType::MeshNode:
-            return mesh_nodes.access_resource(handle.index);
-        case NodeType::LightNode:
-            return light_nodes.access_resource(handle.index);
-        default:
-            HERROR("Invalid NodeType");
-            return nullptr;
-        }
-    }
-
-    Node* NodePool::get_root_node() {
-        Node* root = (Node*)access_node(root_node);
-        HASSERT(root);
-        return root;
-    }
-
-    NodeHandle NodePool::obtain_node(NodeType type) {
-        NodeHandle handle{};
-        switch (type)
-        {
-        case NodeType::Node: {
-            handle = { base_nodes.obtain_resource(), NodeType::Node };
-            Node* base_node = new((Node*)access_node(handle)) Node();
-            base_node->updateFunc = update_transform;
-            base_node->handle = handle;
-            break;
-        }
-        case NodeType::MeshNode: {
-            handle = { mesh_nodes.obtain_resource(), NodeType::MeshNode };
-            MeshNode* mesh_node = new((MeshNode*)access_node(handle)) MeshNode();
-            mesh_node->updateFunc = update_mesh_transform;
-            mesh_node->handle = handle;
-            break;
-        }
-        case NodeType::LightNode: {
-            handle = { light_nodes.obtain_resource(), NodeType::LightNode };
-            LightNode* light_node = new((LightNode*)access_node(handle)) LightNode();
-            light_node->updateFunc = update_transform;
-            light_node->handle = handle;
-            break;
-        }
-        default:
-            HERROR("Invalid NodeType");
-            break;
-        }
-        return handle;
-    }
 }// namespace Helix

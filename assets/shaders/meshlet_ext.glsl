@@ -79,6 +79,10 @@ layout(set = MATERIAL_SET, binding = 8) buffer VisibleMeshCount
 };
 #endif // TASK MESH
 
+layout(set = MATERIAL_SET, binding = 9) buffer LightData
+{
+	Light lights[];
+};
 
 #if defined (TASK)
 
@@ -455,6 +459,8 @@ void main() {
 
 #if defined(FRAGMENT_TRANSPARENT_NO_CULL)
 
+
+
 layout (location = 0) in vec2 vTexcoord0;
 layout (location = 1) in vec4 vNormal_BiTanX;
 layout (location = 2) in vec4 vTangent_BiTanY;
@@ -468,6 +474,7 @@ layout (location = 5) in vec4 vColour;
 layout (location = 0) out vec4 color_out;
 
 void main() {
+    color_out = vec4(0.f);
     MaterialData material = material_data[mesh_draw_index];
     uint flags = material.flags;
 
@@ -559,7 +566,9 @@ void main() {
 #if DEBUG
     color_out = vColour;
 #else
-    color_out = calculate_lighting( base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position );
+    for(int i = 0; i < int(current_light_count); i++){
+      color_out += calculate_lighting( base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position, lights[i] );
+    }
 #endif
 }
 

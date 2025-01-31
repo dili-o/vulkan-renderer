@@ -14,6 +14,10 @@ void main() {
 #endif // VERTEX
 
 #if defined (FRAGMENT_PBR)
+layout(set = MATERIAL_SET, binding = 1) buffer LightData
+{
+	Light lights[];
+};
 
 layout( push_constant ) uniform LightingData {
 
@@ -26,6 +30,7 @@ layout (location = 0) in vec2 vTexcoord0;
 layout (location = 0) out vec4 frag_color;
 
 void main() {
+    frag_color = vec4(0.f);
     vec4 base_colour = texture(global_textures[nonuniformEXT(gbuffer_textures.x)], vTexcoord0);
     float raw_depth = texture(global_textures[nonuniformEXT(gbuffer_textures.w)], vTexcoord0).r;
 
@@ -42,7 +47,9 @@ void main() {
 
     vec3 vPosition = world_position_from_depth( vTexcoord0, raw_depth, inverse_view_projection);
 
-    frag_color = calculate_lighting(base_colour, rmo, normal, vec3(0.f), vPosition);
+    for(int i = 0; i < int(current_light_count); i++){
+      frag_color += calculate_lighting(base_colour, rmo, normal, vec3(0.f), vPosition, lights[i]);
+    }
 }
 
 #endif // FRAGMENT

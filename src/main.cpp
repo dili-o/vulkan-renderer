@@ -354,7 +354,7 @@ int main(int argc, char** argv)
                     scene_data.camera_position = glm::vec4(camera.position.x, camera.position.y, camera.position.z, 1.0f);
                     LightNode* l = (LightNode*)scene->node_pool.access_node({ 0, NodeType::LightNode });
                     scene_data.light_position = glm::vec4(l->world_transform.translation, scene->light_texture.handle.index);
-                    scene_data.light_range = light_range;
+                    scene_data.current_light_count = scene->node_pool.light_nodes.used_indices;
                     scene_data.light_intensity = light_intensity;
                     scene_data.dither_texture_index = k_invalid_index;
 
