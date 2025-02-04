@@ -91,6 +91,27 @@ glm::vec3 decodeNormalOctahedron(glm::vec2 f) {
     return normalize(n);
 }
 
+bool project_sphere(glm::vec3 C, float r, float znear, float P00, float P11, glm::vec4& aabb) {
+  // Check if the sphere intersects with the near plane
+	if (-C.z - r < znear)
+		return false;
+
+	glm::vec2 cx = glm::vec2(C.x, -C.z);
+	glm::vec2 vx = glm::vec2(sqrt(dot(cx, cx) - r * r), r);
+	glm::vec2 minx = glm::mat2(vx.x, vx.y, -vx.y, vx.x) * cx;
+	glm::vec2 maxx = glm::mat2(vx.x, -vx.y, vx.y, vx.x) * cx;
+
+	glm::vec2 cy = glm::vec2(-C.y, -C.z);
+	glm::vec2 vy = glm::vec2(sqrt(dot(cy, cy) - r * r), r);
+	glm::vec2 miny = glm::mat2(vy.x, vy.y, -vy.y, vy.x) * cy;
+	glm::vec2 maxy = glm::mat2(vy.x, -vy.y, vy.y, vy.x) * cy;
+
+	aabb = glm::vec4(minx.x / minx.y * P00, miny.x / miny.y * P11, maxx.x / maxx.y * P00, maxy.x / maxy.y * P11);
+	aabb = glm::vec4(aabb.x, aabb.w, aabb.z, aabb.y) * glm::vec4(0.5f, -0.5f, 0.5f, -0.5f) + glm::vec4(0.5f); // clip space -> uv space
+
+	return true;
+}
+
 int main(int argc, char** argv)
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);

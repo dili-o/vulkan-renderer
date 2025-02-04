@@ -1616,8 +1616,9 @@ namespace Helix {
                         }
 #else
                         // Resize data array
-                        const u32 index_count = local_meshlet.triangle_count * 3;
-                        meshlet_vertex_and_index_indices.set_capacity(meshlet_vertex_and_index_indices.size + local_meshlet.vertex_count + index_count);
+                        // Pack 3 u8 incicies into a u32
+                        const u32 index_group_count = (local_meshlet.triangle_count * 3) / 3;
+                        meshlet_vertex_and_index_indices.set_capacity(meshlet_vertex_and_index_indices.size + local_meshlet.vertex_count + index_group_count);
 
                         for (u32 i = 0; i < meshlet.vertex_count; ++i) {
                             u32 vertex_index = meshlet_vertex_offset + meshlet_vertex_indices[local_meshlet.vertex_offset + i];
@@ -1626,8 +1627,10 @@ namespace Helix {
                         // Store indices as uint32
                         // NOTE(marco): we write to the gl_PrimitiveTriangleIndicesEXT uvec3 array
                         const u8* p_indicies = reinterpret_cast<const u8*>(meshlet_triangles.data + local_meshlet.triangle_offset);
-                        for (u32 i = 0; i < index_count; ++i) {
-                            const u32 index_group = (u32)p_indicies[i];
+                        for (u32 i = 0; i < index_group_count; ++i) {
+                            const u32 index_group = (u32(p_indicies[i * 3 + 0]) << 16) |
+                                                    (u32(p_indicies[i * 3 + 1]) << 8) |
+                                                    (u32(p_indicies[i * 3 + 2]));
                             meshlet_vertex_and_index_indices.push(index_group);
                         }
 #endif // NVIDIA
@@ -2163,8 +2166,6 @@ namespace Helix {
                     directory_change(cwd.path);
 
                     prepare_draws(renderer, scratch_allocator);
-
-                    //gltf_free(gltf_scene);
 
                     directory_change(cwd.path);
 

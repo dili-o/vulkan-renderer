@@ -78,7 +78,12 @@ layout(set = MATERIAL_SET, binding = 8) buffer VisibleMeshCount
 	uint depth_pyramid_texture_index;
 	uint late_flag;
 };
-#endif // TASK || MESH
+#endif // TASK MESH
+
+layout(set = MATERIAL_SET, binding = 9) buffer LightData
+{
+  Light lights[];
+};
 
 #if defined (TASK)
 
@@ -95,27 +100,6 @@ out taskNV block
 bool coneCull(vec3 center, float radius, vec3 cone_axis, float cone_cutoff, vec3 camera_position)
 {
     return dot(center - camera_position, cone_axis) >= cone_cutoff * length(center - camera_position) + radius;
-}
-
-// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
-bool project_sphere(vec3 C, float r, float znear, float P00, float P11, out vec4 aabb) {
-	if (-C.z - r < znear)
-		return false;
-
-	vec2 cx = vec2(C.x, -C.z);
-	vec2 vx = vec2(sqrt(dot(cx, cx) - r * r), r);
-	vec2 minx = mat2(vx.x, vx.y, -vx.y, vx.x) * cx;
-	vec2 maxx = mat2(vx.x, -vx.y, vx.y, vx.x) * cx;
-
-	vec2 cy = -C.yz;
-	vec2 vy = vec2(sqrt(dot(cy, cy) - r * r), r);
-	vec2 miny = mat2(vy.x, vy.y, -vy.y, vy.x) * cy;
-	vec2 maxy = mat2(vy.x, -vy.y, vy.y, vy.x) * cy;
-
-	aabb = vec4(minx.x / minx.y * P00, miny.x / miny.y * P11, maxx.x / maxx.y * P00, maxy.x / maxy.y * P11);
-	aabb = aabb.xwzy * vec4(0.5f, -0.5f, 0.5f, -0.5f) + vec4(0.5f); // clip space -> uv space
-
-	return true;
 }
 
 void main()
@@ -413,6 +397,7 @@ void main() {
     float metalness = 0.0;
     float roughness = 0.0;
     float occlusion = 0.0;
+    vec3 emissive_colour = vec3(0.f);
 
     roughness = material.roughness_metallic_occlusion_factor.x;
     metalness = material.roughness_metallic_occlusion_factor.y;
@@ -435,10 +420,13 @@ void main() {
     }
 
     roughness_metallic_occlusion_out.rgb = vec3( roughness, metalness, occlusion );
+    color_out = vec4(0.f);
 #if DEBUG
     color_out = vColour;
 #else
-    color_out = base_colour;
+    for(int i = 0; i < int(current_light_count); i++){
+      color_out = base_colour;
+    }
 #endif
 }
 
@@ -546,11 +534,14 @@ void main() {
         // Red channel for occlusion value
         occlusion *= o.r;
     }
+    color_out = vec4(0.f);
 
 #if DEBUG
     color_out = vColour;
 #else
-    color_out = calculate_lighting( base_colour, vec3(occlusion, roughness, metalness), normal, emissive_colour.rgb, world_position );
+   for(int i = 0; i < int(current_light_count); i++){
+      color_out += calculate_lighting( base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position, lights[i] );
+    }
 #endif
 }
 

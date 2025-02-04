@@ -169,6 +169,7 @@ struct alignas(16) GPULight {
   f32 intensity = 100.f;
   f32 padding_[2];
 };
+
 // Data used by the fragment shader to colour the geometry
 struct alignas(16) GPUMaterialData {
   u32 textures[4];  // base_color , roughness, normal, occlusion
