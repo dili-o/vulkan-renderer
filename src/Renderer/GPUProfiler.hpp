@@ -5,31 +5,30 @@
 
 namespace Helix {
 
-    // GPUProfiler //////////////////////////////////////////////////////
+// GPUProfiler //////////////////////////////////////////////////////
 
-    struct GPUProfiler {
+struct GPUProfiler {
+  void init(Allocator* allocator, u32 max_frames);
+  void shutdown();
 
-        void                        init(Allocator* allocator, u32 max_frames);
-        void                        shutdown();
+  void update(GpuDevice& gpu);
 
-        void                        update(GpuDevice& gpu);
+  void imgui_draw();
 
-        void                        imgui_draw();
+  Allocator* allocator;
+  GPUTimestamp* timestamps;
+  u16* per_frame_active;
 
-        Allocator*                  allocator;
-        GPUTimestamp*               timestamps;
-        u16*                        per_frame_active;
+  u32 max_frames;
+  u32 current_frame;
 
-        u32                         max_frames;
-        u32                         current_frame;
+  f32 max_time;
+  f32 min_time;
+  f32 average_time;
 
-        f32                         max_time;
-        f32                         min_time;
-        f32                         average_time;
+  f32 max_duration;
+  bool paused;
 
-        f32                         max_duration;
-        bool                        paused;
+};  // struct GPUProfiler
 
-    }; // struct GPUProfiler
-
-} // namespace Helix
+}  // namespace Helix

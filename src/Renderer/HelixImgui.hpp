@@ -8,70 +8,70 @@ struct ImDrawData;
 
 namespace Helix {
 
-    struct GpuDevice;
-    struct CommandBuffer;
-    struct TextureHandle;
+struct GpuDevice;
+struct CommandBuffer;
+struct TextureHandle;
 
-    //
-    //
-    enum ImGuiStyles {
-        Default = 0,
-        GreenBlue,
-        DarkRed,
-        DarkGold
-    }; // enum ImGuiStyles
+//
+//
+enum ImGuiStyles {
+  Default = 0,
+  GreenBlue,
+  DarkRed,
+  DarkGold
+};  // enum ImGuiStyles
 
-    //
-    //
-    struct ImGuiServiceConfiguration {
+//
+//
+struct ImGuiServiceConfiguration {
+  GpuDevice* gpu;
+  void* window_handle;
 
-        GpuDevice* gpu;
-        void* window_handle;
+};  // struct ImGuiServiceConfiguration
 
-    }; // struct ImGuiServiceConfiguration
+//
+//
+struct ImGuiService : public Helix::Service {
+  HELIX_DECLARE_SERVICE(ImGuiService);
 
-    //
-    //
-    struct ImGuiService : public Helix::Service {
+  void init(void* configuration) override;
+  void shutdown() override;
 
-        HELIX_DECLARE_SERVICE(ImGuiService);
+  void new_frame();
+  void render(CommandBuffer& commands, bool use_secondary);
 
-        void                            init(void* configuration) override;
-        void                            shutdown() override;
+  // Removes the Texture from the Cache and destroy the associated Descriptor
+  // Set.
+  void remove_cached_texture(TextureHandle& texture);
 
-        void                            new_frame();
-        void                            render(CommandBuffer& commands, bool use_secondary);
+  void set_style(ImGuiStyles style);
 
-        // Removes the Texture from the Cache and destroy the associated Descriptor Set.
-        void                            remove_cached_texture(TextureHandle& texture);
+  GpuDevice* gpu;
 
-        void                            set_style(ImGuiStyles style);
+  static constexpr cstring k_name = "helix_imgui_service";
 
-        GpuDevice* gpu;
+};  // ImGuiService
 
-        static constexpr cstring        k_name = "helix_imgui_service";
+// File Dialog /////////////////////////////////////////////////////////
 
-    }; // ImGuiService
+/*bool                                imgui_file_dialog_open( cstring
+button_name, cstring path, cstring extension ); cstring
+imgui_file_dialog_get_filename();
 
-    // File Dialog /////////////////////////////////////////////////////////
+bool                                imgui_path_dialog_open( cstring button_name,
+cstring path ); cstring                         imgui_path_dialog_get_path();*/
 
-    /*bool                                imgui_file_dialog_open( cstring button_name, cstring path, cstring extension );
-    cstring                         imgui_file_dialog_get_filename();
+// Application Log /////////////////////////////////////////////////////
 
-    bool                                imgui_path_dialog_open( cstring button_name, cstring path );
-    cstring                         imgui_path_dialog_get_path();*/
+void imgui_log_init();
+void imgui_log_shutdown();
 
-    // Application Log /////////////////////////////////////////////////////
+void imgui_log_draw();
 
-    void                                imgui_log_init();
-    void                                imgui_log_shutdown();
+// FPS graph ///////////////////////////////////////////////////
+void imgui_fps_init();
+void imgui_fps_shutdown();
+void imgui_fps_add(f32 dt);
+void imgui_fps_draw();
 
-    void                                imgui_log_draw();
-
-    // FPS graph ///////////////////////////////////////////////////
-    void                                imgui_fps_init();
-    void                                imgui_fps_shutdown();
-    void                                imgui_fps_add(f32 dt);
-    void                                imgui_fps_draw();
-
-} // namespace Helix
+}  // namespace Helix

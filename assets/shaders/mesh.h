@@ -126,4 +126,88 @@ bool project_sphere(vec3 C, float r, float znear, float P00, float P11, out vec4
 	return true;
 }
 
+#if defined(TASK) || defined(MESH)
+
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+#extension GL_EXT_shader_16bit_storage: require
+#extension GL_EXT_shader_8bit_storage: require
+#extension GL_KHR_shader_subgroup_ballot: require
+
+#if NVIDIA
+#extension GL_NV_mesh_shader: require
+#else
+#extension GL_EXT_mesh_shader: require
+#endif //NVIDIA
+
+// Common data
+struct VertexExtraData
+{
+    uint8_t nx, ny, nz, nw; // normal
+    uint8_t tx, ty, tz, tw; // tangent
+    float16_t tu, tv;       // tex coords
+    float padding;
+};
+
+struct VertexPosition
+{
+    vec3 v;
+    float padding;
+};
+
+struct Meshlet
+{
+    // vec3 keeps Meshlet aligned to 16 bytes which is important because C++ has an alignas() directive
+    vec3 center;
+    float radius;
+
+    int8_t cone_axis[3];
+    int8_t cone_cutoff;
+
+    uint dataOffset;
+    uint mesh_index;
+    uint8_t vertexCount;
+    uint8_t triangleCount;
+};
+
+
+layout(set = MATERIAL_SET, binding = 1) readonly buffer Meshlets
+{
+    Meshlet meshlets[];
+};
+
+layout(set = MATERIAL_SET, binding = 4) readonly buffer MeshletData
+{
+    uint meshletData[];
+};
+
+layout(set = MATERIAL_SET, binding = 5) readonly buffer VertexPositions
+{
+    VertexPosition vertex_positions[];
+};
+
+layout(set = MATERIAL_SET, binding = 6) readonly buffer VertexData
+{
+    VertexExtraData vertex_data[];
+};
+
+layout(set = MATERIAL_SET, binding = 7) readonly buffer VisibleMeshInstances
+{
+    MeshDrawCommand draw_commands[];
+};
+
+layout(set = MATERIAL_SET, binding = 8) buffer VisibleMeshCount
+{
+	uint opaque_mesh_visible_count;
+	uint opaque_mesh_culled_count;
+	uint transparent_mesh_visible_count;
+	uint transparent_mesh_culled_count;
+
+	uint total_count;
+	uint total_opaque_mesh_count;
+	uint depth_pyramid_texture_index;
+	uint late_flag;
+};
+#endif // TASK MESH
+
+
 #endif // HELIX_GLSL_MESH_H

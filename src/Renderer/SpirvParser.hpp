@@ -12,20 +12,21 @@
 
 namespace Helix {
 
-    struct StringBuffer;
+struct StringBuffer;
 
-    namespace spirv {
+namespace spirv {
 
-        static const u32 MAX_SET_COUNT = 32;
-        // TODO: Maybe include vertex input as well
-        struct ParseResult {
-            u32                         set_count;
-            u32                         local_size[3] = { 0,0,0 };
-            VkPushConstantRange         push_constant;
-            DescriptorSetLayoutCreation sets[MAX_SET_COUNT];
-        };
+static const u32 MAX_SET_COUNT = 32;
+// TODO: Maybe include vertex input as well
+struct ParseResult {
+  u32 set_count;
+  u32 local_size[3] = {0, 0, 0};
+  VkPushConstantRange push_constant;
+  DescriptorSetLayoutCreation sets[MAX_SET_COUNT];
+};
 
-        void                            parse_binary(const u32* data, size_t data_size, StringBuffer& name_buffer, ParseResult* parse_result);
+void parse_binary(const u32* data, size_t data_size, StringBuffer& name_buffer,
+                  ParseResult* parse_result);
 
-    } // namespace spirv
-} // namespace Helix
+}  // namespace spirv
+}  // namespace Helix

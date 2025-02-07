@@ -1,231 +1,230 @@
 #pragma once
 
+#include "Core/ResourceManager.hpp"
 #include "Renderer/GPUDevice.hpp"
 #include "Renderer/GPUResources.hpp"
 
-#include "Core/ResourceManager.hpp"
-
 namespace Helix {
 
-    struct Renderer;
-
-    //
-    //
-    struct BufferResource : public Helix::Resource {
-
-        BufferHandle                    handle;
-        u32                             pool_index;
-        BufferDescription               desc;
-
-        static constexpr cstring        k_type = "helix_buffer_type";
-        static u64                      k_type_hash;
-
-    }; // struct Buffer
-
-    //
-    //
-    struct TextureResource : public Helix::Resource {
-
-        TextureHandle                   handle;
-        u32                             pool_index;
-        TextureDescription              desc;
-
-        static constexpr cstring        k_type = "helix_texture_type";
-        static u64                      k_type_hash;
-
-    }; // struct Texture
-
-    //
-    //
-    struct SamplerResource : public Helix::Resource {
-
-        SamplerHandle                   handle;
-        u32                             pool_index;
-        SamplerDescription              desc;
-
-        static constexpr cstring        k_type = "helix_sampler_type";
-        static u64                      k_type_hash;
-
-    }; // struct Sampler
-
-    // Material/Shaders ///////////////////////////////////////////////////////
+struct Renderer;
 
 //
 //
-    struct ProgramPass {
+struct BufferResource : public Helix::Resource {
+  BufferHandle handle;
+  u32 pool_index;
+  BufferDescription desc;
 
-        PipelineHandle                  pipeline;
-        DescriptorSetLayoutHandle       descriptor_set_layout;
-    }; // struct ProgramPass
+  static constexpr cstring k_type = "helix_buffer_type";
+  static u64 k_type_hash;
 
-    //
-    //
-    struct ProgramCreation {
+};  // struct Buffer
 
-        PipelineCreation                creations[8];
-        u32                             num_creations = 0;
+//
+//
+struct TextureResource : public Helix::Resource {
+  TextureHandle handle;
+  u32 pool_index;
+  TextureDescription desc;
 
-        cstring                         name = nullptr;
+  static constexpr cstring k_type = "helix_texture_type";
+  static u64 k_type_hash;
 
-        ProgramCreation&                reset();
-        ProgramCreation&                add_pipeline(const PipelineCreation& pipeline);
-        ProgramCreation&                set_name(cstring name);
+};  // struct Texture
 
-    }; // struct ProgramCreation
+//
+//
+struct SamplerResource : public Helix::Resource {
+  SamplerHandle handle;
+  u32 pool_index;
+  SamplerDescription desc;
 
-    //
-    //
-    struct Program : public Helix::Resource {
+  static constexpr cstring k_type = "helix_sampler_type";
+  static u64 k_type_hash;
 
-        Array<ProgramPass>              passes;
-        FlatHashMap<u64, u16>           name_hash_to_index;
+};  // struct Sampler
 
-        u32                             pool_index;
+// Material/Shaders ///////////////////////////////////////////////////////
 
-        u32                             get_pass_index(cstring name);
+//
+//
+struct ProgramPass {
+  PipelineHandle pipeline;
+  DescriptorSetLayoutHandle descriptor_set_layout;
+};  // struct ProgramPass
 
-        static constexpr cstring        k_type = "helix_program_type";
-        static u64                      k_type_hash;
+//
+//
+struct ProgramCreation {
+  PipelineCreation creations[8];
+  u32 num_creations = 0;
 
-    }; // struct Program
+  cstring name = nullptr;
 
-    //
-    //
-    struct MaterialCreation {
+  ProgramCreation& reset();
+  ProgramCreation& add_pipeline(const PipelineCreation& pipeline);
+  ProgramCreation& set_name(cstring name);
 
-        MaterialCreation&               reset();
-        MaterialCreation&               set_program(Program* program);
-        MaterialCreation&               set_name(cstring name);
-        MaterialCreation&               set_render_index(u32 render_index);
+};  // struct ProgramCreation
 
-        Program*                        program = nullptr;
-        cstring                         name = nullptr;
-        u32                             render_index = ~0u;
+//
+//
+struct Program : public Helix::Resource {
+  Array<ProgramPass> passes;
+  FlatHashMap<u64, u16> name_hash_to_index;
 
-    }; // struct MaterialCreation
+  u32 pool_index;
 
-    //
-    //
-    struct Material : public Helix::Resource {
+  u32 get_pass_index(cstring name);
 
-        Program*                        program;
+  static constexpr cstring k_type = "helix_program_type";
+  static u64 k_type_hash;
 
-        u32                             render_index;
+};  // struct Program
 
-        u32                             pool_index;
+//
+//
+struct MaterialCreation {
+  MaterialCreation& reset();
+  MaterialCreation& set_program(Program* program);
+  MaterialCreation& set_name(cstring name);
+  MaterialCreation& set_render_index(u32 render_index);
 
-        static constexpr cstring        k_type = "helix_material_type";
-        static u64                      k_type_hash;
+  Program* program = nullptr;
+  cstring name = nullptr;
+  u32 render_index = ~0u;
 
-    }; // struct Material
+};  // struct MaterialCreation
 
-    // ResourceCache ////////////////////////////////////////////////////////////////
+//
+//
+struct Material : public Helix::Resource {
+  Program* program;
 
-    //
-    //
-    struct ResourceCache {
+  u32 render_index;
 
-        void                            init(Allocator* allocator);
-        void                            shutdown(Renderer* renderer);
+  u32 pool_index;
 
-        FlatHashMap<u64, TextureResource*> textures;
-        FlatHashMap<u64, BufferResource*>  buffers;
-        FlatHashMap<u64, SamplerResource*> samplers;
-        FlatHashMap<u64, Program*>         programs;
-        FlatHashMap<u64, Material*>        materials;
+  static constexpr cstring k_type = "helix_material_type";
+  static u64 k_type_hash;
 
-    }; // struct ResourceCache
+};  // struct Material
 
-    // Renderer /////////////////////////////////////////////////////////////////////
-    struct RendererCreation {
+// ResourceCache
+// ////////////////////////////////////////////////////////////////
 
-        Helix::GpuDevice* gpu;
-        Allocator* allocator;
+//
+//
+struct ResourceCache {
+  void init(Allocator* allocator);
+  void shutdown(Renderer* renderer);
 
-    }; // struct RendererCreation
+  FlatHashMap<u64, TextureResource*> textures;
+  FlatHashMap<u64, BufferResource*> buffers;
+  FlatHashMap<u64, SamplerResource*> samplers;
+  FlatHashMap<u64, Program*> programs;
+  FlatHashMap<u64, Material*> materials;
 
-    //
-    // Main class responsible for handling all high level resources
-    //
-    struct Renderer : public Service {
+};  // struct ResourceCache
 
-        HELIX_DECLARE_SERVICE(Renderer);
+// Renderer
+// /////////////////////////////////////////////////////////////////////
+struct RendererCreation {
+  Helix::GpuDevice* gpu;
+  Allocator* allocator;
 
-        void                        init(const RendererCreation& creation);
-        void                        shutdown();
+};  // struct RendererCreation
 
-        void                        set_loaders(Helix::ResourceManager* manager);
+//
+// Main class responsible for handling all high level resources
+//
+struct Renderer : public Service {
+  HELIX_DECLARE_SERVICE(Renderer);
 
-        void                        begin_frame();
-        void                        end_frame();
+  void init(const RendererCreation& creation);
+  void shutdown();
 
-        void                        imgui_draw();
-        void                        imgui_resources_draw();
+  void set_loaders(Helix::ResourceManager* manager);
 
-        void                        resize_swapchain(u32 width, u32 height);
+  void begin_frame();
+  void end_frame();
 
-        f32                         aspect_ratio() const;
+  void imgui_draw();
+  void imgui_resources_draw();
 
-        // Creation/destruction
-        BufferResource*             create_buffer(const BufferCreation& creation);
-        BufferResource*             create_buffer(VkBufferUsageFlags type, ResourceUsageType::Enum usage, u32 size, void* data, cstring name);
+  void resize_swapchain(u32 width, u32 height);
 
-        TextureResource*            create_texture(const TextureCreation& creation);
-        TextureResource*            create_texture(cstring name, cstring filename, bool create_mipmaps);
+  f32 aspect_ratio() const;
 
-        SamplerResource*            create_sampler(const SamplerCreation& creation);
+  // Creation/destruction
+  BufferResource* create_buffer(const BufferCreation& creation);
+  BufferResource* create_buffer(VkBufferUsageFlags type,
+                                ResourceUsageType::Enum usage, u32 size,
+                                void* data, cstring name);
 
-        Program*                    create_program(const ProgramCreation& creation);
+  TextureResource* create_texture(const TextureCreation& creation);
+  TextureResource* create_texture(cstring name, cstring filename,
+                                  bool create_mipmaps);
 
-        Material*                   create_material(const MaterialCreation& creation);
+  SamplerResource* create_sampler(const SamplerCreation& creation);
 
-        // Draw
-        PipelineHandle              get_pipeline(Material* material, u32 pass_index);
-        DescriptorSetHandle         create_descriptor_set(CommandBuffer* command_buffer, Material* material, DescriptorSetCreation& ds_creation);
+  Program* create_program(const ProgramCreation& creation);
 
-        void                        destroy_buffer(BufferResource* buffer);
-        void                        destroy_texture(TextureResource* texture);
-        void                        destroy_sampler(SamplerResource* sampler);
-        void                        destroy_program(Program* program);
-        void                        destroy_material(Material* material);
+  Material* create_material(const MaterialCreation& creation);
 
-        // Update resources
-        void*                       map_buffer(BufferResource* buffer, u32 offset = 0, u32 size = 0);
-        void                        unmap_buffer(BufferResource* buffer);
+  // Draw
+  PipelineHandle get_pipeline(Material* material, u32 pass_index);
+  DescriptorSetHandle create_descriptor_set(CommandBuffer* command_buffer,
+                                            Material* material,
+                                            DescriptorSetCreation& ds_creation);
 
-        CommandBuffer*              get_command_buffer(u32 thread_index, bool begin) { return gpu->get_command_buffer(thread_index, begin); }
-        void                        queue_command_buffer(Helix::CommandBuffer* commands) { gpu->queue_command_buffer(commands); }
+  void destroy_buffer(BufferResource* buffer);
+  void destroy_texture(TextureResource* texture);
+  void destroy_sampler(SamplerResource* sampler);
+  void destroy_program(Program* program);
+  void destroy_material(Material* material);
 
-        // Multithread friendly update to textures
-        void                        add_texture_to_update(Helix::TextureHandle texture);
-        void                        add_texture_update_commands(u32 thread_id);
+  // Update resources
+  void* map_buffer(BufferResource* buffer, u32 offset = 0, u32 size = 0);
+  void unmap_buffer(BufferResource* buffer);
 
-        f64                         fps = 0;
+  CommandBuffer* get_command_buffer(u32 thread_index, bool begin) {
+    return gpu->get_command_buffer(thread_index, begin);
+  }
+  void queue_command_buffer(Helix::CommandBuffer* commands) {
+    gpu->queue_command_buffer(commands);
+  }
 
-        std::mutex                          texture_update_mutex;
+  // Multithread friendly update to textures
+  void add_texture_to_update(Helix::TextureHandle texture);
+  void add_texture_update_commands(u32 thread_id);
 
-        ResourcePoolTyped<TextureResource>  textures;
-        ResourcePoolTyped<BufferResource>   buffers;
-        ResourcePoolTyped<SamplerResource>  samplers;
-        ResourcePoolTyped<Program>          programs;
-        ResourcePoolTyped<Material>         materials;
+  f64 fps = 0;
 
-        ResourceCache               resource_cache;
+  std::mutex texture_update_mutex;
 
-        TextureHandle               textures_to_update[128];
-        u32                         num_textures_to_update = 0;
+  ResourcePoolTyped<TextureResource> textures;
+  ResourcePoolTyped<BufferResource> buffers;
+  ResourcePoolTyped<SamplerResource> samplers;
+  ResourcePoolTyped<Program> programs;
+  ResourcePoolTyped<Material> materials;
 
-        StringBuffer                resource_name_buffer;
+  ResourceCache resource_cache;
 
-        Helix::GpuDevice* gpu;
+  TextureHandle textures_to_update[128];
+  u32 num_textures_to_update = 0;
 
-        Array<VmaBudget>            gpu_heap_budgets;
+  StringBuffer resource_name_buffer;
 
-        u16                         width;
-        u16                         height;
+  Helix::GpuDevice* gpu;
 
-        static constexpr cstring    k_name = "helix_rendering_service";
+  Array<VmaBudget> gpu_heap_budgets;
 
-    }; // struct Renderer
+  u16 width;
+  u16 height;
 
-} // namespace Helix
+  static constexpr cstring k_name = "helix_rendering_service";
+
+};  // struct Renderer
+
+}  // namespace Helix

@@ -11,17 +11,17 @@
 			"shaders" : [
 				{
 					"stage" : "mesh",
-					"shader" : "meshlet_ext.glsl",
+					"shader" : "meshlet_ext.mesh.glsl",
 					"includes" : ["platform.h", "scene.h", "mesh.h"]
 				},
 				{
 					"stage" : "task",
-					"shader" : "meshlet_ext.glsl",
+					"shader" : "meshlet_ext.task.glsl",
 					"includes" : ["platform.h", "scene.h", "mesh.h", "debug_rendering.h"]
 				},
 				{
 					"stage" : "fragment",
-					"shader" : "meshlet_ext.glsl",
+					"shader" : "mesh.frag.glsl",
 					"includes" : ["platform.h", "scene.h", "mesh.h"]
 				}
 			]
@@ -44,17 +44,17 @@
 			"shaders" : [
 				{
 					"stage" : "mesh",
-					"shader" : "meshlet_ext.glsl",
+					"shader" : "meshlet_ext.mesh.glsl",
 					"includes" : ["platform.h", "scene.h", "mesh.h"]
 				},
 				{
 					"stage" : "task",
-					"shader" : "meshlet_ext.glsl",
+					"shader" : "meshlet_ext.task.glsl",
 					"includes" : ["platform.h", "scene.h", "mesh.h", "debug_rendering.h"]
 				},
 				{
 					"stage" : "fragment",
-					"shader" : "meshlet_ext.glsl",
+					"shader" : "mesh.frag.glsl",
 					"includes" : ["platform.h", "scene.h", "mesh.h", "lighting.h"]
 				}
 			]

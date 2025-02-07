@@ -9,118 +9,105 @@
 #include "Core/DataStructures.hpp"
 #include "Renderer/GPUResources.hpp"
 
-namespace Helix{
-    // Forward Declaration
-    struct Mesh;
+namespace Helix {
+// Forward Declaration
+struct Mesh;
 
-    struct Transform {
+struct Transform {
+  glm::vec3 scale = glm::vec3(1.0f);
+  glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+  glm::vec3 translation = glm::vec3(0.0f);
 
-        glm::vec3                   scale = glm::vec3(1.0f);
-        glm::quat                   rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        glm::vec3                   translation = glm::vec3(0.0f);
+  // void                    reset();
+  glm::mat4 calculate_matrix() const {
+    glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), translation);
+    glm::mat4 rotation_matrix = glm::toMat4(rotation);
+    glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0f), scale);
 
-        //void                    reset();
-        glm::mat4                   calculate_matrix() const {
-            glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), translation);
-            glm::mat4 rotation_matrix = glm::toMat4(rotation);
-            glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0f), scale);
+    glm::mat4 local_matrix =
+        translation_matrix * rotation_matrix * scale_matrix;
+    return local_matrix;
+  }
 
-            glm::mat4 local_matrix = translation_matrix * rotation_matrix * scale_matrix;
-            return local_matrix;
-        }
+  void set_transform(const glm::mat4& model) {
+    translation = glm::vec3(model[3]);
 
-        void               set_transform(const glm::mat4& model) {
-            translation = glm::vec3(model[3]);
+    glm::mat3 rotation_matrix = glm::mat3(glm::normalize(glm::vec3(model[0])),
+                                          glm::normalize(glm::vec3(model[1])),
+                                          glm::normalize(glm::vec3(model[2])));
+    // Convert the rotation matrix to a quaternion
+    rotation = glm::quat_cast(rotation_matrix);
 
-            glm::mat3 rotation_matrix = glm::mat3(
-                glm::normalize(glm::vec3(model[0])),
-                glm::normalize(glm::vec3(model[1])),
-                glm::normalize(glm::vec3(model[2]))
-            );
-            // Convert the rotation matrix to a quaternion
-            rotation = glm::quat_cast(rotation_matrix);
+    scale.x = glm::length(glm::vec3(model[0]));
+    scale.y = glm::length(glm::vec3(model[1]));
+    scale.z = glm::length(glm::vec3(model[2]));
+  }
+};  // struct Transform
 
-            scale.x = glm::length(glm::vec3(model[0]));
-            scale.y = glm::length(glm::vec3(model[1]));
-            scale.z = glm::length(glm::vec3(model[2]));
-        }
-    }; // struct Transform
+// Nodes //////////////////////////////////////
+enum class NodeType { Node, MeshNode, LightNode };
 
+struct NodeHandle {
+  u32 index = k_invalid_index;
+  NodeType type = NodeType::Node;
 
-    // Nodes //////////////////////////////////////
-    enum class NodeType {
-        Node,
-        MeshNode,
-        LightNode
-    };
+  // Equality operator
+  bool operator==(const NodeHandle& other) const {
+    return index == other.index && type == other.type;
+  }
 
-    struct NodeHandle {
-        u32                     index = k_invalid_index;
-        NodeType                type = NodeType::Node;
+  // Inequality operator
+  bool operator!=(const NodeHandle& other) const { return !(*this == other); }
+};
 
-        // Equality operator
-        bool operator==(const NodeHandle& other) const {
-            return index == other.index && type == other.type;
-        }
+struct Node;
 
-        // Inequality operator
-        bool operator!=(const NodeHandle& other) const {
-            return !(*this == other);
-        }
-    };
+struct NodePool {
+  void init(Allocator* allocator);
+  void shutdown();
 
-    struct Node;
+  NodeHandle obtain_node(NodeType type);
+  void* access_node(NodeHandle handle);
+  Node* get_root_node();
 
-    struct NodePool {
+  Allocator* allocator;
 
-        void                    init(Allocator* allocator);
-        void                    shutdown();
+  NodeHandle root_node;
 
-        NodeHandle              obtain_node(NodeType type);
-        void*                   access_node(NodeHandle handle);
-        Node*                   get_root_node();
+  ResourcePool base_nodes;
+  ResourcePool mesh_nodes;
+  ResourcePool light_nodes;
+};
 
-        Allocator* allocator;
+struct Node {
+  NodeHandle handle = {k_invalid_index, NodeType::Node};
+  NodeHandle parent = {k_invalid_index, NodeType::Node};
+  Array<NodeHandle> children;
+  Transform local_transform{};
+  Transform world_transform{};
 
-        NodeHandle              root_node;
+  cstring name = nullptr;
 
-        ResourcePool            base_nodes;
-        ResourcePool            mesh_nodes;
-        ResourcePool            light_nodes;
-    };
+  void (*updateFunc)(Node*, NodePool* node_pool);
 
-    struct Node {
-        NodeHandle              handle = { k_invalid_index, NodeType::Node };
-        NodeHandle              parent = { k_invalid_index, NodeType::Node };
-        Array<NodeHandle>       children;
-        Transform               local_transform{ };
-        Transform               world_transform{ };
+  void update_transform(NodePool* node_pool) {
+    if (!updateFunc) {
+      HWARN("Node does not have update function");
+      return;
+    }
+    updateFunc(this, node_pool);
+  }
+  void add_child(Node* node) {
+    node->parent = handle;
+    children.push(node->handle);  // TODO: Fix array issue!!!!!!!!!!!!
+  }
+};
 
-        cstring                 name = nullptr;
+struct MeshNode : public Node {
+  Mesh* mesh;
+};
 
-        void                    (*updateFunc)(Node*, NodePool* node_pool);
-
-        void            update_transform(NodePool* node_pool) {
-            if (!updateFunc) {
-                HWARN("Node does not have update function");
-                return;
-            }
-            updateFunc(this, node_pool);
-
-
-        }
-        void                    add_child(Node* node) {
-            node->parent = handle;
-            children.push(node->handle);// TODO: Fix array issue!!!!!!!!!!!!
-        }
-    };
-
-
-    struct MeshNode : public Node {
-        Mesh* mesh; 
-    };
-
-    struct LightNode : public Node {
-        u32 light_index;
-    };
-}
+struct LightNode : public Node {
+  u32 light_index;
+};
+}  // namespace Helix
