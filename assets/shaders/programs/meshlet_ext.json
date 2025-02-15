@@ -22,7 +22,7 @@
 				{
 					"stage" : "fragment",
 					"shader" : "mesh.frag.glsl",
-					"includes" : ["platform.h", "scene.h", "mesh.h"]
+					"includes" : ["platform.h", "scene.h", "mesh.h", "lighting.h"]
 				}
 			]
 		},

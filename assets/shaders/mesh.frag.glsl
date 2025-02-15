@@ -1,7 +1,7 @@
 
-layout(set = MATERIAL_SET, binding = 9) buffer LightData
+layout(set = MATERIAL_SET, binding = 9) buffer PointLightData
 {
-	Light lights[];
+	PointLight pointLights[];
 };
 
 #if defined(FRAGMENT_GBUFFER_CULLING)
@@ -124,6 +124,10 @@ void main() {
 
 #if defined(FRAGMENT_TRANSPARENT_NO_CULL)
 
+layout(set = MATERIAL_SET, binding = 11) uniform DirectionalLightData {
+  DirectionalLight directional_light_data;
+};
+
 layout (location = 0) in vec2 vTexcoord0;
 layout (location = 1) in vec4 vNormal_BiTanX;
 layout (location = 2) in vec4 vTangent_BiTanY;
@@ -229,9 +233,10 @@ void main() {
 #if DEBUG
     color_out = vColour;
 #else
-    for(int i = 0; i < int(current_light_count); i++){
-      color_out += calculate_lighting( base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position, lights[i] );
+    for(uint i = 0; i < point_light_count; i++){
+      color_out += calculate_lighting_point( base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position, pointLights[i] );
     }
+    color_out += calculate_lighting_directional(base_colour, vec3(roughness, metalness ,occlusion), normal, emissive_colour.rgb, world_position, directional_light_data.direction_intensity);
 #endif
 }
 

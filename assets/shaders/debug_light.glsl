@@ -2,9 +2,9 @@
 
 #if defined(VERTEX)
 
-layout(set = MATERIAL_SET, binding = 1) buffer LightData
+layout(set = MATERIAL_SET, binding = 1) buffer PointLightData
 {
-	Light lights[];
+	vec4 position_textures[];
 };
 
 struct Vertex{
@@ -29,12 +29,12 @@ void main() {
   Vertex vertex = VERTICES[gl_VertexIndex];
 
   vTexCoord = vertex.tex_coord;
-  texture_index = int( lights[gl_InstanceIndex].position.w );
+  texture_index = int( position_textures[gl_InstanceIndex].w );
 
   vec3 cam_right = vec3(world_to_camera[0][0], world_to_camera[1][0], world_to_camera[2][0]);
   vec3 cam_up = vec3(world_to_camera[0][1], world_to_camera[1][1], world_to_camera[2][1]);
 
-  vec3 world_position = lights[gl_InstanceIndex].position.xyz
+  vec3 world_position = position_textures[gl_InstanceIndex].xyz
     + radius * vertex.position.x * cam_right
     + radius * vertex.position.y * cam_up;
 
@@ -44,8 +44,6 @@ void main() {
 #endif // VERTEX
 
 #if defined(FRAGMENT)
-
-
 
 layout(location = 0) in vec2 vTexCoord;
 layout(location = 1) flat in int texture_index;

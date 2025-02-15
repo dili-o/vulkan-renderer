@@ -100,7 +100,7 @@ void main()
         gl_MeshVerticesEXT[ i ].gl_Position = view_projection * (model * vec4(position, 1));
 
         vec4 worldPosition = model * vec4(position, 1.0);
-        vPosition_BiTanZ[ i ].xyz = worldPosition.xyz / worldPosition.w;
+        vPosition_BiTanZ[ i ].xyz = worldPosition.xyz;
 
         mesh_draw_index[ i ] = meshlets[meshlet_index].mesh_index;
 

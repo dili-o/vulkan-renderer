@@ -2,6 +2,7 @@
 
 #include "Core/Gltf.hpp"
 #include "Renderer/AsynchronousLoader.hpp"
+#include "Renderer/CommandBuffer.hpp"
 #include "Renderer/FrameGraph.hpp"
 #include "Renderer/GPUProfiler.hpp"
 #include "Renderer/GPUResources.hpp"
@@ -15,6 +16,8 @@ static const u16 INVALID_TEXTURE_INDEX = 0xffff;
 
 static const u32 k_material_descriptor_set_index = 1;
 static const u32 k_max_depth_pyramid_levels = 16;
+
+glm::vec4 normalize_plane(glm::vec4 plane);
 
 struct glTFScene;
 
@@ -162,12 +165,22 @@ struct alignas(16) GPUMeshInstanceData {
   u32 pad002;
 };  // struct GpuMeshInstanceData
 
-struct alignas(16) GPULight {
+struct alignas(16) GPUPointLight {
   glm::vec4 position;  // w contains the light index
 
   f32 range = 100.f;
   f32 intensity = 100.f;
   f32 padding_[2];
+};
+
+struct alignas(16) GPUDirectionalLight {
+  glm::vec4 direction_intensity;
+  glm::vec4 position_texture_index;
+
+  glm::mat4 view;
+  glm::mat4 projection;
+
+  glm::vec4 frustum_planes[6];
 };
 
 // Data used by the fragment shader to colour the geometry
@@ -227,10 +240,10 @@ struct GPUSceneData {
 
   glm::vec4 camera_position;
   glm::vec4 camera_position_debug;
-  glm::vec4 light_position;
+  // glm::vec4 directional_light_intensity;  // Direction and Intensity
 
-  f32 current_light_count;
-  f32 light_intensity;
+  u32 point_light_count;
+  u32 directional_shadow_map_index;
   u32 dither_texture_index;
   f32 z_near;
 
@@ -280,7 +293,7 @@ struct Scene {
   Array<GPUMeshletVertexPosition> meshlets_vertex_positions;
   Array<GPUMeshletVertexData> meshlets_vertex_data;
   Array<u32> meshlet_vertex_and_index_indices;
-  Array<GPULight> lights;
+  Array<GPUPointLight> lights;
 
   // Gpu buffers
   BufferHandle material_data_buffer =
@@ -295,6 +308,8 @@ struct Scene {
   BufferHandle meshlets_vertex_pos_buffer = k_invalid_buffer;
   BufferHandle meshlets_vertex_data_buffer = k_invalid_buffer;
   BufferHandle light_data_buffer = k_invalid_buffer;
+  BufferHandle light_debug_buffer = k_invalid_buffer;
+  BufferHandle directional_light_buffer = k_invalid_buffer;
 
   // Indirect data
   BufferHandle mesh_draw_count_buffers[k_max_frames];
@@ -350,6 +365,23 @@ struct MeshLateCullingPass : public FrameGraphRenderPass {
   u32 depth_pyramid_texture_index;
 
 };  // struct MeshLateCullingPass
+
+//
+//
+struct DirectionalShadowMapPass : public FrameGraphRenderPass {
+  void render(CommandBuffer* gpu_commands, Scene* scene) override;
+
+  void prepare_draws(Scene& scene, FrameGraph* frame_graph,
+                     Allocator* resident_allocator);
+  void free_gpu_resources();
+
+  Renderer* renderer = nullptr;
+
+  PipelineHandle shadow_map_pipeline;
+  DescriptorSetHandle dset;
+  SamplerHandle sampler;
+  u32 shadow_map_texture_index;
+};
 
 //
 //
@@ -520,7 +552,8 @@ struct glTFScene : public Scene {
 
   void imgui_draw_node_property(NodeHandle node_handle);
 
-  void add_light();
+  void add_point_light();
+  void add_directional_light();
 
   Array<Mesh> opaque_meshes;
   Array<Mesh> transparent_meshes;
@@ -544,6 +577,7 @@ struct glTFScene : public Scene {
   // DepthPrePass          depth_pre_pass;
   MeshEarlyCullingPass mesh_cull_pass;
   MeshLateCullingPass mesh_cull_late_pass;
+  DirectionalShadowMapPass directional_shadow_map_pass;
   GBufferEarlyPass gbuffer_pass;
   GBufferLatePass gbuffer_late_pass;
   DepthPyramidPass depth_pyramid_pass;
@@ -566,7 +600,8 @@ struct glTFScene : public Scene {
   StringBuffer names;
 
   // Buffers
-  TextureResource light_texture;
+  TextureResource point_light_texture;
+  TextureResource directional_light_texture;
 
 };  // struct GltfScene
 

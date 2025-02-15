@@ -7,15 +7,28 @@
 #include <Core/Numerics.hpp>
 #include <vendor/tracy/tracy/Tracy.hpp>
 
+#include "Core/Assert.hpp"
 #include "Core/File.hpp"
 #include "Core/Gltf.hpp"
+#include "Core/HashMap.hpp"
 #include "Core/Time.hpp"
 #include "Renderer/GPUEnum.hpp"
+#include "Renderer/GPUResources.hpp"
+#include "glm/glm/ext/matrix_clip_space.hpp"
+#include "glm/glm/ext/matrix_transform.hpp"
+#include "glm/glm/trigonometric.hpp"
+#include "vulkan/vulkan_core.h"
+// #include "glm/glm/ext/quaternion_geometric.hpp"
 
 const u32 MAX_LIGHTS = 256;
 
 namespace Helix {
 float square(float r) { return r * r; }
+
+glm::vec4 normalize_plane(glm::vec4 plane) {
+  glm::vec3 normal(plane.x, plane.y, plane.z);
+  return (plane / glm::length(normal));
+}
 
 glm::vec4 project_sphere(glm::vec3 C, float r, float znear, float P00,
                          float P11, glm::mat4 P) {
@@ -394,10 +407,76 @@ void MeshLateCullingPass::free_gpu_resources() {
 }
 
 //
-// DepthPrePass ///////////////////////////////////////////////////////
-void DepthPrePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
+// DirectionalShadowMapPass ///////////////////////////////////////////
+
+void DirectionalShadowMapPass::render(CommandBuffer* gpu_commands,
+                                      Scene* scene_) {
+  if (!enabled) return;
+
   glTFScene* scene = (glTFScene*)scene_;
 
+  Renderer* renderer = scene->renderer;
+
+  Program* shadow_map_program =
+      renderer->resource_cache.programs.get(hash_calculate("shadow_maps"));
+
+  PipelineHandle pipeline = shadow_map_program->passes[0].pipeline;
+
+  gpu_commands->bind_pipeline(pipeline);
+
+  u32 buffer_frame_index = renderer->gpu->current_frame;
+  gpu_commands->bind_descriptor_set(
+      &scene->mesh_shader_descriptor_set[buffer_frame_index], 1, nullptr, 0);
+
+  gpu_commands->draw_mesh_task_indirect_count(
+      scene->mesh_indirect_draw_early_command_buffers[buffer_frame_index],
+      offsetof(GPUMeshDrawCommand, indirectMS),
+      scene->mesh_draw_count_buffers[buffer_frame_index], 0,
+      scene->opaque_meshes.size, sizeof(GPUMeshDrawCommand));
+}
+
+void DirectionalShadowMapPass::prepare_draws(Scene& scene,
+                                             FrameGraph* frame_graph,
+                                             Allocator* resident_allocator) {
+  renderer = scene.renderer;
+
+  enabled = true;
+
+  FrameGraphNode* node = frame_graph->get_node("directional_shadow_map_pass");
+  HASSERT(node);
+
+  FrameGraphResource* shadow_map_texture =
+      get_output_texture(frame_graph, node->outputs[0]);
+
+  scene.scene_data.directional_shadow_map_index =
+      shadow_map_texture->resource_info.texture.handle.index;
+
+  SamplerCreation creation{};
+  creation
+      .set_address_mode_uvw(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
+      .set_min_mag_mip(VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                       VK_SAMPLER_MIPMAP_MODE_LINEAR)
+      .set_name("directional_shadow_map_sampler");
+  sampler = renderer->gpu->create_sampler(creation);
+
+  renderer->gpu->link_texture_sampler(
+      {scene.scene_data.directional_shadow_map_index}, sampler);
+
+  ResourceUpdate update{ResourceDeletionType::Texture,
+                        scene.scene_data.directional_shadow_map_index,
+                        renderer->gpu->current_frame};
+  renderer->gpu->texture_to_update_bindless.push(update);
+}
+
+void DirectionalShadowMapPass::free_gpu_resources() {
+  if (renderer) renderer->gpu->destroy_sampler(sampler);
+}
+
+//
+// DepthPrePass ///////////////////////////////////////////////////////
+void DepthPrePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
   Material* last_material = nullptr;
   for (u32 mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
     // MeshInstance& mesh_instance = mesh_instances[mesh_index];
@@ -455,8 +534,6 @@ void GBufferEarlyPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
   if (!enabled) return;
 
   glTFScene* scene = (glTFScene*)scene_;
-
-  Material* last_material = nullptr;
 
   Renderer* renderer = scene->renderer;
 
@@ -527,8 +604,6 @@ void GBufferLatePass::render(CommandBuffer* gpu_commands, Scene* scene_) {
   if (!enabled) return;
 
   glTFScene* scene = (glTFScene*)scene_;
-
-  Material* last_material = nullptr;
 
   Renderer* renderer = scene->renderer;
 
@@ -823,15 +898,13 @@ void DepthPyramidPass::create_depth_pyramid_resource(Texture* depth_texture) {
 //
 // LightPass //////////////////////////////////////////////////////////
 void LightPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
-  glTFScene* scene = (glTFScene*)scene_;
-
   if (renderer) {
     if (/*use_compute*/ false) {
       // PipelineHandle pipeline =
       // renderer->get_pipeline(mesh.pbr_material.material, 1);
       // gpu_commands->bind_pipeline(pipeline);
-      // gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set, 1,
-      // nullptr, 0);
+      // gpu_commands->bind_descriptor_set(&mesh.pbr_material.descriptor_set,
+      // 1, nullptr, 0);
       //
       // gpu_commands->dispatch(ceilu32(renderer->gpu->swapchain_width * 1.f /
       // 8), ceilu32(renderer->gpu->swapchain_height * 1.f / 8), 1);
@@ -872,6 +945,7 @@ void LightPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph,
       lighting_program->passes[0].pipeline, k_material_descriptor_set_index);
   ds_creation.buffer(scene.scene_constant_buffer, 0)
       .buffer(scene.light_data_buffer, 1)
+      .buffer(scene.directional_light_buffer, 2)
       .set_layout(layout);
   d_set = renderer->gpu->create_descriptor_set(ds_creation);
 
@@ -968,31 +1042,15 @@ void TransparentPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph,
 
 void TransparentPass::free_gpu_resources() {}
 
-cstring node_type_to_cstring(NodeType type) {
-  switch (type) {
-    case Helix::NodeType::Node:
-      return "Node";
-      break;
-    case Helix::NodeType::MeshNode:
-      return "Mesh Node";
-      break;
-    case Helix::NodeType::LightNode:
-      return "Light Node";
-      break;
-    default:
-      HCRITICAL("Invalid node type");
-      return "Invalid node type";
-      break;
-  }
-}
-
 //
 // DebugPass ////////////////////////////////////////////////////////
 void DebugPass::render(CommandBuffer* gpu_commands, Scene* scene_) {
   glTFScene* scene = (glTFScene*)scene_;
   gpu_commands->bind_pipeline(debug_light_pipeline);
   gpu_commands->bind_descriptor_set(&debug_light_dset, 1, nullptr, 0);
-  gpu_commands->draw(6, scene->node_pool.light_nodes.used_indices, 0, 0);
+  u32 debug_icon_count = scene->node_pool.point_light_nodes.used_indices +
+                         scene->node_pool.directional_light_nodes.used_indices;
+  gpu_commands->draw(6, debug_icon_count, 0, 0);
 }
 
 void DebugPass::init() { renderer = nullptr; }
@@ -1013,10 +1071,11 @@ void DebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph,
       debug_program->passes[debug_program->get_pass_index("debug_light")]
           .pipeline;
 
-  // glm::vec4 positions[2] = { {glm::vec4(0, 10, 0, 6)}, {glm::vec4(10, 10, 0,
-  // 7)} }; GPUDebugIcon debug_icons{}; debug_icons.position_texture_index[0] =
-  // positions[0]; debug_icons.position_texture_index[1] = positions[1];
-  // debug_icons.count = 2;
+  // glm::vec4 positions[2] = { {glm::vec4(0, 10, 0, 6)}, {glm::vec4(10, 10,
+  // 0, 7)} }; GPUDebugIcon debug_icons{};
+  // debug_icons.position_texture_index[0] = positions[0];
+  // debug_icons.position_texture_index[1] = positions[1]; debug_icons.count =
+  // 2;
 
   // BufferCreation buffer_creation{};
   // buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -1028,7 +1087,7 @@ void DebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph,
   DescriptorSetLayoutHandle layout =
       scene.renderer->gpu->get_descriptor_set_layout(debug_light_pipeline, 1);
   ds_creation.buffer(scene.scene_constant_buffer, 0)
-      .buffer(scene.light_data_buffer, 1)
+      .buffer(scene.light_debug_buffer, 1)
       .set_layout(layout);
   debug_light_dset = scene.renderer->gpu->create_descriptor_set(ds_creation);
 }
@@ -1131,12 +1190,19 @@ void glTFScene::init(Renderer* _renderer, Allocator* resident_allocator,
   TextureResource* tr = renderer->create_texture(
       "Light", HELIX_TEXTURE_FOLDER "lights/point_light.png", true);
   HASSERT(tr != nullptr);
-  light_texture = *tr;
+  point_light_texture = *tr;
+
+  tr = renderer->create_texture(
+      "Directional Light", HELIX_TEXTURE_FOLDER "lights/directional_light.png",
+      true);
+  HASSERT(tr != nullptr);
+  directional_light_texture = *tr;
 
   BufferCreation buffer_creation;
 
-  add_light();
-  // Constant buffer
+  add_directional_light();
+  // add_point_light();
+  //  Constant buffer
   buffer_creation.reset()
       .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic,
            sizeof(GPUSceneData))
@@ -1169,9 +1235,15 @@ void glTFScene::init(Renderer* _renderer, Allocator* resident_allocator,
 
   buffer_creation.reset()
       .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic,
-           sizeof(GPULight) * MAX_LIGHTS)
+           sizeof(GPUPointLight) * MAX_LIGHTS)
       .set_name("lights_data_buffer");
   light_data_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+  buffer_creation.reset()
+      .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic,
+           sizeof(glm::vec4) * MAX_LIGHTS + 1)
+      .set_name("light_debug_buffer");
+  light_debug_buffer = renderer->create_buffer(buffer_creation)->handle;
 }
 
 void glTFScene::load(cstring filename, cstring path,
@@ -1243,8 +1315,6 @@ void glTFScene::load(cstring filename, cstring path,
   async_loader->file_load_requests.push_array(texture_requests);
 
   texture_requests.shutdown();
-
-  i64 end_loading_textures_files = Time::now();
 
   i64 end_creating_textures = Time::now();
 
@@ -1353,8 +1423,8 @@ void glTFScene::load(cstring filename, cstring path,
 
     u8* buffer_data = (u8*)buffers_data[buffer.buffer] + offset;
 
-    // NOTE(marco): the target attribute of a BufferView is not mandatory, so we
-    // prepare for both uses
+    // NOTE(marco): the target attribute of a BufferView is not mandatory, so
+    // we prepare for both uses
     VkBufferUsageFlags flags =
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 
@@ -1381,11 +1451,11 @@ void glTFScene::load(cstring filename, cstring path,
   i64 end_creating_buffers = Time::now();
 
   // Init runtime meshes
-  // TODO: Right now mesh node has a reference to the data in meshes, This data
-  // changes because
+  // TODO: Right now mesh node has a reference to the data in meshes, This
+  // data changes because
   //       its in an array.
-  //       Figure out how to make it so when meshes "grows" this does not affect
-  //       MeshNode.
+  //       Figure out how to make it so when meshes "grows" this does not
+  //       affect MeshNode.
   // meshes.init(resident_allocator, 200);
 
   i64 end_loading = Time::now();
@@ -1403,10 +1473,6 @@ void glTFScene::load(cstring filename, cstring path,
       Time::delta_seconds(end_reading_buffers_data, end_creating_buffers));
 
   ///////////////////////// Prepare Draws ///////////////////////////////
-
-  const u64 hashed_name = hash_calculate("geometry");
-  Program* geometry_program =
-      renderer->resource_cache.programs.get(hashed_name);
 
   glTF::Scene& root_gltf_scene = gltf_scene.scenes[gltf_scene.scene];
 
@@ -1427,7 +1493,6 @@ void glTFScene::load(cstring filename, cstring path,
                     gltf_scene.nodes_count);
 
   for (u32 node_index = 0; node_index < gltf_scene.nodes_count; ++node_index) {
-    glTF::Node& node = gltf_scene.nodes[node_index];
     node_handles[node_index] = node_pool.obtain_node(NodeType::Node);
   }
 
@@ -1503,8 +1568,8 @@ void glTFScene::load(cstring filename, cstring path,
     base_node->local_transform = local_transform;
 
     i32 node_parent = node_parents[node_index];
-    // Nodes that don't have parents would already have their parent set to the
-    // root node
+    // Nodes that don't have parents would already have their parent set to
+    // the root node
     if (node_parent != -1) base_node->parent = node_handles[node_parent];
 
     // Assuming nodes that contain meshes don't contain other glTF nodes
@@ -1696,7 +1761,6 @@ void glTFScene::load(cstring filename, cstring path,
       // Meshlets
       const sizet max_meshlets = meshopt_buildMeshletsBound(
           indices_accessor.count, max_vertices, max_triangles);
-      sizet temp_marker = temp_allocator->get_marker();
 
       Array<meshopt_Meshlet> local_meshlets;
       local_meshlets.init(temp_allocator, (u32)max_meshlets, (u32)max_meshlets);
@@ -1833,8 +1897,8 @@ void glTFScene::load(cstring filename, cstring path,
           meshlet_vertex_and_index_indices.push(vertex_index);
         }
         // Store indices as uint32
-        // NOTE(marco): we write 4 indices at at time, it will come in handy in
-        // the mesh shader
+        // NOTE(marco): we write 4 indices at at time, it will come in handy
+        // in the mesh shader
         const u32* index_groups = reinterpret_cast<const u32*>(
             meshlet_triangles.data + local_meshlet.triangle_offset);
         for (u32 i = 0; i < index_group_count; ++i) {
@@ -1907,6 +1971,7 @@ void glTFScene::free_gpu_resources(Renderer* renderer) {
   // depth_pre_pass.free_gpu_resources();
   mesh_cull_pass.free_gpu_resources();
   mesh_cull_late_pass.free_gpu_resources();
+  directional_shadow_map_pass.free_gpu_resources();
   gbuffer_pass.free_gpu_resources();
   gbuffer_late_pass.free_gpu_resources();
   light_pass.free_gpu_resources();
@@ -1924,8 +1989,6 @@ void glTFScene::free_gpu_resources(Renderer* renderer) {
 }
 
 void glTFScene::unload(Renderer* renderer) {
-  GpuDevice& gpu = *renderer->gpu;
-
   destroy_node(node_pool.root_node);
 
   node_pool.shutdown();
@@ -1956,6 +2019,9 @@ void glTFScene::register_render_passes(FrameGraph* frame_graph_) {
                                              &mesh_cull_pass);
   frame_graph->builder->register_render_pass("mesh_cull_late_pass",
                                              &mesh_cull_late_pass);
+  frame_graph->builder->register_render_pass("directional_shadow_map_pass",
+                                             &directional_shadow_map_pass);
+
   frame_graph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
   frame_graph->builder->register_render_pass("gbuffer_late_pass",
                                              &gbuffer_late_pass);
@@ -2001,6 +2067,12 @@ void glTFScene::prepare_draws(Renderer* renderer,
            sizeof(GPUMaterialData) * total_meshes)
       .set_name("material_data_buffer");
   material_data_buffer = renderer->create_buffer(buffer_creation)->handle;
+
+  buffer_creation.reset()
+      .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic,
+           sizeof(GPUDirectionalLight))
+      .set_name("directional_light_buffer");
+  directional_light_buffer = renderer->create_buffer(buffer_creation)->handle;
 
   buffer_creation.reset()
       .set(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, ResourceUsageType::Dynamic,
@@ -2135,6 +2207,7 @@ void glTFScene::prepare_draws(Renderer* renderer,
           .buffer(mesh_draw_count_buffers[i], 8)
           .buffer(light_data_buffer, 9)
           .buffer(mesh_instances_buffer, 10)
+          .buffer(directional_light_buffer, 11)
           .buffer(mesh_bounds_buffer, 12)
           .buffer(debug_line_buffer, 20)
           .buffer(debug_line_count_buffer, 21)
@@ -2146,7 +2219,8 @@ void glTFScene::prepare_draws(Renderer* renderer,
     }
   }
 
-  // depth_pre_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+  // depth_pre_pass.prepare_draws(*this, frame_graph,
+  // renderer->gpu->allocator);
   depth_pyramid_pass.prepare_draws(*this, frame_graph,
                                    renderer->gpu->allocator);
 
@@ -2157,6 +2231,8 @@ void glTFScene::prepare_draws(Renderer* renderer,
   gbuffer_late_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
   light_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
   transparent_pass.prepare_draws(*this, frame_graph, renderer->gpu->allocator);
+  directional_shadow_map_pass.prepare_draws(*this, frame_graph,
+                                            renderer->gpu->allocator);
 
   mesh_cull_pass.depth_pyramid_texture_index =
       depth_pyramid_pass.depth_pyramid.index;
@@ -2356,19 +2432,71 @@ void glTFScene::fill_gpu_data_buffers(float model_scale) {
   }
 
   mesh_buffer_map.buffer = light_data_buffer;
-  GPULight* lights_data = (GPULight*)renderer->gpu->map_buffer(mesh_buffer_map);
-  if (lights_data) {
-    for (u32 i = 0; i < node_pool.light_nodes.used_indices; ++i) {
-      glm::vec3 light_pos =
-          ((LightNode*)node_pool.access_node({i, NodeType::LightNode}))
-              ->world_transform.translation;
-      lights[i].position = glm::vec4(light_pos, light_texture.handle.index);
-      lights_data[i] = lights[i];
+  MapBufferParameters light_debug_map = {light_debug_buffer, 0, 0};
+
+  glm::vec4* light_debug_data =
+      (glm::vec4*)renderer->gpu->map_buffer(light_debug_map);
+  GPUPointLight* point_lights_data =
+      (GPUPointLight*)renderer->gpu->map_buffer(mesh_buffer_map);
+
+  if (point_lights_data && light_debug_data) {
+    for (u32 i = 0; i < node_pool.point_light_nodes.used_indices; ++i) {
+      glm::vec3 light_pos = ((PointLightNode*)node_pool.access_node(
+                                 {i, NodeType::PointLightNode}))
+                                ->world_transform.translation;
+      lights[i].position =
+          glm::vec4(light_pos, point_light_texture.handle.index);
+      point_lights_data[i] = lights[i];
+
+      light_debug_data[i + 1] =
+          glm::vec4(light_pos, point_light_texture.handle.index);
     }
+    glm::vec3 light_pos = ((DirectionalLightNode*)node_pool.access_node(
+                               {0, NodeType::DirectionalLightNode}))
+                              ->world_transform.translation;
+    light_debug_data[0] =
+        glm::vec4(light_pos, directional_light_texture.handle.index);
     renderer->gpu->unmap_buffer(mesh_buffer_map);
+    renderer->gpu->unmap_buffer(light_debug_map);
   }
 
+  light_debug_map.buffer = directional_light_buffer;
+  GPUDirectionalLight* directional_light =
+      (GPUDirectionalLight*)renderer->gpu->map_buffer(light_debug_map);
   light_pass.fill_gpu_material_buffer();
+  if (directional_light) {
+    DirectionalLightNode* light_node =
+        (DirectionalLightNode*)node_pool.access_node(
+            {0, NodeType::DirectionalLightNode});
+    glm::vec3 light_pos = light_node->world_transform.translation;
+
+    directional_light->position_texture_index =
+        glm::vec4(light_pos, directional_light_texture.handle.index);
+    directional_light->projection =
+        glm::ortho(-20.f, 20.f, -20.f, 20.f, 1.f, 60.f);
+
+    glm::vec3 target = light_pos + glm::vec3(light_node->direction_intensity);
+    directional_light->view =
+        glm::lookAt(light_pos, target, glm::vec3(0.f, 1.f, 0.f));
+
+    directional_light->direction_intensity = light_node->direction_intensity;
+
+    glm::mat4& projMatrix = directional_light->projection;
+
+    directional_light->frustum_planes[0] =
+        glm::vec4(1, 0, 0, -(projMatrix[3][0] + 1) / projMatrix[0][0]);
+    directional_light->frustum_planes[1] = glm::vec4(
+        -1, 0, 0, (1 - projMatrix[3][0]) / projMatrix[0][0]);  // x - w  < 0;
+    directional_light->frustum_planes[2] = glm::vec4(
+        0, 1, 0, -(projMatrix[3][1] + 1) / projMatrix[1][1]);  // y + w  < 0;
+    directional_light->frustum_planes[3] = glm::vec4(
+        0, -1, 0, (1 - projMatrix[3][1]) / projMatrix[1][1]);  // y - w  < 0;
+    directional_light->frustum_planes[4] = glm::vec4(
+        0, 0, -1, -(projMatrix[3][2] + 1) / projMatrix[2][2]);  // z + w  < 0;
+    directional_light->frustum_planes[5] = glm::vec4(
+        0, 0, 1, (1 - projMatrix[3][2]) / projMatrix[2][2]);  // z - w  < 0;
+  }
+  renderer->gpu->unmap_buffer(light_debug_map);
 }
 
 void glTFScene::submit_draw_task(ImGuiService* imgui, GPUProfiler* gpu_profiler,
@@ -2400,25 +2528,7 @@ void glTFScene::draw_mesh(CommandBuffer* gpu_commands, Mesh& mesh) {
 }
 
 void glTFScene::destroy_node(NodeHandle handle) {
-  Node* node = (Node*)node_pool.access_node(handle);
-  for (u32 i = 0; i < node->children.size; i++) {
-    destroy_node(node->children[i]);
-  }
-  node->children.shutdown();
-  switch (handle.type) {
-    case NodeType::Node:
-      node_pool.base_nodes.release_resource(handle.index);
-      break;
-    case NodeType::MeshNode:
-      node_pool.mesh_nodes.release_resource(handle.index);
-      break;
-    case NodeType::LightNode:
-      node_pool.light_nodes.release_resource(handle.index);
-      break;
-    default:
-      HERROR("Invalid NodeType");
-      break;
-  }
+  node_pool.destroy_node(handle);
 }
 
 void glTFScene::imgui_draw_node_property(NodeHandle node_handle) {
@@ -2457,11 +2567,18 @@ void glTFScene::imgui_draw_node_property(NodeHandle node_handle) {
       ImGui::InputFloat3("scale##world", (float*)&node->world_transform.scale);
       ImGui::InputFloat3("rotation##world", (float*)&world_rotation);
 
-      if (node_handle.type == NodeType::LightNode) {
-        LightNode* light_node = (LightNode*)node;
-        GPULight& light = lights[light_node->light_index];
+      if (node_handle.type == NodeType::PointLightNode) {
+        PointLightNode* light_node = (PointLightNode*)node;
+        GPUPointLight& light = lights[light_node->light_index];
         ImGui::SliderFloat("Light Intensity", &light.intensity, 0.f, 100.f);
         ImGui::SliderFloat("Light Range", &light.range, 0.f, 100.f);
+      }
+      if (node_handle.type == NodeType::DirectionalLightNode) {
+        DirectionalLightNode* light_node = (DirectionalLightNode*)node;
+        ImGui::SliderFloat("Light Intensity",
+                           &light_node->direction_intensity.w, 0.f, 100.f);
+        ImGui::InputFloat3("Light Direction",
+                           (float*)&light_node->direction_intensity);
       }
 
       if (modified) {
@@ -2474,24 +2591,43 @@ void glTFScene::imgui_draw_node_property(NodeHandle node_handle) {
   ImGui::End();
 }
 
-void glTFScene::add_light() {
-  NodeHandle light_node_handle = node_pool.obtain_node(NodeType::LightNode);
+void glTFScene::add_point_light() {
+  NodeHandle light_node_handle =
+      node_pool.obtain_node(NodeType::PointLightNode);
 
-  LightNode* light_node = (LightNode*)node_pool.access_node(light_node_handle);
-  light_node->name = names.append_use_f("Point Light_%d",
-                                        node_pool.light_nodes.used_indices - 1);
+  PointLightNode* light_node =
+      (PointLightNode*)node_pool.access_node(light_node_handle);
+  light_node->name = names.append_use_f(
+      "Point Light_%d", node_pool.point_light_nodes.used_indices - 1);
   light_node->local_transform.scale = {1.0f, 1.0f, 1.0f};
-  light_node->world_transform.scale = {1.0f, 1.0f, 1.0f};
-  light_node->world_transform.translation.y = 1.0f;
+  light_node->local_transform.translation.y = 4.0f;
   light_node->light_index = lights.size;
 
   node_pool.get_root_node()->add_child(light_node);
 
-  GPULight light;
-  light.range = 50.f;
-  light.intensity = 50.f;
-  light.position.w = light_texture.handle.index;
+  GPUPointLight light;
+  light.range = 10.f;
+  light.intensity = 10.f;
+  light.position.w = point_light_texture.handle.index;
   lights.push(light);
+
+  light_node->update_transform(&node_pool);
+}
+
+void glTFScene::add_directional_light() {
+  NodeHandle light_node_handle =
+      node_pool.obtain_node(NodeType::DirectionalLightNode);
+
+  DirectionalLightNode* light_node =
+      (DirectionalLightNode*)node_pool.access_node(light_node_handle);
+  light_node->name = names.append_use("Directional Light");
+  light_node->local_transform.scale = {1.0f, 1.0f, 1.0f};
+  light_node->local_transform.translation.y = 30.0f;
+  light_node->direction_intensity = glm::vec4(0.001f, -1.f, 0.f, 1.f);
+
+  node_pool.get_root_node()->add_child(light_node);
+
+  light_node->update_transform(&node_pool);
 }
 
 void glTFScene::imgui_draw_node(NodeHandle node_handle) {
@@ -2544,7 +2680,7 @@ void glTFScene::imgui_draw_hierarchy() {
       }
     }
     if (ImGui::Button("Add Light", {viewportPanelSize.x, 30})) {
-      add_light();
+      add_point_light();
     }
 
     imgui_draw_node(node_pool.root_node);

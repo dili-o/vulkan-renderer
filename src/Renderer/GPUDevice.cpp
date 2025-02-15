@@ -6,6 +6,7 @@
 #include "Core/HashMap.hpp"
 #include "Core/Process.hpp"
 #include "Core/File.hpp"
+#include "vulkan/vulkan_core.h"
 
 template<class T>
 constexpr const T& helix_min(const T& a, const T& b) {
@@ -840,7 +841,7 @@ namespace Helix {
         // TODO: Right now the defualt sampler is used for all bindless images. Some gltf models might use a different one]
         //       or multiple.
         SamplerCreation sc{};
-        sc.set_address_mode_uvw(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+        sc.set_address_mode_uvw(VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT)
             .set_min_mag_mip(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR).set_name("Sampler Default");
         default_sampler = create_sampler(sc);
 

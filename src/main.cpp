@@ -63,11 +63,6 @@ struct AsynchronousLoadTask : enki::IPinnedTask {
   bool execute = true;
 };  // struct AsynchronousLoadTask
 
-glm::vec4 normalize_plane(glm::vec4 plane) {
-  glm::vec3 normal(plane.x, plane.y, plane.z);
-  return (plane / glm::length(normal));
-}
-
 glm::vec2 sign_not_zero(glm::vec2 v) {
   return glm::vec2((v.x >= 0.0) ? 1.0 : -1.0, (v.y >= 0.0) ? 1.0 : -1.0);
 }
@@ -206,6 +201,11 @@ int main(int argc, char** argv) {
       resources_loader.load_program(culling_pipeline_path);
 
       temporary_name_buffer.clear();
+      cstring shadow_map_pipeline_path = temporary_name_buffer.append_use_f(
+          "%s/%s", HELIX_SHADER_FOLDER, "programs/shadow_maps.json");
+      resources_loader.load_program(shadow_map_pipeline_path);
+
+      temporary_name_buffer.clear();
 #if NVIDIA
       cstring meshlet_pipeline_path = temporary_name_buffer.append_use_f(
           "%s/%s", HELIX_SHADER_FOLDER, "programs/meshlet_nv.json");
@@ -316,6 +316,7 @@ int main(int argc, char** argv) {
         gpu.resize(window.width, window.height);
         window.resized = false;
       }
+
       // This MUST be AFTER os messages!
       imgui->new_frame();
 
@@ -397,16 +398,11 @@ int main(int argc, char** argv) {
           scene_data.inverse_view_projection = glm::inverse(
               camera.view_projection);  // TODO glm::inverse(view_projection);
           scene_data.view_matrix = camera.view;
+
           scene_data.camera_position = glm::vec4(
               camera.position.x, camera.position.y, camera.position.z, 1.0f);
-          LightNode* l = (LightNode*)scene->node_pool.access_node(
-              {0, NodeType::LightNode});
-          scene_data.light_position =
-              glm::vec4(l->world_transform.translation,
-                        scene->light_texture.handle.index);
-          scene_data.current_light_count =
-              scene->node_pool.light_nodes.used_indices;
-          scene_data.light_intensity = light_intensity;
+          scene_data.point_light_count =
+              scene->node_pool.point_light_nodes.used_indices;
           scene_data.dither_texture_index = k_invalid_index;
 
           scene_data.z_near = camera.z_near;

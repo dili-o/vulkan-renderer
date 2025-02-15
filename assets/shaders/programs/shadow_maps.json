@@ -1,0 +1,25 @@
+{
+	"name" : "shadow_maps",
+	"pipelines" : [
+		{
+			"name" : "directional_shadow_map",
+			"render_pass" : "directional_shadow_map_pass",
+      "depth" : {
+				"write" : true,
+				"test" : "less_or_equal"
+			},
+			"shaders" : [
+				{
+					"stage" : "task",
+					"shader" : "directional_shadow_map_ext.task.glsl",
+					"includes" : ["platform.h", "scene.h", "lighting.h", "mesh.h", "debug_rendering.h"]
+				},
+				{
+					"stage" : "mesh",
+					"shader" : "directional_shadow_map_ext.mesh.glsl",
+					"includes" : ["platform.h", "scene.h", "lighting.h", "mesh.h"]
+				}
+			]
+		}
+	]
+}

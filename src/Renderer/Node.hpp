@@ -45,7 +45,7 @@ struct Transform {
 };  // struct Transform
 
 // Nodes //////////////////////////////////////
-enum class NodeType { Node, MeshNode, LightNode };
+enum class NodeType { Node, MeshNode, PointLightNode, DirectionalLightNode };
 
 struct NodeHandle {
   u32 index = k_invalid_index;
@@ -68,6 +68,7 @@ struct NodePool {
 
   NodeHandle obtain_node(NodeType type);
   void* access_node(NodeHandle handle);
+  void destroy_node(NodeHandle handle);
   Node* get_root_node();
 
   Allocator* allocator;
@@ -76,7 +77,8 @@ struct NodePool {
 
   ResourcePool base_nodes;
   ResourcePool mesh_nodes;
-  ResourcePool light_nodes;
+  ResourcePool point_light_nodes;
+  ResourcePool directional_light_nodes;
 };
 
 struct Node {
@@ -107,7 +109,13 @@ struct MeshNode : public Node {
   Mesh* mesh;
 };
 
-struct LightNode : public Node {
+struct PointLightNode : public Node {
   u32 light_index;
 };
+
+struct DirectionalLightNode : public Node {
+  glm::vec4 direction_intensity;
+};
+
+cstring node_type_to_cstring(NodeType type);
 }  // namespace Helix

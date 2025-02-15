@@ -113,7 +113,7 @@
 				{
 					"stage" : "vertex",
 					"shader" : "debug_light.glsl",
-					"includes" : ["platform.h", "scene.h"]
+					"includes" : ["platform.h", "scene.h", "lighting.h"]
 				},
 				{
 					"stage" : "fragment",

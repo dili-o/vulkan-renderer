@@ -14,6 +14,28 @@
             ]
         },
         {
+            "name": "directional_shadow_map_pass",
+            "inputs":
+            [
+                {
+                    "type": "buffer",
+                    "name": "mesh_indirect_draw_early_list"
+                }
+            ],
+            "outputs":
+            [
+                {
+                    "type": "attachment",
+                    "name": "directional_shadow_map",
+                    "format": "VK_FORMAT_D32_SFLOAT",
+                    "resolution": [ 2024, 2024 ],
+                    "load_operation": "clear",
+                    "clear_depth" : 1.0,
+                    "clear_stencil" : 0
+                }
+            ]
+        },
+        {
             "inputs":
             [
                 {
@@ -156,6 +178,10 @@
                 {
                     "type": "attachment",
                     "name": "depth"
+                },
+                {
+                    "type": "texture",
+                    "name": "directional_shadow_map"
                 }
             ],
             "name": "transparent_pass"
@@ -192,6 +218,10 @@
                 {
                     "type": "texture",
                     "name": "depth"
+                },
+                {
+                    "type": "texture",
+                    "name": "directional_shadow_map"
                 }
             ],
             "name": "lighting_pass",
