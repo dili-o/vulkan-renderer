@@ -1,5 +1,6 @@
 #include "GPUDevice.hpp"
 #include "CommandBuffer.hpp"
+#include "Renderer/GPUEnum.hpp"
 #include "SpirvParser.hpp"
 
 #include "Core/Memory.hpp"
@@ -1140,7 +1141,7 @@ namespace Helix {
         //// Create the image
         VkImageCreateInfo image_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
         image_info.format = texture->vk_format;
-        image_info.flags = 0;
+        image_info.flags = (creation.type & TextureType::Texture_Cube_Array) == TextureType::Texture_Cube_Array ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
         image_info.imageType = to_vk_image_type(creation.type);
         image_info.extent.width = creation.width;
         image_info.extent.height = creation.height;
@@ -1157,6 +1158,7 @@ namespace Helix {
         image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
 
         image_info.usage |= is_compute_used ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
+
 
         if (TextureFormat::has_depth_or_stencil(creation.format)) {
             // Depth/Stencil textures are normally textures you render into.
@@ -2043,7 +2045,7 @@ namespace Helix {
         create_info.anisotropyEnable = 0;
         create_info.compareEnable = 0;
         create_info.unnormalizedCoordinates = 0;
-        create_info.borderColor = VkBorderColor::VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+        create_info.borderColor = VkBorderColor::VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
         create_info.minLod = 0;
         create_info.maxLod = 16;
         // TODO:

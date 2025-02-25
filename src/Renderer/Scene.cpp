@@ -414,6 +414,7 @@ void DirectionalShadowMapPass::render(CommandBuffer* gpu_commands,
   if (!enabled) return;
 
   glTFScene* scene = (glTFScene*)scene_;
+  if (!scene->enable_shadows) return;
 
   Renderer* renderer = scene->renderer;
 
@@ -1071,18 +1072,6 @@ void DebugPass::prepare_draws(glTFScene& scene, FrameGraph* frame_graph,
       debug_program->passes[debug_program->get_pass_index("debug_light")]
           .pipeline;
 
-  // glm::vec4 positions[2] = { {glm::vec4(0, 10, 0, 6)}, {glm::vec4(10, 10,
-  // 0, 7)} }; GPUDebugIcon debug_icons{};
-  // debug_icons.position_texture_index[0] = positions[0];
-  // debug_icons.position_texture_index[1] = positions[1]; debug_icons.count =
-  // 2;
-
-  // BufferCreation buffer_creation{};
-  // buffer_creation.reset().set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-  // ResourceUsageType::Dynamic,
-  // sizeof(GPUDebugIcon)).set_name("debug_icons_buffer").set_data(&debug_icons);
-  // debug_icons_buffer = renderer->create_buffer(buffer_creation)->handle;
-
   DescriptorSetCreation ds_creation{};
   DescriptorSetLayoutHandle layout =
       scene.renderer->gpu->get_descriptor_set_layout(debug_light_pipeline, 1);
@@ -1411,6 +1400,9 @@ void glTFScene::load(cstring filename, cstring path,
 
   i64 end_reading_buffers_data = Time::now();
 
+  Array<UploadRequest> upload_requests;
+  upload_requests.init(resident_allocator, gltf_scene.buffer_views_count, gltf_scene.buffer_views_count);
+
   // Load all buffers and initialize them with buffer data
   for (u32 buffer_index = 0; buffer_index < gltf_scene.buffer_views_count;
        ++buffer_index) {
@@ -1443,10 +1435,18 @@ void glTFScene::load(cstring filename, cstring path,
     BufferResource* br = renderer->create_buffer(buffer_creation);
     HASSERT(br != nullptr);
 
-    async_loader->request_buffer_upload(buffer_data, br->handle);
+   // async_loader->request_buffer_upload(buffer_data, br->handle);
+    UploadRequest& request = upload_requests[buffer_index];
+	request.data = buffer_data;
+	request.gpu_buffer = br->handle;
+	request.cpu_buffer = k_invalid_buffer;
+	request.texture = k_invalid_texture;
 
     buffers.push(*br);
   }
+
+   async_loader->upload_requests.push_array(upload_requests);
+  upload_requests.shutdown();
 
   i64 end_creating_buffers = Time::now();
 
@@ -2470,8 +2470,8 @@ void glTFScene::fill_gpu_data_buffers(float model_scale) {
             {0, NodeType::DirectionalLightNode});
     glm::vec3 light_pos = light_node->world_transform.translation;
 
-    directional_light->position_texture_index =
-        glm::vec4(light_pos, directional_light_texture.handle.index);
+    directional_light->position_enabled =
+        glm::vec4(light_pos, (f32)enable_shadows);
     directional_light->projection =
         glm::ortho(-20.f, 20.f, -20.f, 20.f, 1.f, 60.f);
 

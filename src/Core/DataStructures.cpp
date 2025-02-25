@@ -53,7 +53,7 @@ namespace Helix {
         u8* new_memory = hallocam(allocation_size, allocator);
         memset(new_memory, 0, allocation_size);
 
-        memory_copy(new_memory, memory, pool_size * resource_size);
+        memory_copy(new_memory, memory, pool_size * (resource_size + sizeof(u32)));
 
         u32* new_free_indicies = (u32*)(new_memory + new_pool_size * resource_size);
         memory_copy(new_free_indicies, free_indices, used_indices * sizeof(u32));

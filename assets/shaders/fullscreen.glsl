@@ -31,9 +31,26 @@ layout ( std140, set = MATERIAL_SET, binding = 0 ) uniform LocalConstants {
     float       light_intensity;
 };
 
+// AGX Tone Mapping Function
+vec3 agxToneMap(vec3 color) {
+    // Apply a basic curve for highlight compression
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
+}
+
 void main() {
     vec4 color = texture(global_textures[nonuniformEXT(texture_id)], vTexCoord.xy);
-    out_color = color;
+
+    float exposure = 1.f;
+    // exposure tone mapping
+    vec3 mapped = agxToneMap(color.xyz);
+    //vec3 mapped = vec3(1.0) - exp(-color.rgb * exposure);
+    out_color = vec4(mapped, color.a);
 }
 
 #endif // FRAGMENT

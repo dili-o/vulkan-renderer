@@ -28,7 +28,7 @@
 		},
 		{
 			"name" : "transparent_no_cull",
-			"render_pass" : "swapchain",
+			"render_pass" : "transparent_pass",
 			"depth" : {
 				"write" : false,
 				"test" : "less_or_equal"

@@ -111,20 +111,25 @@ vec4 calculate_lighting_directional(vec4 base_colour, vec3 rmo, vec3 normal,
          (abs(NdotV) +
           sqrt(alpha_squared + (1.0 - alpha_squared) * (NdotV * NdotV))));
 
+    vec3 light_color = vec3(1.f, 0.956f, 0.878f);
+    // vec3 light_color = vec3(1.f, 0.74f, 0.35f);
+
     float specular_brdf = intensity * NdotL * visibility * distribution;
 
-    vec3 diffuse_brdf = intensity * NdotL * (1 / PI) * base_colour.rgb;
+    // vec3 diffuse_brdf = intensity * NdotL * (1 / PI) * base_colour.rgb;
+    vec3 diffuse_brdf =
+        intensity * NdotL * (1 / PI) * base_colour.rgb * light_color;
 
     // NOTE(marco): f0 in the formula notation refers to the base colour here
     vec3 conductor_fresnel =
-        specular_brdf *
+        specular_brdf * light_color *
         (base_colour.rgb + (1.0 - base_colour.rgb) * pow(1.0 - abs(HdotV), 5));
 
     // NOTE(marco): f0 in the formula notation refers to the value derived from
     // ior = 1.5
     float f0 = 0.04;  // pow( ( 1 - ior ) / ( 1 + ior ), 2 )
     float fr = f0 + (1 - f0) * pow(1 - abs(HdotV), 5);
-    vec3 fresnel_mix = mix(diffuse_brdf, vec3(specular_brdf), fr);
+    vec3 fresnel_mix = mix(diffuse_brdf, light_color * vec3(specular_brdf), fr);
 
     material_colour = mix(fresnel_mix, conductor_fresnel, metalness);
   }

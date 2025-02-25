@@ -974,7 +974,7 @@ static cstring to_stage_defines(VkShaderStageFlagBits value) {
 static VkImageType to_vk_image_type(TextureType::Enum type) {
   static VkImageType s_vk_target[TextureType::Count] = {
       VK_IMAGE_TYPE_1D, VK_IMAGE_TYPE_2D, VK_IMAGE_TYPE_3D,
-      VK_IMAGE_TYPE_1D, VK_IMAGE_TYPE_2D, VK_IMAGE_TYPE_3D};
+      VK_IMAGE_TYPE_1D, VK_IMAGE_TYPE_2D, VK_IMAGE_TYPE_2D};
   return s_vk_target[type];
 }
 
@@ -984,7 +984,7 @@ static VkImageViewType to_vk_image_view_type(TextureType::Enum type) {
   static VkImageViewType s_vk_data[] = {
       VK_IMAGE_VIEW_TYPE_1D,       VK_IMAGE_VIEW_TYPE_2D,
       VK_IMAGE_VIEW_TYPE_3D,       VK_IMAGE_VIEW_TYPE_1D_ARRAY,
-      VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_IMAGE_VIEW_TYPE_CUBE_ARRAY};
+      VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_IMAGE_VIEW_TYPE_CUBE};
   return s_vk_data[type];
 }
 

@@ -116,8 +116,8 @@ void AsynchronousLoader::update(Allocator* stack_allocator) {
     ZoneScoped;
     // TODO: Maybe have fences for each frame
     // Wait for transfer fence to be finished
-    if (vkGetFenceStatus(renderer->gpu->vulkan_device, transfer_fence) !=
-        VK_SUCCESS) {
+    VkResult res = vkGetFenceStatus(renderer->gpu->vulkan_device, transfer_fence);
+    if ( res != VK_SUCCESS) {
       return;
     }
     // Reset if file requests are present.

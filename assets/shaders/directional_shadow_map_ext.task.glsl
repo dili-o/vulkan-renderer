@@ -44,7 +44,7 @@ void main()
     vec4 view_center = vec4(0);
     // Backface culling and move meshlet in camera space
     accept = !coneCull(world_center.xyz, radius, cone_axis, cone_cutoff,
-        directional_light_data.position_texture_index.xyz);
+        directional_light_data.position_enabled.xyz);
     view_center = directional_light_data.view * world_center;
 
     bool frustum_visible = true;

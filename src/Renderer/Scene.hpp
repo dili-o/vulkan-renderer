@@ -175,7 +175,7 @@ struct alignas(16) GPUPointLight {
 
 struct alignas(16) GPUDirectionalLight {
   glm::vec4 direction_intensity;
-  glm::vec4 position_texture_index;
+  glm::vec4 position_enabled;
 
   glm::mat4 view;
   glm::mat4 projection;
@@ -589,6 +589,7 @@ struct glTFScene : public Scene {
   Program* fullscreen_program = nullptr;
   DescriptorSetHandle fullscreen_ds;
   u32 fullscreen_texture_index = u32_max;
+  bool enable_shadows = true;
 
   NodeHandle current_node{};
 

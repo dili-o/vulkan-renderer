@@ -211,7 +211,7 @@ struct Renderer : public Service {
 
   ResourceCache resource_cache;
 
-  TextureHandle textures_to_update[128];
+  Array<TextureHandle> textures_to_update;
   u32 num_textures_to_update = 0;
 
   StringBuffer resource_name_buffer;

@@ -204,6 +204,9 @@ namespace Helix {
 #else
 
     void* HeapAllocator::allocate(sizet size, sizet alignment) {
+        if ((size + allocated_size) > max_size) {
+            HCRITICAL("Allocator has ran out of memory!");
+        }
 #if defined (HEAP_ALLOCATOR_STATS)
         void* allocated_memory = alignment == 1 ? tlsf_malloc(tlsf_handle, size) : tlsf_memalign(tlsf_handle, alignment, size);
         sizet actual_size = tlsf_block_size(allocated_memory);

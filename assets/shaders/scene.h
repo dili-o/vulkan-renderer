@@ -40,7 +40,7 @@ layout(std140, set = MATERIAL_SET, binding = 0) uniform SceneConstants {
 
 struct DirectionalLight {
   vec4 direction_intensity;
-  vec4 position_texture_index;
+  vec4 position_enabled;
 
   mat4 view;
   mat4 projection;

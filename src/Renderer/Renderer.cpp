@@ -132,6 +132,7 @@ void Renderer::init(const RendererCreation& creation) {
 
   resource_cache.init(creation.allocator);
 
+  textures_to_update.init(creation.allocator, 400, 400);
   // Init resource hashes
   TextureResource::k_type_hash = hash_calculate(TextureResource::k_type);
   BufferResource::k_type_hash = hash_calculate(BufferResource::k_type);
@@ -152,6 +153,7 @@ void Renderer::shutdown() {
   resource_cache.shutdown(this);
   resource_name_buffer.shutdown();
   gpu_heap_budgets.shutdown();
+  textures_to_update.shutdown();
 
   textures.shutdown();
   buffers.shutdown();

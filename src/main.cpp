@@ -119,13 +119,13 @@ int main(int argc, char** argv) {
   Time::service_init();
 
   MemoryServiceConfiguration memory_configuration;
-  memory_configuration.maximum_dynamic_size = hmega(500);
+  memory_configuration.maximum_dynamic_size = hmega(900);
 
   MemoryService::instance()->init(&memory_configuration);
   Allocator* allocator = &MemoryService::instance()->system_allocator;
 
   StackAllocator stack_allocator;
-  stack_allocator.init(hmega(200));
+  stack_allocator.init(hmega(700));
 
   // [TAG: MULTITHREADING]
   enki::TaskSchedulerConfig config;
@@ -337,7 +337,6 @@ int main(int argc, char** argv) {
               ImGui::InputFloat("Light intensity", &light_intensity);
           }
           ImGui::End();*/
-
         if (ImGui::Begin("Viewport")) {
           ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
           ImGui::Image((ImTextureID)&gpu.fullscreen_texture_handle,
@@ -359,6 +358,7 @@ int main(int argc, char** argv) {
           ImGui::SliderFloat("Light Intensity", &light_intensity, 0.f, 30.f);
           ImGui::SliderFloat("Light Range", &light_range, 0.f, 30.f);
           ImGui::Checkbox("Freeze Camera", &freeze_occlusion_camera);
+          ImGui::Checkbox("Enable Shadows", &scene->enable_shadows);
         }
         ImGui::End();
 
