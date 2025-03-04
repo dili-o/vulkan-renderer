@@ -2,6 +2,7 @@
 #ifndef HELIX_GLSL_SCENE_H
 #define HELIX_GLSL_SCENE_H
 
+#define DEBUG 0
 // Scene common code
 
 layout(std140, set = MATERIAL_SET, binding = 0) uniform SceneConstants {

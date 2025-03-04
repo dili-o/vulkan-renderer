@@ -15,7 +15,7 @@ void main() {
 
 #if defined (FRAGMENT_PBR)
 
-#define SHADOW_VALUE 0.1f
+#define SHADOW_VALUE 0.2f
 
 #define PCF 0
 
@@ -71,12 +71,15 @@ void main() {
     frag_color = vec4(0.f);
     vec4 base_colour = texture(global_textures[nonuniformEXT(gbuffer_textures.x)], vTexcoord0);
     float raw_depth = texture(global_textures[nonuniformEXT(gbuffer_textures.w)], vTexcoord0).r;
-
+#if DEBUG
+    frag_color = vec4( encode_srgb( base_colour.xyz ), base_colour.a );
+    return;
+#else
     if (raw_depth == 1.0f){
-        frag_color = vec4( encode_srgb( base_colour.xyz ), base_colour.a );
-        return;
+      frag_color = vec4( encode_srgb( base_colour.xyz ), base_colour.a );
+      return;
     }
-
+#endif //DEBUG
     vec3 rmo = texture(global_textures[nonuniformEXT(gbuffer_textures.y)], vTexcoord0).rgb;
     vec3 normal = texture(global_textures[nonuniformEXT(gbuffer_textures.z)], vTexcoord0).rgb;
     // Convert from [0, 1] -> [-1, 1] then decode
@@ -105,7 +108,7 @@ void main() {
     for(uint i = 0; i < point_light_count; i++){
       frag_color += calculate_lighting_point(base_colour, rmo, normal, vec3(0.f), vPosition, pointLights[i]);
     }
-    frag_color.w = 1.0f;
+    frag_color.a = 1.0f;
 }
 
 #endif // FRAGMENT
