@@ -1,7 +1,5 @@
 #include "Memory.hpp"
 
-#include <cstdio>
-#include <stdlib.h>
 #include <string.h>
 #include <tlsf.h>
 
@@ -18,15 +16,6 @@
 
 namespace Helix {
 #pragma region Memory_Methods ////////////////////////////////////////
-void memory_copy(void *destination, void *source, size_t size) {
-  memcpy(destination, source, size);
-}
-
-size_t memory_align(size_t size, size_t alignment) {
-  const size_t alignment_mask = alignment - 1;
-  return (size + alignment_mask) & ~alignment_mask;
-}
-
 char *get_memory_usage_str(size_t size, char *buffer) {
   f32 amount = 0.f;
   char unit[4] = "XiB";

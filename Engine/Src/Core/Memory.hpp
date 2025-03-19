@@ -3,17 +3,22 @@
 
 #include "Defines.hpp"
 #include "Service.hpp"
+#include <string.h>
 
 namespace Helix {
 
 // Memory Methods /////////////////////////////////////////////////////
-inline void memory_copy(void *destination, void *source, size_t size);
-
+inline void memory_copy(void *destination, void *source, size_t size) {
+  memcpy(destination, source, size);
+}
 //
 //  Calculate aligned memory size.
-inline size_t memory_align(size_t size, size_t alignment);
+inline size_t memory_align(size_t size, size_t alignment) {
+  const size_t alignment_mask = alignment - 1;
+  return (size + alignment_mask) & ~alignment_mask;
+}
 
-char* get_memory_usage_str(size_t size, char* buffer);
+char *get_memory_usage_str(size_t size, char *buffer);
 
 // Memory Structs /////////////////////////////////////////////////////
 //
