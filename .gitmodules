@@ -1,0 +1,12 @@
+[submodule "Engine/Vendor/SDL"]
+	path = Engine/Vendor/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "Engine/Vendor/spdlog"]
+	path = Engine/Vendor/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "Engine/Vendor/tlsf"]
+	path = Engine/Vendor/tlsf
+	url = https://github.com/mattconte/tlsf.git
+[submodule "Engine/Vendor/volk"]
+	path = Engine/Vendor/volk
+	url = https://github.com/zeux/volk.git

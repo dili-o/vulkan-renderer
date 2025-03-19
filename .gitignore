@@ -1,5 +1,5 @@
 /out
-bin/
+Bin/
 build/
 assets/shaders/cache
 /.vs
