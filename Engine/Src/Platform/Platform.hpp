@@ -25,8 +25,8 @@ struct Platform : public Service {
   void *platform_handle = nullptr;
   bool requested_exit{true};
   bool is_suspended{false};
-  u32 width{0};
-  u32 height{0};
+  i32 width{0};
+  i32 height{0};
   cstring name{nullptr};
 };
 } // namespace Helix

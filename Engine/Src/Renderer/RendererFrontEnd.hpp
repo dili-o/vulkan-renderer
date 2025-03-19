@@ -13,7 +13,7 @@ struct RendererFrontEnd : public Service {
 
   HELIX_DECLARE_SERVICE(RendererFrontEnd);
 
-  void on_resized(u16 width, u16 height);
+  void on_resize(u16 width, u16 height);
 
   bool draw_frame(RenderPacket *packet);
 

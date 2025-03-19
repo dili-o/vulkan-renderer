@@ -38,6 +38,10 @@ void RendererFrontEnd::shutdown() {
   HELIX_SERVICE_SHUTDOWN_MSG(RendererFrontEnd);
 }
 
+void RendererFrontEnd::on_resize(u16 width, u16 height) {
+  backend->on_resize(width, height);
+}
+
 bool RendererFrontEnd::draw_frame(RenderPacket *packet) {
 
   if (begin_frame(packet->delta_time)) {

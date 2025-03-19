@@ -4,6 +4,7 @@
 #include "Core/Event.hpp"
 #include "Core/Input.hpp"
 #include "Core/Log.hpp"
+#include "Renderer/RendererFrontEnd.hpp"
 #include <SDL3/SDL.h>
 
 namespace Helix {
@@ -57,6 +58,10 @@ void Platform::handle_os_messages() {
     case SDL_EVENT_QUIT: {
       EventContext context{};
       EventService::instance()->fire_event(SDL_EVENT_QUIT, 0, context);
+    } break;
+    case SDL_EVENT_WINDOW_RESIZED: {
+      SDL_GetWindowSize(window, &width, &height);
+      RendererFrontEnd::instance()->on_resize(width, height);
     } break;
     case SDL_EVENT_KEY_UP:
     case SDL_EVENT_KEY_DOWN: {

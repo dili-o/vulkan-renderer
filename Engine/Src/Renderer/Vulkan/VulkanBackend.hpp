@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Containers/Array.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "VulkanTypes.hpp"
 #include <vulkan/vulkan_core.h>
@@ -14,16 +15,20 @@ struct VulkanBackend : public RendererBackend {
 
   void create_swapchain();
   void destroy_swapchain();
+  void resize_swapchain();
 
   void create_graphics_pipeline();
   void create_command_pool(QueueFamilyIndices &indices);
 
-  void create_command_buffer();
-  void record_command_buffer(u32 index);
+  void create_command_buffers();
+  void record_command_buffer(VkCommandBuffer vk_command_buffer, u32 index);
 
   void create_sync_objects();
 
   void draw_frame();
+
+  u32 const max_frames_in_flight = 2;
+  u32 current_frame = 0;
 
   VkInstance vk_instance{VK_NULL_HANDLE};
   VkAllocationCallbacks *vk_allocation_callbacks{nullptr};
@@ -37,12 +42,14 @@ struct VulkanBackend : public RendererBackend {
   VkPipeline vk_pipeline{VK_NULL_HANDLE};
 
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
-  VkCommandBuffer vk_command_buffer{VK_NULL_HANDLE};
+  Array<VkCommandBuffer> vk_command_buffers;
 
-  VkSemaphore image_available_semaphore{VK_NULL_HANDLE};
-  VkSemaphore render_finished_semaphore{VK_NULL_HANDLE};
-  VkFence in_flight_fence{VK_NULL_HANDLE};
+  Array<VkSemaphore> image_available_semaphores;
+  Array<VkSemaphore> render_finished_semaphores;
+  Array<VkFence> in_flight_fences;
 
   VulkanSwapchain swapchain{};
+
+  bool resize_frame = false;
 };
 } // namespace Helix
