@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Containers/Array.hpp"
 #include "Core/Service.hpp"
 #include "RendererTypes.hpp"
 
@@ -22,5 +23,7 @@ struct RendererFrontEnd : public Service {
   bool end_frame(f32 delta_time);
 
   RendererBackend *backend{nullptr};
+
+  Array<Vertex> vertices{};
 };
 } // namespace Helix

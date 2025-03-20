@@ -9,9 +9,10 @@
 #include "Platform/Process.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
-#include "SDL3/SDL_video.h"
-#include "SDL3/SDL_vulkan.h"
+#include "SpirvParser.hpp"
 #include "VulkanBackend.hpp"
+#include <SDL3/SDL_video.h>
+#include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan_core.h>
 
 #ifdef _DEBUG
@@ -403,6 +404,8 @@ void VulkanBackend::create_graphics_pipeline() {
   vert_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
   vert_create_info.codeSize = vert_binary.size;
   vert_create_info.pCode = (u32 *)vert_binary.data;
+
+  parse_binary((u32 *)vert_binary.data, vert_binary.size);
 
   VkShaderModule vert_shader_module;
   VK_CHECK(vkCreateShaderModule(vk_device, &vert_create_info,

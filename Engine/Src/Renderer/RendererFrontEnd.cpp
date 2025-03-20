@@ -30,6 +30,12 @@ void RendererFrontEnd::init(void *_config) {
 
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
+
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  //  vertices.init(allocator, 3);
+  //  vertices.push({{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}});
+  //  vertices.push({{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}});
+  //  vertices.push({{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}});
 }
 
 void RendererFrontEnd::shutdown() {

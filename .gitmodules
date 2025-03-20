@@ -10,3 +10,9 @@
 [submodule "Engine/Vendor/volk"]
 	path = Engine/Vendor/volk
 	url = https://github.com/zeux/volk.git
+[submodule "Engine/Vendor/glm"]
+	path = Engine/Vendor/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "Engine/Vendor/SPIRV-Reflect"]
+	path = Engine/Vendor/SPIRV-Reflect
+	url = https://github.com/KhronosGroup/SPIRV-Reflect.git

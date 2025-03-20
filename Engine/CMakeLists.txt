@@ -49,6 +49,17 @@ target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/V
 add_subdirectory(Vendor/volk)
 target_link_libraries(${PROJECT_NAME} PUBLIC volk_headers)
 
+set(GLM_BUILD_TESTS OFF CACHE BOOL "Disable GLM tests" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Use static GLM library" FORCE)
+add_subdirectory(Vendor/glm)
+target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
+target_include_directories(${PROJECT_NAME} PUBLIC Vendor/glm)
+
+set(SPIRV_REFLECT_STATIC_LIB ON CACHE BOOL "" FORCE)
+add_subdirectory(Vendor/SPIRV-Reflect)
+target_link_libraries(${PROJECT_NAME} PRIVATE spirv-reflect-static)
+target_include_directories(${PROJECT_NAME} PUBLIC Vendor/SPIRV-Reflect)
+
 # Set output directory to Bin/Engine
 set_target_properties(${PROJECT_NAME} PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../Bin/$<CONFIG>/${PROJECT_NAME}"

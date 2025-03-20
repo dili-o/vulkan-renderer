@@ -26,4 +26,8 @@ struct VulkanSwapchain {
   VkSwapchainKHR vk_handle{VK_NULL_HANDLE};
 };
 
+struct VulkanBuffer {
+  VkBuffer vk_handle;
+};
+
 } // namespace Helix
