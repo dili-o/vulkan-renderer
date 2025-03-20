@@ -15,6 +15,7 @@ void RendererFrontEnd::init(void *_config) {
     return;
   }
 
+  HDEBUG("Attribute offset: {}", offsetof(Vertex, color));
   RendererConfig *config = (RendererConfig *)_config;
   backend = RendererBackendCreate(config->backend_type);
 

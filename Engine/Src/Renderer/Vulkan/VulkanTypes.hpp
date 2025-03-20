@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Containers/Array.hpp"
 #include "Core/Defines.hpp"
 
 #include <cstdint>
@@ -27,7 +28,18 @@ struct VulkanSwapchain {
 };
 
 struct VulkanBuffer {
-  VkBuffer vk_handle;
+  VkBuffer vk_handle{VK_NULL_HANDLE};
+  VkDeviceMemory vk_device_memory{VK_NULL_HANDLE};
+};
+
+struct PipelineCreation {
+  Array<VkVertexInputBindingDescription> binding_descriptions{};
+  Array<VkVertexInputAttributeDescription> attribute_descriptions{};
+};
+
+struct VulkanPipeline {
+  VkPipeline vk_handle{VK_NULL_HANDLE};
+  VkPipelineLayout vk_layout{VK_NULL_HANDLE};
 };
 
 } // namespace Helix

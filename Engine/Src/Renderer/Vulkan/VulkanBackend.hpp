@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Containers/Array.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "VulkanTypes.hpp"
 #include <vulkan/vulkan_core.h>
@@ -17,13 +16,16 @@ struct VulkanBackend : public RendererBackend {
   void destroy_swapchain();
   void resize_swapchain();
 
-  void create_graphics_pipeline();
+  void create_pipeline(PipelineCreation &creation);
   void create_command_pool(QueueFamilyIndices &indices);
 
   void create_command_buffers();
   void record_command_buffer(VkCommandBuffer vk_command_buffer, u32 index);
 
   void create_sync_objects();
+
+  // TODO: Make a generic create_buffers
+  void create_buffers();
 
   void draw_frame();
 
@@ -49,6 +51,10 @@ struct VulkanBackend : public RendererBackend {
   Array<VkFence> in_flight_fences;
 
   VulkanSwapchain swapchain{};
+
+  VulkanBuffer vertex_buffer{};
+
+  Array<Vertex> vertices{};
 
   bool resize_frame = false;
 };

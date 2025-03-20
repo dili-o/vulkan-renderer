@@ -44,6 +44,9 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
                                     VkSurfaceKHR surface,
                                     VulkanSwapchain &swapchain);
 
+u32 find_memory_type(u32 type_filter, VkMemoryPropertyFlags properties,
+                     VkPhysicalDevice physical_device);
+
 // TODO: Should be in a math library
 template <class T>
 constexpr const T &clamp(const T &v, const T &lo, const T &hi) {
@@ -232,9 +235,16 @@ bool VulkanBackend::init(void *_config) {
   query_swapchain_support(vk_physical_device, vk_surface, swapchain);
   create_swapchain();
 
-  create_graphics_pipeline();
+  PipelineCreation creation;
+  create_pipeline(creation);
   create_command_pool(indices);
 
+  vertices.init(allocator, 3);
+  vertices.push({{0.0f, -0.5f}, {1.0f, 1.0f, 0.0f}});
+  vertices.push({{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}});
+  vertices.push({{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}});
+
+  create_buffers();
   create_command_buffers();
   create_sync_objects();
 
@@ -264,6 +274,11 @@ bool VulkanBackend::shutdown() {
   vkDestroyPipelineLayout(vk_device, vk_pipeline_layout,
                           vk_allocation_callbacks);
   destroy_swapchain();
+
+  vkDestroyBuffer(vk_device, vertex_buffer.vk_handle, vk_allocation_callbacks);
+  vkFreeMemory(vk_device, vertex_buffer.vk_device_memory,
+               vk_allocation_callbacks);
+  vertices.shutdown();
 
   vkDestroyDevice(vk_device, vk_allocation_callbacks);
   vkDestroySurfaceKHR(vk_instance, vk_surface, vk_allocation_callbacks);
@@ -367,9 +382,10 @@ void VulkanBackend::destroy_swapchain() {
   swapchain.vk_handle = VK_NULL_HANDLE;
 }
 
-void VulkanBackend::create_graphics_pipeline() {
+void VulkanBackend::create_pipeline(PipelineCreation &creation) {
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
+  // TODO: This is hardcoded
   cstring glsl_compiler_path = "C:\\VulkanSDK\\1.3.275.0\\Bin\\glslc.exe ";
 
   Directory d;
@@ -405,7 +421,8 @@ void VulkanBackend::create_graphics_pipeline() {
   vert_create_info.codeSize = vert_binary.size;
   vert_create_info.pCode = (u32 *)vert_binary.data;
 
-  parse_binary((u32 *)vert_binary.data, vert_binary.size);
+  parse_binary((u32 *)vert_binary.data, vert_binary.size, creation);
+  parse_binary((u32 *)frag_binary.data, frag_binary.size, creation);
 
   VkShaderModule vert_shader_module;
   VK_CHECK(vkCreateShaderModule(vk_device, &vert_create_info,
@@ -449,10 +466,14 @@ void VulkanBackend::create_graphics_pipeline() {
   // Vertex Input State
   VkPipelineVertexInputStateCreateInfo vertex_input_state{
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-  vertex_input_state.vertexBindingDescriptionCount = 0;
-  vertex_input_state.pVertexBindingDescriptions = nullptr; // Optional
-  vertex_input_state.vertexAttributeDescriptionCount = 0;
-  vertex_input_state.pVertexAttributeDescriptions = nullptr; // Optional
+  vertex_input_state.vertexBindingDescriptionCount =
+      creation.binding_descriptions.size;
+  vertex_input_state.pVertexBindingDescriptions =
+      creation.binding_descriptions.data;
+  vertex_input_state.vertexAttributeDescriptionCount =
+      creation.attribute_descriptions.size;
+  vertex_input_state.pVertexAttributeDescriptions =
+      creation.attribute_descriptions.data;
 
   // Input Assembly
   VkPipelineInputAssemblyStateCreateInfo input_assembly{
@@ -679,7 +700,11 @@ void VulkanBackend::record_command_buffer(VkCommandBuffer vk_command_buffer,
   scissor.extent = swapchain.vk_extents;
   vkCmdSetScissor(vk_command_buffer, 0, 1, &scissor);
 
-  vkCmdDraw(vk_command_buffer, 3, 1, 0, 0);
+  VkBuffer vertex_buffers[] = {vertex_buffer.vk_handle};
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(vk_command_buffer, 0, 1, vertex_buffers, offsets);
+
+  vkCmdDraw(vk_command_buffer, vertices.size, 1, 0, 0);
 
   vkCmdEndRendering(vk_command_buffer);
 
@@ -741,6 +766,39 @@ void VulkanBackend::create_sync_objects() {
     VK_CHECK(vkCreateFence(vk_device, &fence_info, vk_allocation_callbacks,
                            &in_flight_fences[i]));
   }
+}
+
+void VulkanBackend::create_buffers() {
+  VkBufferCreateInfo create_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  create_info.size = sizeof(vertices[0]) * vertices.size;
+  create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  VK_CHECK(vkCreateBuffer(vk_device, &create_info, vk_allocation_callbacks,
+                          &vertex_buffer.vk_handle));
+
+  VkMemoryRequirements mem_requirements;
+  vkGetBufferMemoryRequirements(vk_device, vertex_buffer.vk_handle,
+                                &mem_requirements);
+
+  VkMemoryAllocateInfo alloc_info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+  alloc_info.allocationSize = mem_requirements.size;
+  alloc_info.memoryTypeIndex =
+      find_memory_type(mem_requirements.memoryTypeBits,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                       vk_physical_device);
+  VK_CHECK(vkAllocateMemory(vk_device, &alloc_info, vk_allocation_callbacks,
+                            &vertex_buffer.vk_device_memory));
+
+  vkBindBufferMemory(vk_device, vertex_buffer.vk_handle,
+                     vertex_buffer.vk_device_memory, 0);
+
+  void *data;
+  vkMapMemory(vk_device, vertex_buffer.vk_device_memory, 0, create_info.size, 0,
+              &data);
+  memcpy(data, vertices.data, (size_t)create_info.size);
+  vkUnmapMemory(vk_device, vertex_buffer.vk_device_memory);
 }
 
 void VulkanBackend::draw_frame() {
@@ -1008,6 +1066,21 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
   swapchain.image_count = image_count;
 
   stack_allocator->free_marker(stack_marker);
+}
+
+u32 find_memory_type(u32 type_filter, VkMemoryPropertyFlags properties,
+                     VkPhysicalDevice physical_device) {
+  VkPhysicalDeviceMemoryProperties mem_properties;
+  vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_properties);
+
+  for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
+    if (type_filter & (1 << i) && (mem_properties.memoryTypes[i].propertyFlags &
+                                   properties) == properties) {
+      return i;
+    }
+  }
+  HASSERT_MSG(false, "Failed to find suitable memory type!");
+  return 0;
 }
 
 #pragma endregion HelperFunctions
