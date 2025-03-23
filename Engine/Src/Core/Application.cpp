@@ -5,10 +5,7 @@
 #include "Game.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_keyboard.h>
-#include <SDL3/SDL_keycode.h>
-#include <SDL3/SDL_scancode.h>
+#include "SDL3/SDL_mouse.h"
 
 namespace Helix {
 
@@ -66,6 +63,8 @@ void Application::run() {
       game->render(delta_time);
 
       RenderPacket packet{(f32)delta_time};
+      packet.camera = &game->camera;
+      packet.camera->update(delta_time);
       RendererFrontEnd::instance()->draw_frame(&packet);
 
       f64 frame_end_time = platform->get_absolute_time();
@@ -77,7 +76,7 @@ void Application::run() {
         u64 remaining_ms = (remaining_seconds * 1000);
 
         // If there is time left, give it back to the OS.
-        bool limit_frames = false;
+        bool limit_frames = true;
         if (remaining_ms > 0 && limit_frames) {
           platform->sleep(remaining_ms - 1);
         }
@@ -136,6 +135,8 @@ bool application_on_key(u16 event_code, void *sender, void *listener,
     u16 key_code = context.data.u16[0];
     if (key_code == SDL_SCANCODE_B) {
       HWARN("Explicit B was released");
+      // SDL_SetWindowRelativeMouseMode((SDL_Window *)platform->platform_handle,
+      //                                false);
     } else {
       char k = (char)SDL_GetKeyFromScancode((SDL_Scancode)key_code,
                                             SDL_KMOD_NONE, false);

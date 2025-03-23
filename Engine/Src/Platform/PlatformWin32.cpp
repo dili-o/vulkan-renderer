@@ -70,8 +70,8 @@ void Platform::handle_os_messages() {
       InputService::instance()->process_key(key, pressed);
     } break;
     case SDL_EVENT_MOUSE_MOTION: {
-      i32 x_pos = e.motion.x;
-      i32 y_pos = e.motion.y;
+      i32 x_pos = e.motion.xrel;
+      i32 y_pos = e.motion.yrel;
       InputService::instance()->process_mouse_move(x_pos, y_pos);
     } break;
     case SDL_EVENT_MOUSE_WHEEL: {

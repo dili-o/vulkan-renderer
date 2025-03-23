@@ -89,8 +89,8 @@ void InputService::process_mouse_move(i16 x, i16 y) {
 
     // Fire the event.
     EventContext context;
-    context.data.u16[0] = x;
-    context.data.u16[1] = y;
+    context.data.i16[0] = x;
+    context.data.i16[1] = y;
     EventService::instance()->fire_event(SDL_EVENT_MOUSE_MOTION, 0, context);
   }
 }

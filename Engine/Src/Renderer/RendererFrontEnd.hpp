@@ -18,9 +18,9 @@ struct RendererFrontEnd : public Service {
 
   bool draw_frame(RenderPacket *packet);
 
-  bool begin_frame(f32 delta_time);
+  bool begin_frame(RenderPacket *packet);
 
-  bool end_frame(f32 delta_time);
+  bool end_frame(RenderPacket *packet);
 
   RendererBackend *backend{nullptr};
 

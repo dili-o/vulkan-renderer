@@ -51,9 +51,9 @@ void RendererFrontEnd::on_resize(u16 width, u16 height) {
 
 bool RendererFrontEnd::draw_frame(RenderPacket *packet) {
 
-  if (begin_frame(packet->delta_time)) {
+  if (begin_frame(packet)) {
 
-    bool result = end_frame(packet->delta_time);
+    bool result = end_frame(packet);
     if (!result) {
       HCRITICAL("End frame failed!");
       return false;
@@ -63,11 +63,11 @@ bool RendererFrontEnd::draw_frame(RenderPacket *packet) {
   return true;
 }
 
-bool RendererFrontEnd::begin_frame(f32 delta_time) {
-  return backend->begin_frame(delta_time);
+bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
+  return backend->begin_frame(packet);
 }
 
-bool RendererFrontEnd::end_frame(f32 delta_time) {
-  return backend->end_frame(delta_time);
+bool RendererFrontEnd::end_frame(RenderPacket *packet) {
+  return backend->end_frame(packet);
 }
 } // namespace Helix

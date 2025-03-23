@@ -13,8 +13,12 @@ namespace Helix {
 
 struct QueueFamilyIndices {
   u32 graphics_family_index{UINT32_MAX};
+  u32 transfer_family_index{UINT32_MAX};
 
-  bool is_complete() { return graphics_family_index != UINT32_MAX; }
+  bool is_complete() {
+    return graphics_family_index != UINT32_MAX &&
+           transfer_family_index != UINT32_MAX;
+  }
 };
 
 struct VulkanSwapchain {
@@ -30,6 +34,7 @@ struct VulkanSwapchain {
 struct VulkanBuffer {
   VkBuffer vk_handle{VK_NULL_HANDLE};
   VkDeviceMemory vk_device_memory{VK_NULL_HANDLE};
+  void *mapped_data{nullptr};
 };
 
 struct PipelineCreation {
