@@ -9,8 +9,8 @@ namespace Helix {
 static const u32 k_invalid_index = 0xffffffff;
 
 struct ResourceHandle {
-  const u32 index{k_invalid_index};
-  const u32 generation{0};
+  u32 index{k_invalid_index};
+  u32 generation{0};
 };
 
 template <typename T> struct ResourcePool {

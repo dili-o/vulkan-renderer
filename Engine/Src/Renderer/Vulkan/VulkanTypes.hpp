@@ -4,8 +4,8 @@
 #include "Core/Defines.hpp"
 
 #include <cstdint>
+#include <vk_mem_alloc.h>
 #include <volk.h>
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 
@@ -33,7 +33,7 @@ struct VulkanSwapchain {
 
 struct VulkanBuffer {
   VkBuffer vk_handle{VK_NULL_HANDLE};
-  VkDeviceMemory vk_device_memory{VK_NULL_HANDLE};
+  VmaAllocation vma_allocation{VK_NULL_HANDLE};
   void *mapped_data{nullptr};
 };
 

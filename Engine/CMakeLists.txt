@@ -17,6 +17,7 @@ file(GLOB_RECURSE SOURCE_LIST "Src/*.cpp" "Src/*.hpp")
 add_library(${PROJECT_NAME} STATIC
     ${SOURCE_LIST}
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tlsf/tlsf.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tiny_obj_loader.h"
 )
 
 if(WIN32)
@@ -59,6 +60,12 @@ set(SPIRV_REFLECT_STATIC_LIB ON CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/SPIRV-Reflect)
 target_link_libraries(${PROJECT_NAME} PRIVATE spirv-reflect-static)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/SPIRV-Reflect)
+
+add_definitions(-DVMA_STATIC_VULKAN_FUNCTIONS=0 -DVMA_DYNAMIC_VULKAN_FUNCTIONS=0)
+add_subdirectory(Vendor/VMA)
+target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
+
+target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/")
 
 # Set output directory to Bin/Engine
 set_target_properties(${PROJECT_NAME} PROPERTIES

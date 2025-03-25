@@ -21,21 +21,23 @@ struct RendererConfig {
   cstring application_name{nullptr};
   Platform *platform{nullptr};
   RendererBackendType backend_type{RENDERER_BACKEND_TYPE_VULKAN};
-};
-
-struct BufferResource {
-  ResourceHandle handle;
-  ResourceHandle internal_handle;
+  u32 max_frames_in_flight;
 };
 
 struct RenderPacket {
   f32 delta_time;
+  u32 current_frame;
   Camera *camera;
+  ResourceHandle scene_data_buffer;
 };
 
 struct Vertex {
-  glm::vec2 pos;
-  glm::vec3 color;
+  glm::vec3 pos;
+  glm::vec2 tex_coord;
+
+  bool operator==(const Vertex &other) const {
+    return pos == other.pos && tex_coord == other.tex_coord;
+  }
 };
 
 struct UniformBufferObject {

@@ -58,6 +58,8 @@ void Application::run() {
       f64 delta_time = current_time - last_time;
       f64 frame_start_time = platform->get_absolute_time();
 
+      InputService::instance()->update(delta_time);
+
       game->update(delta_time);
 
       game->render(delta_time);
@@ -84,8 +86,6 @@ void Application::run() {
         frame_count++;
       }
       // HDEBUG("Delta: {}", delta_time);
-
-      InputService::instance()->update(delta_time);
 
       last_time = current_time;
     }
@@ -135,8 +135,6 @@ bool application_on_key(u16 event_code, void *sender, void *listener,
     u16 key_code = context.data.u16[0];
     if (key_code == SDL_SCANCODE_B) {
       HWARN("Explicit B was released");
-      // SDL_SetWindowRelativeMouseMode((SDL_Window *)platform->platform_handle,
-      //                                false);
     } else {
       char k = (char)SDL_GetKeyFromScancode((SDL_Scancode)key_code,
                                             SDL_KMOD_NONE, false);

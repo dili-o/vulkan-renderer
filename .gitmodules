@@ -16,3 +16,6 @@
 [submodule "Engine/Vendor/SPIRV-Reflect"]
 	path = Engine/Vendor/SPIRV-Reflect
 	url = https://github.com/KhronosGroup/SPIRV-Reflect.git
+[submodule "Engine/Vendor/VMA"]
+	path = Engine/Vendor/VMA
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
