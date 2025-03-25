@@ -33,9 +33,12 @@ find_package(Vulkan REQUIRED)
 
 if(Vulkan_FOUND)
   target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::Vulkan)
+  set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 else()
     message(FATAL_ERROR "Vulkan SDK not found. Make sure VULKAN_SDK is installed and accessible.")
 endif()
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_SDK_PATH="${VULKAN_SDK_PATH}")
 
 #Vendor
 add_subdirectory(Vendor/spdlog)

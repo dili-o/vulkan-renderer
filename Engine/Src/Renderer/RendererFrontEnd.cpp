@@ -2,6 +2,7 @@
 #include "Containers/ResourcePool.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/Vulkan/VulkanBackend.hpp" // TODO: Remove
 #include "RendererBackend.hpp"
@@ -104,14 +105,14 @@ bool RendererFrontEnd::load_model(cstring path) {
   return true;
 }
 
-ResourceHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
-  ResourceHandle handle = buffers.obtain_new();
+BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
+  BufferHandle handle = buffers.obtain_new();
   if (handle.index == k_invalid_index) {
     HERROR("Failed to obtain new buffer resource");
     return handle;
   }
 
-  ResourceHandle internal_handle = backend->create_buffer(creation);
+  BufferHandle internal_handle = backend->create_buffer(creation);
   if (internal_handle.index == k_invalid_index) {
     buffers.release(handle);
     handle.index = k_invalid_index;
@@ -125,7 +126,17 @@ ResourceHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
   return handle;
 }
 
-void RendererFrontEnd::destroy_buffer(ResourceHandle handle) {
+PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
+  PipelineHandle handle = pipelines.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obntain new PipelineResource");
+    return handle;
+  }
+
+  PipelineHandle internal_handle = backend->create_pipeline(creation);
+}
+
+void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
   if (handle.index == k_invalid_index) {
     HWARN("Attempting to destroy an invalid buffer");
     return;
@@ -135,4 +146,7 @@ void RendererFrontEnd::destroy_buffer(ResourceHandle handle) {
 
   buffers.release(handle);
 }
+
+void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {}
+
 } // namespace Helix

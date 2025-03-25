@@ -8,7 +8,6 @@
 #include "Platform/Platform.hpp"
 #include "Platform/Process.hpp"
 #include "Renderer/Camera.hpp"
-#include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
@@ -518,7 +517,7 @@ void VulkanBackend::destroy_swapchain() {
   swapchain.vk_handle = VK_NULL_HANDLE;
 }
 
-void VulkanBackend::create_pipeline(PipelineCreation &creation) {
+void VulkanBackend::create_pipeline_old(PipelineCreation &creation) {
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
   // TODO: This is hardcoded
@@ -993,8 +992,8 @@ void VulkanBackend::vk_create_buffer(VkDeviceSize size,
                            &buffer.vk_handle, &buffer.vma_allocation, nullptr));
 }
 
-ResourceHandle VulkanBackend::create_buffer(BufferCreation &creation) {
-  ResourceHandle handle = buffers.obtain_new();
+BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
+  BufferHandle handle = buffers.obtain_new();
   if (handle.index == k_invalid_index) {
     HERROR("Failed to obtain a Vulkan Buffer Resource!");
     return handle;
@@ -1055,7 +1054,19 @@ ResourceHandle VulkanBackend::create_buffer(BufferCreation &creation) {
   return handle;
 }
 
-void VulkanBackend::destroy_buffer(ResourceHandle handle) {
+PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
+  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
+  size_t stack_marker = stack_allocator->get_marker();
+  // Parse shaders
+  cstring glsl_compiler_path = VULKAN_SDK_PATH;
+
+  creation.shader_create_infos;
+  creation.shader_count = 0;
+  creation.pipeline_type{};
+  creation.name;
+}
+
+void VulkanBackend::destroy_buffer(BufferHandle handle) {
   if (handle.index == k_invalid_index) {
     HWARN("Attempting to free an invalid VulkanBuffer");
     return;

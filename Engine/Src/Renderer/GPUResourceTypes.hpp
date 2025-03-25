@@ -1,0 +1,17 @@
+#pragma once
+
+#include "Containers/ResourcePool.hpp"
+
+namespace Helix {
+
+using BufferHandle = ResourceHandle;
+using PipelineHandle = ResourceHandle;
+
+namespace ShaderStage {
+enum Enum { Vertex, Fragment, Compute };
+}
+
+namespace PipelineType {
+enum Enum { Graphics, Compute };
+}
+} // namespace Helix

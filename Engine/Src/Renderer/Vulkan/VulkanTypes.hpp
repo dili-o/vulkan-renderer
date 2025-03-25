@@ -37,10 +37,10 @@ struct VulkanBuffer {
   void *mapped_data{nullptr};
 };
 
-struct PipelineCreation {
-  Array<VkVertexInputBindingDescription> binding_descriptions{};
-  Array<VkVertexInputAttributeDescription> attribute_descriptions{};
-};
+// struct PipelineCreation {
+//   Array<VkVertexInputBindingDescription> binding_descriptions{};
+//   Array<VkVertexInputAttributeDescription> attribute_descriptions{};
+// };
 
 struct VulkanPipeline {
   VkPipeline vk_handle{VK_NULL_HANDLE};

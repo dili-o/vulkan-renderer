@@ -1,10 +1,13 @@
 #pragma once
+#include "GPUResourceTypes.hpp"
+#include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "RendererTypes.hpp"
 
 namespace Helix {
 
 struct Platform;
 struct BufferCreation;
+struct PipelineCreation;
 
 struct RendererBackend {
   virtual bool init(void *config) = 0;
@@ -13,8 +16,11 @@ struct RendererBackend {
   virtual bool begin_frame(RenderPacket *packet) = 0;
   virtual bool end_frame(RenderPacket *packet) = 0;
 
-  virtual ResourceHandle create_buffer(BufferCreation &creation) = 0;
+  virtual BufferHandle create_buffer(BufferCreation &creation) = 0;
+  virtual PipelineHandle create_pipeline(PipelineCreation &creation) = 0;
+
   virtual void destroy_buffer(ResourceHandle handle) = 0;
+  virtual void destroy_pipeline(ResourceHandle handle) = 0;
 
   Platform *platform{nullptr};
   u64 frame_number{0};

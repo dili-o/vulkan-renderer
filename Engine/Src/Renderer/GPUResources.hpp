@@ -1,5 +1,5 @@
 #pragma once
-#include "Containers/ResourcePool.hpp"
+#include "GPUResourceTypes.hpp"
 
 namespace Helix {
 
@@ -39,15 +39,34 @@ struct BufferCreation {
 
   BufferCreation &reset();
 };
+
+struct ShaderCreateInfo {
+  cstring filename;
+  ShaderStage::Enum stage;
+};
+
+struct PipelineCreation {
+  ShaderCreateInfo *shader_create_infos;
+  u32 shader_count = 0;
+  PipelineType::Enum pipeline_type{};
+  cstring name;
+
+  PipelineCreation &reset();
+};
 #pragma endregion Creation
 
 struct BufferResource {
-  ResourceHandle handle;
-  ResourceHandle internal_handle;
+  BufferHandle handle;
+  BufferHandle internal_handle;
 };
 
 struct BufferInfo {
   u32 size = 0;
   cstring name = nullptr;
+};
+
+struct PipelineResource {
+  PipelineHandle handle;
+  PipelineHandle internal_handle;
 };
 } // namespace Helix

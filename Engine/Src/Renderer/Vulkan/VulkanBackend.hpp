@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Containers/ResourcePool.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "VulkanTypes.hpp"
@@ -17,7 +18,7 @@ struct VulkanBackend : public RendererBackend {
   void destroy_swapchain();
   void resize_swapchain();
 
-  void create_pipeline(PipelineCreation &creation);
+  void create_pipeline_old(PipelineCreation &creation);
   void create_command_pool(QueueFamilyIndices &indices);
 
   void create_command_buffers(u32 max_frames_in_flight);
@@ -30,8 +31,10 @@ struct VulkanBackend : public RendererBackend {
   void create_buffers();
   void vk_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                         VkMemoryPropertyFlags properties, VulkanBuffer &buffer);
-  virtual ResourceHandle create_buffer(BufferCreation &creation) override;
-  virtual void destroy_buffer(ResourceHandle handle) override;
+  virtual BufferHandle create_buffer(BufferCreation &creation) override;
+  virtual PipelineHandle create_pipeline(PipelineCreation &creation) override;
+
+  virtual void destroy_buffer(BufferHandle handle) override;
 
   void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
   void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);

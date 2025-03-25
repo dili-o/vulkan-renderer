@@ -3,6 +3,7 @@
 #include "Containers/ResourcePool.hpp"
 #include "Core/Service.hpp"
 #include "GPUResources.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
 #include "RendererTypes.hpp"
 
 namespace Helix {
@@ -27,15 +28,19 @@ struct RendererFrontEnd : public Service {
 
   bool load_model(cstring path);
 
-  ResourceHandle create_buffer(BufferCreation &creation);
-  void destroy_buffer(ResourceHandle handle);
+  BufferHandle create_buffer(BufferCreation &creation);
+  void destroy_buffer(BufferHandle handle);
+
+  PipelineHandle create_pipeline(PipelineCreation &creation);
+  void destroy_pipeline(PipelineHandle handle);
 
   u32 current_frame;
   RendererBackend *backend{nullptr};
 
   ResourcePool<BufferResource> buffers{};
-  ResourceHandle vertex_buffer{};
-  ResourceHandle index_buffer{};
-  ResourceHandle uniform_buffers[max_frames_in_flight];
+  ResourcePool<PipelineResource> pipelines{};
+  BufferHandle vertex_buffer{};
+  BufferHandle index_buffer{};
+  BufferHandle uniform_buffers[max_frames_in_flight];
 };
 } // namespace Helix
