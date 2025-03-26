@@ -1,6 +1,5 @@
 #pragma once
-#include "GPUResourceTypes.hpp"
-#include "Renderer/Vulkan/VulkanTypes.hpp"
+#include "GPUResources.hpp"
 #include "RendererTypes.hpp"
 
 namespace Helix {
@@ -21,6 +20,9 @@ struct RendererBackend {
 
   virtual void destroy_buffer(ResourceHandle handle) = 0;
   virtual void destroy_pipeline(ResourceHandle handle) = 0;
+
+  virtual bool update_shader_uniform_set(ShaderUniformSet &set,
+                                         PipelineHandle pipeline) = 0;
 
   Platform *platform{nullptr};
   u64 frame_number{0};

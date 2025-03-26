@@ -69,4 +69,19 @@ struct PipelineResource {
   PipelineHandle handle;
   PipelineHandle internal_handle;
 };
+
+// TODO: Maybe add a union that lets you specify other details about the rosouce
+// we want to update
+struct ShaderUniform {
+  ResourceHandle internal_resource_handle;
+  ResourceType::Enum resource_type;
+  u32 binding;
+};
+
+struct ShaderUniformSet {
+  ShaderUniform *uniforms = nullptr;
+  u32 uniform_count = 0;
+  u32 set_index;
+};
+
 } // namespace Helix

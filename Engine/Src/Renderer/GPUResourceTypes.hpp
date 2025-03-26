@@ -14,4 +14,8 @@ enum Enum { Vertex, Fragment, Compute };
 namespace PipelineType {
 enum Enum { Graphics, Compute };
 }
+
+namespace ResourceType {
+enum Enum { Buffer, Texture };
+}
 } // namespace Helix

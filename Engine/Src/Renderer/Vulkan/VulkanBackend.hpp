@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/RendererBackend.hpp"
@@ -18,7 +19,6 @@ struct VulkanBackend : public RendererBackend {
   void destroy_swapchain();
   void resize_swapchain();
 
-  void create_pipeline_old(PipelineCreation &creation);
   void create_command_pool(QueueFamilyIndices &indices);
 
   void create_command_buffers(u32 max_frames_in_flight);
@@ -27,6 +27,7 @@ struct VulkanBackend : public RendererBackend {
 
   void create_sync_objects(u32 max_frames_in_flight);
 
+  void destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle);
   // TODO: Make a generic create_buffers
   void create_buffers();
   void vk_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
@@ -35,13 +36,18 @@ struct VulkanBackend : public RendererBackend {
   virtual PipelineHandle create_pipeline(PipelineCreation &creation) override;
 
   virtual void destroy_buffer(BufferHandle handle) override;
+  virtual void destroy_pipeline(PipelineHandle handle) override;
+
+  // CreateDescriptorSet
+  virtual bool update_shader_uniform_set(ShaderUniformSet &set,
+                                         PipelineHandle pipeline) override;
 
   void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
   void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);
 
-  void create_descriptor_set_layout();
+  // void create_descriptor_set_layout();
   void create_descriptor_pool(u32 max_frames_in_flight);
-  void create_descriptor_sets(u32 max_frames_in_flight);
+  // void create_descriptor_sets(u32 max_frames_in_flight);
 
   void load_model();
 
@@ -64,9 +70,6 @@ struct VulkanBackend : public RendererBackend {
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};
 
-  VkPipelineLayout vk_pipeline_layout{VK_NULL_HANDLE};
-  VkPipeline vk_pipeline{VK_NULL_HANDLE};
-
   VkCommandPool vk_command_pool{VK_NULL_HANDLE};
   VkCommandPool vk_transfer_pool{VK_NULL_HANDLE};
   Array<VkCommandBuffer> vk_command_buffers;
@@ -81,14 +84,17 @@ struct VulkanBackend : public RendererBackend {
   VulkanBuffer vertex_buffer{};
   VulkanBuffer index_buffer{};
 
-  VkDescriptorSetLayout vk_descriptor_set_layout{VK_NULL_HANDLE};
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
-  Array<VkDescriptorSet> vk_descriptor_sets{};
+  // VkDescriptorSetLayout vk_descriptor_set_layout{VK_NULL_HANDLE};
+  // Array<VkDescriptorSet> vk_descriptor_sets{};
 
   Array<Vertex> vertices{};
   Array<u32> indexes{};
 
   ResourcePool<VulkanBuffer> buffers{};
+  ResourcePool<VulkanPipeline> pipelines{};
+  ResourcePool<VulkanDescriptorSetLayout> descriptor_set_layouts{};
+  ResourcePool<VulkanDescriptorSet> descriptor_sets{};
 
   bool resize_frame = false;
 };

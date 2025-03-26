@@ -30,5 +30,7 @@ struct FileService : public Service {
   void delete_file(cstring path);
   FileReadResult read_file_binary(cstring filename, Allocator *allocator);
   FileReadResult read_file_text(cstring filename, Allocator *allocator);
+
+  void expand_enviroment_variable(cstring variable, char *dst_string, u32 size);
 };
 } // namespace Helix

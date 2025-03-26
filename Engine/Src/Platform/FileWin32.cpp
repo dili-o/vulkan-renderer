@@ -72,5 +72,10 @@ FileReadResult FileService::read_file_binary(cstring filename,
 
   return result;
 }
+
+void FileService::expand_enviroment_variable(cstring variable, char *dst_string,
+                                             u32 size) {
+  ExpandEnvironmentStringsA(variable, dst_string, size);
+}
 } // namespace Helix
 #endif

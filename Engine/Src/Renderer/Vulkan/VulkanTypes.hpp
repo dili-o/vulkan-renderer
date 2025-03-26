@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Containers/Array.hpp"
+#include "Containers/ResourcePool.hpp"
 #include "Core/Defines.hpp"
 
 #include <cstdint>
@@ -10,6 +11,9 @@
 namespace Helix {
 
 #define MAX_SWAPCHAIN_IMAGES 3
+
+using DescriptorSetLayoutHandle = ResourceHandle;
+using DescriptorSetHandle = ResourceHandle;
 
 struct QueueFamilyIndices {
   u32 graphics_family_index{UINT32_MAX};
@@ -37,14 +41,25 @@ struct VulkanBuffer {
   void *mapped_data{nullptr};
 };
 
-// struct PipelineCreation {
-//   Array<VkVertexInputBindingDescription> binding_descriptions{};
-//   Array<VkVertexInputAttributeDescription> attribute_descriptions{};
-// };
+struct VulkanDescriptorSetLayout {
+  VkDescriptorSetLayout vk_handle{VK_NULL_HANDLE};
+  VkDescriptorSetLayoutBinding *vk_bindings = nullptr;
+  u32 set_index = 0;
+  u32 num_bindings = 0;
+
+  Array<DescriptorSetHandle> allocated_sets{};
+};
+
+struct VulkanDescriptorSet {
+  VkDescriptorSet vk_handle{VK_NULL_HANDLE};
+  DescriptorSetLayoutHandle set_layout;
+};
 
 struct VulkanPipeline {
   VkPipeline vk_handle{VK_NULL_HANDLE};
   VkPipelineLayout vk_layout{VK_NULL_HANDLE};
+  DescriptorSetLayoutHandle *set_layouts = nullptr;
+  u32 set_layout_count = 0;
 };
 
 } // namespace Helix

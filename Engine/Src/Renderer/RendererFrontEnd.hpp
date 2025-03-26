@@ -34,6 +34,9 @@ struct RendererFrontEnd : public Service {
   PipelineHandle create_pipeline(PipelineCreation &creation);
   void destroy_pipeline(PipelineHandle handle);
 
+  bool update_shader_uniform_set(ShaderUniformSet &set,
+                                 PipelineHandle pipeline);
+
   u32 current_frame;
   RendererBackend *backend{nullptr};
 
@@ -42,5 +45,6 @@ struct RendererFrontEnd : public Service {
   BufferHandle vertex_buffer{};
   BufferHandle index_buffer{};
   BufferHandle uniform_buffers[max_frames_in_flight];
+  PipelineHandle pipeline{};
 };
 } // namespace Helix

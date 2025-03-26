@@ -4,10 +4,13 @@
 #include "Core/Defines.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Core/String.hpp"
 #include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
 #include "Platform/Process.hpp"
 #include "Renderer/Camera.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
+#include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
@@ -72,6 +75,10 @@ constexpr const T &clamp(const T &v, const T &lo, const T &hi) {
   HASSERT(!(hi < lo));
   return (v < lo) ? lo : (hi < v) ? hi : v;
 }
+
+cstring to_compiler_stage(ShaderStage::Enum stage);
+
+VkShaderStageFlagBits to_vk_shader_stage(ShaderStage::Enum stage);
 
 #pragma endregion HelperFunctions
 
@@ -339,7 +346,6 @@ bool VulkanBackend::init(void *_config) {
   query_swapchain_support(vk_physical_device, vk_surface, swapchain);
   create_swapchain();
 
-  PipelineCreation creation;
   create_command_pool(indices);
 
   vertices.init(allocator, 3);
@@ -352,14 +358,14 @@ bool VulkanBackend::init(void *_config) {
   load_model();
 
   buffers.init(allocator, 10);
+  pipelines.init(allocator, 10);
+  descriptor_set_layouts.init(allocator, 10);
+  descriptor_sets.init(allocator, 10);
 
   create_buffers();
   create_command_buffers(config->max_frames_in_flight);
   create_sync_objects(config->max_frames_in_flight);
-  create_descriptor_set_layout();
   create_descriptor_pool(config->max_frames_in_flight);
-  // create_descriptor_sets(config->max_frames_in_flight);
-  create_pipeline(creation);
 
   frame_number = 0;
   HINFO("Vulkan Backend Initialized");
@@ -376,15 +382,7 @@ bool VulkanBackend::shutdown() {
     vkDestroySemaphore(vk_device, render_finished_semaphores[i],
                        vk_allocation_callbacks);
     vkDestroyFence(vk_device, in_flight_fences[i], vk_allocation_callbacks);
-
-    // TODO: DEstroy this from the renderer;
-    // vmaUnmapMemory(vma_allocator, uniform_buffers[i].vma_allocation);
-    // vmaDestroyBuffer(vma_allocator, uniform_buffers[i].vk_handle,
-    //                  uniform_buffers[i].vma_allocation);
   }
-  // uniform_buffers.shutdown();
-
-  vk_descriptor_sets.shutdown();
 
   image_available_semaphores.shutdown();
   render_finished_semaphores.shutdown();
@@ -392,16 +390,14 @@ bool VulkanBackend::shutdown() {
 
   vkDestroyDescriptorPool(vk_device, vk_descriptor_pool,
                           vk_allocation_callbacks);
-  vkDestroyDescriptorSetLayout(vk_device, vk_descriptor_set_layout,
-                               vk_allocation_callbacks);
 
   vkDestroyCommandPool(vk_device, vk_command_pool, vk_allocation_callbacks);
   vkDestroyCommandPool(vk_device, vk_transfer_pool, vk_allocation_callbacks);
   vk_command_buffers.shutdown();
 
-  vkDestroyPipeline(vk_device, vk_pipeline, vk_allocation_callbacks);
-  vkDestroyPipelineLayout(vk_device, vk_pipeline_layout,
-                          vk_allocation_callbacks);
+  // vkDestroyPipeline(vk_device, vk_pipeline, vk_allocation_callbacks);
+  // vkDestroyPipelineLayout(vk_device, vk_pipeline_layout,
+  //                         vk_allocation_callbacks);
   destroy_swapchain();
 
   vmaDestroyBuffer(vma_allocator, vertex_buffer.vk_handle,
@@ -412,6 +408,9 @@ bool VulkanBackend::shutdown() {
   vertices.shutdown();
   indexes.shutdown();
 
+  pipelines.shutdown();
+  descriptor_set_layouts.shutdown();
+  descriptor_sets.shutdown();
   buffers.shutdown();
   vmaDestroyAllocator(vma_allocator);
 
@@ -517,225 +516,6 @@ void VulkanBackend::destroy_swapchain() {
   swapchain.vk_handle = VK_NULL_HANDLE;
 }
 
-void VulkanBackend::create_pipeline_old(PipelineCreation &creation) {
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
-  // TODO: This is hardcoded
-  cstring glsl_compiler_path = "C:\\VulkanSDK\\1.3.275.0\\Bin\\glslc.exe ";
-
-  Directory d;
-  FileService *file_service = FileService::instance();
-  file_service->current_directory(&d);
-
-  // TODO: This should be defined in the CMakelists
-  cstring shader_dir = "D:\\vulkan-renderer-v1\\Engine\\Assets\\Shaders\\";
-  file_service->change_directory(shader_dir);
-
-  cstring vertex_args = " -fshader-stage=vert shader.vert.glsl -o vert.spv "
-                        "--target-env=vulkan1.3 -g";
-  cstring frag_args = " -fshader-stage=frag shader.frag.glsl -o frag.spv "
-                      "--target-env=vulkan1.2 -g";
-
-  // TODO: try using glslValidator.exe and also the libglslc library
-  HASSERT(process_execute(".", glsl_compiler_path, vertex_args));
-  HDEBUG("{}", process_get_output());
-  HASSERT(process_execute(".", glsl_compiler_path, frag_args));
-  HDEBUG("{}", process_get_output());
-
-  FileReadResult vert_binary =
-      file_service->read_file_binary("vert.spv", stack_allocator);
-
-  FileReadResult frag_binary =
-      file_service->read_file_binary("frag.spv", stack_allocator);
-
-  file_service->delete_file("vert.spv");
-  file_service->delete_file("frag.spv");
-
-  file_service->change_directory(d.path);
-
-  VkShaderModuleCreateInfo vert_create_info{};
-  vert_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  vert_create_info.codeSize = vert_binary.size;
-  vert_create_info.pCode = (u32 *)vert_binary.data;
-
-  parse_binary((u32 *)vert_binary.data, vert_binary.size, creation);
-  parse_binary((u32 *)frag_binary.data, frag_binary.size, creation);
-
-  VkShaderModule vert_shader_module;
-  VK_CHECK(vkCreateShaderModule(vk_device, &vert_create_info,
-                                vk_allocation_callbacks, &vert_shader_module));
-
-  VkShaderModuleCreateInfo frag_create_info{};
-  frag_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  frag_create_info.codeSize = frag_binary.size;
-  frag_create_info.pCode = (u32 *)frag_binary.data;
-
-  VkShaderModule frag_shader_module;
-  VK_CHECK(vkCreateShaderModule(vk_device, &frag_create_info,
-                                vk_allocation_callbacks, &frag_shader_module));
-
-  VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
-  frag_shader_stage_info.sType =
-      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-  frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-  frag_shader_stage_info.module = frag_shader_module;
-  frag_shader_stage_info.pName = "main";
-
-  VkPipelineShaderStageCreateInfo vert_shader_stage_info{};
-  vert_shader_stage_info.sType =
-      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-  vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-  vert_shader_stage_info.module = vert_shader_module;
-  vert_shader_stage_info.pName = "main";
-
-  VkPipelineShaderStageCreateInfo shader_stages[] = {vert_shader_stage_info,
-                                                     frag_shader_stage_info};
-
-  // Dynamic States
-  VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                     VK_DYNAMIC_STATE_SCISSOR};
-
-  VkPipelineDynamicStateCreateInfo dynamic_state{
-      VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-  dynamic_state.dynamicStateCount = ArraySize(dynamic_states);
-  dynamic_state.pDynamicStates = dynamic_states;
-
-  // Vertex Input State
-  VkPipelineVertexInputStateCreateInfo vertex_input_state{
-      VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-  vertex_input_state.vertexBindingDescriptionCount =
-      creation.binding_descriptions.size;
-  vertex_input_state.pVertexBindingDescriptions =
-      creation.binding_descriptions.data;
-  vertex_input_state.vertexAttributeDescriptionCount =
-      creation.attribute_descriptions.size;
-  vertex_input_state.pVertexAttributeDescriptions =
-      creation.attribute_descriptions.data;
-
-  // Input Assembly
-  VkPipelineInputAssemblyStateCreateInfo input_assembly{
-      VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-  input_assembly.primitiveRestartEnable = VK_FALSE;
-
-  // Viewport
-  VkViewport viewport{};
-  viewport.x = 0.0f;
-  viewport.y = 0.0f;
-  viewport.width = (f32)swapchain.vk_extents.width;
-  viewport.height = (f32)swapchain.vk_extents.height;
-  viewport.minDepth = 0.0f;
-  viewport.maxDepth = 1.0f;
-
-  // Scissor
-  VkRect2D scissor{};
-  scissor.offset = {0, 0};
-  scissor.extent = swapchain.vk_extents;
-
-  VkPipelineViewportStateCreateInfo viewport_state{
-      VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-  viewport_state.viewportCount = 1;
-  viewport_state.scissorCount = 1;
-  viewport_state.pScissors = &scissor;
-  viewport_state.pViewports = &viewport;
-
-  // Rasterizer State
-  VkPipelineRasterizationStateCreateInfo rasterizer{
-      VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-  rasterizer.depthClampEnable = VK_FALSE;
-  rasterizer.rasterizerDiscardEnable = VK_FALSE;
-  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-  rasterizer.lineWidth = 1.0f;
-  rasterizer.cullMode = VK_CULL_MODE_NONE; // VK_CULL_MODE_BACK_BIT;
-  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-  rasterizer.depthBiasEnable = VK_FALSE;
-  rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-  rasterizer.depthBiasClamp = 0.0f;          // Optional
-  rasterizer.depthBiasSlopeFactor = 0.0f;    // Optional
-
-  // Multisampling State
-  VkPipelineMultisampleStateCreateInfo multisampling{};
-  multisampling.sType =
-      VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-  multisampling.sampleShadingEnable = VK_FALSE;
-  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-  multisampling.minSampleShading = 1.0f;          // Optional
-  multisampling.pSampleMask = nullptr;            // Optional
-  multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-  multisampling.alphaToOneEnable = VK_FALSE;      // Optional
-
-  // Depth and Stencil State
-
-  // Color Blend State
-  VkPipelineColorBlendAttachmentState color_blend_attachment{};
-  color_blend_attachment.colorWriteMask =
-      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-  color_blend_attachment.blendEnable = VK_FALSE;
-  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-  color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
-  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-  color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;             // Optional
-
-  VkPipelineColorBlendStateCreateInfo color_blending{
-      VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-  color_blending.logicOpEnable = VK_FALSE;
-  color_blending.logicOp = VK_LOGIC_OP_COPY; // Optional
-  color_blending.attachmentCount = 1;
-  color_blending.pAttachments = &color_blend_attachment;
-  color_blending.blendConstants[0] = 0.0f; // Optional
-  color_blending.blendConstants[1] = 0.0f; // Optional
-  color_blending.blendConstants[2] = 0.0f; // Optional
-  color_blending.blendConstants[3] = 0.0f; // Optional
-
-  // Pipeline Layout
-  VkPipelineLayoutCreateInfo pipeline_layout_info{
-      VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  pipeline_layout_info.setLayoutCount = 1;
-  pipeline_layout_info.pSetLayouts = &vk_descriptor_set_layout;
-
-  VK_CHECK(vkCreatePipelineLayout(vk_device, &pipeline_layout_info,
-                                  vk_allocation_callbacks,
-                                  &vk_pipeline_layout));
-
-  // Dynamic Rendering
-  VkPipelineRenderingCreateInfoKHR pipeline_create{
-      VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
-  pipeline_create.pNext = VK_NULL_HANDLE;
-  pipeline_create.colorAttachmentCount = 1;
-  pipeline_create.pColorAttachmentFormats = &swapchain.vk_surface_format.format;
-  pipeline_create.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-  pipeline_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
-
-  // Graphics Pipeline
-  VkGraphicsPipelineCreateInfo pipeline_info{
-      VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-  pipeline_info.stageCount = 2;
-  pipeline_info.pStages = shader_stages;
-  pipeline_info.pVertexInputState = &vertex_input_state;
-  pipeline_info.pInputAssemblyState = &input_assembly;
-  pipeline_info.pViewportState = &viewport_state;
-  pipeline_info.pRasterizationState = &rasterizer;
-  pipeline_info.pMultisampleState = &multisampling;
-  pipeline_info.pDepthStencilState = nullptr; // Optional
-  pipeline_info.pColorBlendState = &color_blending;
-  pipeline_info.pDynamicState = &dynamic_state;
-  pipeline_info.layout = vk_pipeline_layout;
-  pipeline_info.renderPass = VK_NULL_HANDLE;
-  pipeline_info.pNext = &pipeline_create;
-
-  VK_CHECK(vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1,
-                                     &pipeline_info, vk_allocation_callbacks,
-                                     &vk_pipeline));
-
-  vkDestroyShaderModule(vk_device, vert_shader_module, vk_allocation_callbacks);
-  vkDestroyShaderModule(vk_device, frag_shader_module, vk_allocation_callbacks);
-
-  stack_allocator->free_marker(stack_marker);
-}
-
 void VulkanBackend::create_command_pool(QueueFamilyIndices &indices) {
   VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -823,8 +603,10 @@ void VulkanBackend::record_command_buffer(VkCommandBuffer vk_command_buffer,
 
   vkCmdBeginRendering(vk_command_buffer, &render_info);
 
+  // TODO:
+  VulkanPipeline *pipeline = pipelines.obtain({0, 0});
   vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    vk_pipeline);
+                    pipeline->vk_handle);
 
   VkViewport viewport{};
   viewport.x = 0.0f;
@@ -846,9 +628,15 @@ void VulkanBackend::record_command_buffer(VkCommandBuffer vk_command_buffer,
   vkCmdBindIndexBuffer(vk_command_buffer, index_buffer.vk_handle, 0,
                        VK_INDEX_TYPE_UINT32);
 
+  // TODO:
+  VulkanDescriptorSetLayout *dset_layout =
+      descriptor_set_layouts.obtain(pipeline->set_layouts[0]);
+  VulkanDescriptorSet *dset =
+      descriptor_sets.obtain(dset_layout->allocated_sets[current_frame]);
+
   vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          vk_pipeline_layout, 0, 1,
-                          &vk_descriptor_sets[current_frame], 0, nullptr);
+                          pipeline->vk_layout, 0, 1, &dset->vk_handle, 0,
+                          nullptr);
   vkCmdDrawIndexed(vk_command_buffer, indexes.size, 1, 0, 0, 0);
   vkCmdEndRendering(vk_command_buffer);
 
@@ -1055,15 +843,269 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
 }
 
 PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
+  PipelineHandle handle = pipelines.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain VulkanPipeline");
+    return handle;
+  }
+
+  VulkanPipeline *pipeline = pipelines.obtain(handle);
+  pipeline->vk_handle = VK_NULL_HANDLE;
+
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
-  // Parse shaders
-  cstring glsl_compiler_path = VULKAN_SDK_PATH;
+  FileService *file_service = FileService::instance();
 
-  creation.shader_create_infos;
-  creation.shader_count = 0;
-  creation.pipeline_type{};
-  creation.name;
+  // Parse shaders
+  StringBuffer temp_string_buffer{};
+  temp_string_buffer.init(stack_allocator, hkilo(1));
+
+  char *vulkan_sdk_path = temp_string_buffer.reserve(512);
+  file_service->expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path,
+                                           512);
+  cstring glsl_compiler_path =
+      temp_string_buffer.append_use_f("%s\\Bin\\glslc.exe", vulkan_sdk_path);
+#ifdef VULKAN_DEBUG_REPORT
+  cstring compiler_debug = "-g";
+#else
+  cstring compiler_debug = "";
+#endif
+
+  VkShaderModule *vk_shader_modules = (VkShaderModule *)halloca(
+      sizeof(VkShaderModule) * creation.shader_count, stack_allocator);
+  VkPipelineShaderStageCreateInfo *vk_shader_stages =
+      (VkPipelineShaderStageCreateInfo *)halloca(
+          sizeof(VkPipelineShaderStageCreateInfo) * creation.shader_count,
+          stack_allocator);
+
+  Directory dir;
+  file_service->current_directory(&dir);
+
+  file_service->change_directory(ASSETS_PATH "/Shaders/");
+  ParseResult parse_result{};
+  parse_result.set_layouts.init(stack_allocator, 4);
+  for (u32 i = 0; i < creation.shader_count; ++i) {
+    ShaderCreateInfo shader = creation.shader_create_infos[i];
+    cstring shader_args = temp_string_buffer.append_use_f(
+        " -fshader-stage=%s %s.glsl -o %s.spv --target-env=vulkan1.3 %s",
+        to_compiler_stage(shader.stage), shader.filename, shader.filename,
+        compiler_debug);
+    HASSERT(process_execute(".", glsl_compiler_path, shader_args));
+    HDEBUG("{}", process_get_output());
+
+    cstring binary_name =
+        temp_string_buffer.append_use_f("%s.spv", shader.filename);
+    FileReadResult shader_binary =
+        file_service->read_file_binary(binary_name, stack_allocator);
+    file_service->delete_file(binary_name);
+
+    VkShaderModuleCreateInfo shader_create_info{
+        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    shader_create_info.codeSize = shader_binary.size;
+    shader_create_info.pCode = (u32 *)shader_binary.data;
+
+    VK_CHECK(vkCreateShaderModule(vk_device, &shader_create_info,
+                                  vk_allocation_callbacks,
+                                  &vk_shader_modules[i]));
+
+    VkPipelineShaderStageCreateInfo &pipeline_stage_info = vk_shader_stages[i];
+    pipeline_stage_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipeline_stage_info.stage = to_vk_shader_stage(shader.stage);
+    pipeline_stage_info.module = vk_shader_modules[i];
+    pipeline_stage_info.pName = "main";
+    pipeline_stage_info.pSpecializationInfo = nullptr;
+    pipeline_stage_info.flags = 0;
+    pipeline_stage_info.pNext = nullptr;
+
+    parse_binary((u32 *)shader_binary.data, shader_binary.size, parse_result);
+  }
+
+  temp_string_buffer.clear();
+
+  // Dynamic State
+  VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                     VK_DYNAMIC_STATE_SCISSOR};
+
+  VkPipelineDynamicStateCreateInfo dynamic_state{
+      VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+  dynamic_state.dynamicStateCount = ArraySize(dynamic_states);
+  dynamic_state.pDynamicStates = dynamic_states;
+
+  // Vertex Input State
+  VkPipelineVertexInputStateCreateInfo vertex_input_state{
+      VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+  vertex_input_state.vertexBindingDescriptionCount =
+      1; // TODO: For now assume only one descriptor binding
+  vertex_input_state.pVertexBindingDescriptions = &parse_result.vertex_binding;
+  vertex_input_state.vertexAttributeDescriptionCount =
+      parse_result.vertex_attribute_count;
+  vertex_input_state.pVertexAttributeDescriptions =
+      parse_result.vertex_attributes;
+
+  // Input Assembly
+  VkPipelineInputAssemblyStateCreateInfo input_assembly{
+      VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  input_assembly.primitiveRestartEnable = VK_FALSE;
+
+  // Viewport
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = (f32)swapchain.vk_extents.width;
+  viewport.height = (f32)swapchain.vk_extents.height;
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+
+  // Scissor
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swapchain.vk_extents;
+
+  VkPipelineViewportStateCreateInfo viewport_state{
+      VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+  viewport_state.viewportCount = 1;
+  viewport_state.scissorCount = 1;
+  viewport_state.pScissors = &scissor;
+  viewport_state.pViewports = &viewport;
+
+  // Rasterizer State
+  VkPipelineRasterizationStateCreateInfo rasterizer{
+      VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+  rasterizer.depthClampEnable = VK_FALSE;
+  rasterizer.rasterizerDiscardEnable = VK_FALSE;
+  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterizer.lineWidth = 1.0f;
+  rasterizer.cullMode = VK_CULL_MODE_NONE; // VK_CULL_MODE_BACK_BIT;
+  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizer.depthBiasEnable = VK_FALSE;
+  rasterizer.depthBiasConstantFactor = 0.0f; // Optional
+  rasterizer.depthBiasClamp = 0.0f;          // Optional
+  rasterizer.depthBiasSlopeFactor = 0.0f;    // Optional
+
+  // Multisampling State
+  VkPipelineMultisampleStateCreateInfo multisampling{};
+  multisampling.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  multisampling.sampleShadingEnable = VK_FALSE;
+  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  multisampling.minSampleShading = 1.0f;          // Optional
+  multisampling.pSampleMask = nullptr;            // Optional
+  multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
+  multisampling.alphaToOneEnable = VK_FALSE;      // Optional
+
+  // Depth and Stencil State
+
+  // Color Blend State
+  VkPipelineColorBlendAttachmentState color_blend_attachment{};
+  color_blend_attachment.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  color_blend_attachment.blendEnable = VK_FALSE;
+  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+  color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
+  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+  color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;             // Optional
+
+  VkPipelineColorBlendStateCreateInfo color_blending{
+      VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+  color_blending.logicOpEnable = VK_FALSE;
+  color_blending.logicOp = VK_LOGIC_OP_COPY; // Optional
+  color_blending.attachmentCount = 1;
+  color_blending.pAttachments = &color_blend_attachment;
+  color_blending.blendConstants[0] = 0.0f; // Optional
+  color_blending.blendConstants[1] = 0.0f; // Optional
+  color_blending.blendConstants[2] = 0.0f; // Optional
+  color_blending.blendConstants[3] = 0.0f; // Optional
+
+  // Descriptor Set Layouts
+  VkDescriptorSetLayout *layouts = (VkDescriptorSetLayout *)halloca(
+      sizeof(VkDescriptorSetLayout) * parse_result.set_layouts.size,
+      stack_allocator);
+  pipeline->set_layouts = (DescriptorSetLayoutHandle *)halloca(
+      sizeof(DescriptorSetLayoutHandle) * parse_result.set_layouts.size,
+      allocator);
+  pipeline->set_layout_count = parse_result.set_layouts.size;
+  for (u32 i = 0; i < parse_result.set_layouts.size; ++i) {
+    DescriptorSetLayoutHandle dset_layout_handle =
+        descriptor_set_layouts.obtain_new();
+    if (dset_layout_handle.index != k_invalid_index) {
+      VulkanDescriptorSetLayout *dset_layout =
+          descriptor_set_layouts.obtain(dset_layout_handle);
+
+      dset_layout->vk_bindings = parse_result.set_layouts[i].vk_bindings;
+      dset_layout->num_bindings = parse_result.set_layouts[i].num_bindings;
+      dset_layout->set_index = parse_result.set_layouts[i].set_index;
+      dset_layout->allocated_sets.init(allocator, 4);
+
+      VkDescriptorSetLayoutCreateInfo layout_info{
+          VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+      layout_info.bindingCount = dset_layout->num_bindings;
+      layout_info.pBindings = dset_layout->vk_bindings;
+
+      VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &layout_info,
+                                           vk_allocation_callbacks,
+                                           &dset_layout->vk_handle));
+      layouts[i] = dset_layout->vk_handle;
+      pipeline->set_layouts[i] = dset_layout_handle;
+    }
+  }
+  // Pipeline Layout
+  VkPipelineLayoutCreateInfo pipeline_layout_info{
+      VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipeline_layout_info.setLayoutCount = parse_result.set_layouts.size;
+  pipeline_layout_info.pSetLayouts = layouts;
+
+  VK_CHECK(vkCreatePipelineLayout(vk_device, &pipeline_layout_info,
+                                  vk_allocation_callbacks,
+                                  &pipeline->vk_layout));
+  // Dynamic Rendering
+  VkPipelineRenderingCreateInfoKHR pipeline_create{
+      VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
+  pipeline_create.pNext = VK_NULL_HANDLE;
+  pipeline_create.colorAttachmentCount = 1;
+  pipeline_create.pColorAttachmentFormats = &swapchain.vk_surface_format.format;
+  pipeline_create.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+  pipeline_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+
+  if (creation.pipeline_type == PipelineType::Graphics) {
+
+    VkGraphicsPipelineCreateInfo pipeline_info{
+        VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    pipeline_info.stageCount = creation.shader_count;
+    pipeline_info.pStages = vk_shader_stages;
+    pipeline_info.pVertexInputState = &vertex_input_state;
+    pipeline_info.pInputAssemblyState = &input_assembly;
+    pipeline_info.pViewportState = &viewport_state;
+    pipeline_info.pRasterizationState = &rasterizer;
+    pipeline_info.pMultisampleState = &multisampling;
+    pipeline_info.pDepthStencilState = nullptr; // Optional
+    pipeline_info.pColorBlendState = &color_blending;
+    pipeline_info.pDynamicState = &dynamic_state;
+    pipeline_info.layout = pipeline->vk_layout;
+    pipeline_info.renderPass = VK_NULL_HANDLE;
+    pipeline_info.pNext = &pipeline_create;
+
+    (vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipeline_info,
+                               vk_allocation_callbacks, &pipeline->vk_handle));
+  } else {
+    HASSERT_MSG(false, "Unknown pipeline type");
+  }
+
+  for (u32 i = 0; i < creation.shader_count; ++i) {
+    vkDestroyShaderModule(vk_device, vk_shader_modules[i],
+                          vk_allocation_callbacks);
+  }
+
+  set_resource_name(VK_OBJECT_TYPE_PIPELINE, (u64)pipeline->vk_handle,
+                    creation.name);
+
+  stack_allocator->free_marker(stack_marker);
+  return handle;
 }
 
 void VulkanBackend::destroy_buffer(BufferHandle handle) {
@@ -1084,20 +1126,109 @@ void VulkanBackend::destroy_buffer(BufferHandle handle) {
   buffers.release(handle);
 }
 
-void VulkanBackend::create_descriptor_set_layout() {
-  VkDescriptorSetLayoutBinding ubo_layout_binding{};
-  ubo_layout_binding.binding = 0;
-  ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  ubo_layout_binding.descriptorCount = 1;
-  ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanPipeline");
+    return;
+  }
+  // TODO: Add a destroy queue system
+  vkDeviceWaitIdle(vk_device);
+  VulkanPipeline *pipeline = pipelines.obtain(handle);
 
-  VkDescriptorSetLayoutCreateInfo layout_info{};
-  layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layout_info.bindingCount = 1;
-  layout_info.pBindings = &ubo_layout_binding;
+  for (u32 i = 0; i < pipeline->set_layout_count; ++i) {
+    destroy_descriptor_set_layout(pipeline->set_layouts[i]);
+  }
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  hfree(pipeline->set_layouts, allocator);
 
-  VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &layout_info, nullptr,
-                                       &vk_descriptor_set_layout));
+  vkDestroyPipelineLayout(vk_device, pipeline->vk_layout,
+                          vk_allocation_callbacks);
+
+  vkDestroyPipeline(vk_device, pipeline->vk_handle, vk_allocation_callbacks);
+
+  pipelines.release(handle);
+}
+
+void VulkanBackend::destroy_descriptor_set_layout(
+    DescriptorSetLayoutHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanDescriptorSetLayout");
+    return;
+  }
+  VulkanDescriptorSetLayout *layout = descriptor_set_layouts.obtain(handle);
+  for (u32 i = 0; i < layout->allocated_sets.size; ++i) {
+    descriptor_sets.release(layout->allocated_sets[i]);
+  }
+  layout->allocated_sets.shutdown();
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  hfree(layout->vk_bindings, allocator);
+  vkDestroyDescriptorSetLayout(vk_device, layout->vk_handle,
+                               vk_allocation_callbacks);
+
+  descriptor_set_layouts.release(handle);
+}
+
+bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
+                                              PipelineHandle pipeline_handle) {
+  DescriptorSetHandle handle = descriptor_sets.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain a VulkanDescriptorSet resource!");
+    return false;
+  }
+  VulkanDescriptorSet *d_set = descriptor_sets.obtain(handle);
+
+  VulkanPipeline *pipeline = pipelines.obtain(pipeline_handle);
+  if (pipeline_handle.index == k_invalid_index) {
+    HERROR("Invalid VulkanPipeline resource!");
+    return false;
+  }
+
+  VulkanDescriptorSetLayout *layout =
+      descriptor_set_layouts.obtain(pipeline->set_layouts[set.set_index]);
+
+  VkDescriptorSetLayout vk_layout = layout->vk_handle;
+  VkDescriptorSetAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  alloc_info.descriptorPool = vk_descriptor_pool;
+  alloc_info.descriptorSetCount = 1;
+  alloc_info.pSetLayouts = &vk_layout;
+
+  VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info, &d_set->vk_handle));
+
+  // TODO: Assuming a max number of bindings for a descriptor set
+  VkWriteDescriptorSet descriptor_writes[10];
+  HASSERT(set.uniform_count <= 10);
+  for (u32 i = 0; i < set.uniform_count; i++) {
+    if (set.uniforms[i].resource_type == ResourceType::Buffer) {
+      VkDescriptorBufferInfo buffer_info{};
+      VulkanBuffer *buffer =
+          buffers.obtain(set.uniforms[i].internal_resource_handle);
+      buffer_info.buffer = buffer->vk_handle;
+      buffer_info.offset = 0;
+      buffer_info.range = sizeof(UniformBufferObject);
+
+      VkWriteDescriptorSet &descriptor_write = descriptor_writes[i];
+      descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_write.pNext = nullptr;
+      descriptor_write.pImageInfo = nullptr;
+      descriptor_write.pTexelBufferView = nullptr;
+      descriptor_write.dstSet = d_set->vk_handle;
+      descriptor_write.dstBinding = set.uniforms[i].binding;
+      descriptor_write.dstArrayElement = 0;
+      descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptor_write.descriptorCount = 1;
+      descriptor_write.pBufferInfo = &buffer_info;
+    } else {
+      HERROR("Unkown descriptor type");
+      return false;
+    }
+
+    vkUpdateDescriptorSets(vk_device, set.uniform_count, descriptor_writes, 0,
+                           nullptr);
+  }
+  layout->allocated_sets.push(handle);
+
+  return true;
 }
 
 void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
@@ -1113,42 +1244,6 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 
   VK_CHECK(vkCreateDescriptorPool(
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
-}
-
-void VulkanBackend::create_descriptor_sets(u32 max_frames_in_flight) {
-  VkDescriptorSetLayout layouts[] = {vk_descriptor_set_layout,
-                                     vk_descriptor_set_layout};
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  vk_descriptor_sets.init(allocator, max_frames_in_flight,
-                          max_frames_in_flight);
-  VkDescriptorSetAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  alloc_info.descriptorPool = vk_descriptor_pool;
-  alloc_info.descriptorSetCount = static_cast<u32>(max_frames_in_flight);
-  alloc_info.pSetLayouts = layouts;
-
-  VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info,
-                                    vk_descriptor_sets.data));
-
-  for (u32 i = 0; i < max_frames_in_flight; i++) {
-    VkDescriptorBufferInfo buffer_info{};
-    // TODO: Creating desciptors needs to be tied to the pipeline
-    VulkanBuffer *uniform_buffer = buffers.obtain({i, 0});
-    buffer_info.buffer = uniform_buffer->vk_handle;
-    buffer_info.offset = 0;
-    buffer_info.range = sizeof(UniformBufferObject);
-
-    VkWriteDescriptorSet descriptor_write{};
-    descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptor_write.dstSet = vk_descriptor_sets[i];
-    descriptor_write.dstBinding = 0;
-    descriptor_write.dstArrayElement = 0;
-    descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_write.descriptorCount = 1;
-    descriptor_write.pBufferInfo = &buffer_info;
-
-    vkUpdateDescriptorSets(vk_device, 1, &descriptor_write, 0, nullptr);
-  }
 }
 
 void VulkanBackend::draw_frame(RenderPacket *packet) {
@@ -1581,6 +1676,30 @@ u32 find_memory_type(u32 type_filter, VkMemoryPropertyFlags properties,
   return 0;
 }
 
+cstring to_compiler_stage(ShaderStage::Enum stage) {
+  switch (stage) {
+  case ShaderStage::Vertex:
+    return "vert";
+  case ShaderStage::Fragment:
+    return "frag";
+  case ShaderStage::Compute:
+    return "comp";
+  default:
+    HERROR("Unknown shader stage!");
+    return nullptr;
+  }
+}
+
+VkShaderStageFlagBits to_vk_shader_stage(ShaderStage::Enum stage) {
+  switch (stage) {
+  case ShaderStage::Vertex:
+    return VK_SHADER_STAGE_VERTEX_BIT;
+  case ShaderStage::Fragment:
+    return VK_SHADER_STAGE_FRAGMENT_BIT;
+  case ShaderStage::Compute:
+    return VK_SHADER_STAGE_COMPUTE_BIT;
+  }
+}
 #pragma endregion HelperFunctions
 
 } // namespace Helix

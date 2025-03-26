@@ -4,7 +4,6 @@
 #include "Core/Memory.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
-#include "Renderer/Vulkan/VulkanBackend.hpp" // TODO: Remove
 #include "RendererBackend.hpp"
 #include "RendererTypes.hpp"
 
@@ -38,32 +37,64 @@ void RendererFrontEnd::init(void *_config) {
   current_frame = 0;
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
+  size_t stack_marker = stack_allocator->get_marker();
 
   buffers.init(allocator, 10);
+  pipelines.init(allocator, 10);
 
   // Create Uniform Buffers
-  BufferCreation creation{};
-  creation.reset();
-  creation.usage_flags = BufferUsage::Uniform;
-  creation.memory_state_flags = MemoryState::Persistent;
-  creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
-  creation.size = sizeof(UniformBufferObject);
-  creation.initial_data = nullptr;
-  creation.name = "uniform_buffer_";
-  for (u32 i = 0; i < max_frames_in_flight; ++i) {
-    uniform_buffers[i] = create_buffer(creation);
+  {
+    BufferCreation creation{};
+    creation.reset();
+    creation.usage_flags = BufferUsage::Uniform;
+    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
+    creation.size = sizeof(UniformBufferObject);
+    creation.initial_data = nullptr;
+    creation.name = "uniform_buffer_";
+    for (u32 i = 0; i < max_frames_in_flight; ++i) {
+      uniform_buffers[i] = create_buffer(creation);
+    }
   }
-  // TODO: Remove
-  VulkanBackend *bc = (VulkanBackend *)backend;
-  bc->create_descriptor_sets(max_frames_in_flight);
+
+  PipelineCreation creation;
+  creation.name = "test";
+  creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+      sizeof(ShaderCreateInfo) * 2, stack_allocator);
+  creation.shader_create_infos[0] = {"shader.vert", ShaderStage::Vertex};
+  creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
+  creation.shader_count = 2;
+  creation.pipeline_type = PipelineType::Graphics;
+  pipeline = create_pipeline(creation);
+
+  ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
+      sizeof(ShaderUniform) * max_frames_in_flight, stack_allocator);
+  for (u32 i = 0; i < max_frames_in_flight; ++i) {
+    shader_uniforms[i].binding = 0;
+    BufferResource *buffer = buffers.obtain(uniform_buffers[i]);
+    shader_uniforms[i].internal_resource_handle = buffer->internal_handle;
+    shader_uniforms[i].resource_type = ResourceType::Buffer;
+
+    ShaderUniformSet set{};
+    set.uniform_count = 1;
+    set.uniforms = &shader_uniforms[i];
+    set.set_index = 0;
+    update_shader_uniform_set(set, pipeline);
+  }
+
+  stack_allocator->free_marker(stack_marker);
 }
 
 void RendererFrontEnd::shutdown() {
+  destroy_pipeline(pipeline);
+
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
   }
   backend->shutdown();
   buffers.shutdown();
+  pipelines.shutdown();
   hfree(backend, &MemoryService::instance()->system_allocator);
   HELIX_SERVICE_SHUTDOWN_MSG(RendererFrontEnd);
 }
@@ -134,11 +165,22 @@ PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
   }
 
   PipelineHandle internal_handle = backend->create_pipeline(creation);
+  if (internal_handle.index == k_invalid_index) {
+    pipelines.release(handle);
+    handle.index = k_invalid_index;
+    return handle;
+  }
+
+  PipelineResource *pipeline = pipelines.obtain(handle);
+  pipeline->handle = handle;
+  pipeline->internal_handle = internal_handle;
+
+  return handle;
 }
 
 void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
   if (handle.index == k_invalid_index) {
-    HWARN("Attempting to destroy an invalid buffer");
+    HERROR("Attempting to destroy an invalid buffer");
     return;
   }
   BufferResource *buffer = buffers.obtain(handle);
@@ -147,6 +189,21 @@ void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
   buffers.release(handle);
 }
 
-void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {}
+void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
+
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to destroy an invalid pipeline");
+    return;
+  }
+  PipelineResource *pipeline = pipelines.obtain(handle);
+  backend->destroy_pipeline(pipeline->internal_handle);
+
+  pipelines.release(handle);
+}
+
+bool RendererFrontEnd::update_shader_uniform_set(ShaderUniformSet &set,
+                                                 PipelineHandle pipeline) {
+  return backend->update_shader_uniform_set(set, pipeline);
+}
 
 } // namespace Helix
