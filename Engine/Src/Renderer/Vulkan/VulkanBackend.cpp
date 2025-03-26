@@ -349,24 +349,20 @@ bool VulkanBackend::init(void *_config) {
   create_command_pool(indices);
 
   vertices.init(allocator, 3);
-  // vertices.push({{-0.5f, -0.5f}, {1.0f, 0.0f}});
-  // vertices.push({{0.5f, -0.5f}, {0.0f, 0.0f}});
-  // vertices.push({{0.5f, 0.5f}, {0.0f, 1.0f}});
-  // vertices.push({{-0.5f, 0.5f}, {1.0f, 1.0f}});
   indexes.init(allocator, 10);
-
-  load_model();
 
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
   descriptor_set_layouts.init(allocator, 10);
   descriptor_sets.init(allocator, 10);
 
+  load_model();
   create_buffers();
   create_command_buffers(config->max_frames_in_flight);
   create_sync_objects(config->max_frames_in_flight);
   create_descriptor_pool(config->max_frames_in_flight);
 
+  resource_deletion_queue.init(allocator, 10);
   frame_number = 0;
   HINFO("Vulkan Backend Initialized");
   return true;
@@ -374,6 +370,9 @@ bool VulkanBackend::init(void *_config) {
 
 bool VulkanBackend::shutdown() {
   vkDeviceWaitIdle(vk_device);
+
+  free_queued_resources();
+  resource_deletion_queue.shutdown();
 
   // TODO: Create a vulkan resource queue
   for (u32 i = 0; i < 2; ++i) {
@@ -1113,6 +1112,42 @@ void VulkanBackend::destroy_buffer(BufferHandle handle) {
     HWARN("Attempting to free an invalid VulkanBuffer");
     return;
   }
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_BUFFER, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanPipeline");
+    return;
+  }
+
+  VulkanPipeline *pipeline = pipelines.obtain(handle);
+
+  for (u32 i = 0; i < pipeline->set_layout_count; ++i) {
+    destroy_descriptor_set_layout(pipeline->set_layouts[i]);
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VulkanBackend::destroy_descriptor_set_layout(
+    DescriptorSetLayoutHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanDescriptorSetLayout");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VulkanBackend::destroy_buffer_instant(BufferHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HWARN("Attempting to free an invalid VulkanBuffer");
+    return;
+  }
   VulkanBuffer *buffer = buffers.obtain(handle);
   VmaAllocationInfo alloc_info{};
   alloc_info.pMappedData = nullptr;
@@ -1126,18 +1161,14 @@ void VulkanBackend::destroy_buffer(BufferHandle handle) {
   buffers.release(handle);
 }
 
-void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
+void VulkanBackend::destroy_pipeline_instant(PipelineHandle handle) {
   if (handle.index == k_invalid_index) {
     HERROR("Attempting to free an invalid VulkanPipeline");
     return;
   }
-  // TODO: Add a destroy queue system
-  vkDeviceWaitIdle(vk_device);
+
   VulkanPipeline *pipeline = pipelines.obtain(handle);
 
-  for (u32 i = 0; i < pipeline->set_layout_count; ++i) {
-    destroy_descriptor_set_layout(pipeline->set_layouts[i]);
-  }
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   hfree(pipeline->set_layouts, allocator);
 
@@ -1149,7 +1180,7 @@ void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
   pipelines.release(handle);
 }
 
-void VulkanBackend::destroy_descriptor_set_layout(
+void VulkanBackend::destroy_descriptor_set_layout_instant(
     DescriptorSetLayoutHandle handle) {
   if (handle.index == k_invalid_index) {
     HERROR("Attempting to free an invalid VulkanDescriptorSetLayout");
@@ -1166,6 +1197,30 @@ void VulkanBackend::destroy_descriptor_set_layout(
                                vk_allocation_callbacks);
 
   descriptor_set_layouts.release(handle);
+}
+
+void VulkanBackend::free_queued_resources() {
+  if (resource_deletion_queue.size > 0) {
+    vkDeviceWaitIdle(vk_device);
+    for (i32 i = resource_deletion_queue.size - 1; i >= 0; --i) {
+      ResourceQueueObject &queue_object = resource_deletion_queue[i];
+      switch (queue_object.type) {
+      case VK_OBJECT_TYPE_BUFFER:
+        destroy_buffer_instant(queue_object.handle);
+        break;
+      case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT:
+        destroy_descriptor_set_layout_instant(queue_object.handle);
+        break;
+      case VK_OBJECT_TYPE_PIPELINE:
+        destroy_pipeline_instant(queue_object.handle);
+        break;
+      default:
+        HERROR("Trying to delete an unknown type");
+        break;
+      }
+      resource_deletion_queue.pop();
+    }
+  }
 }
 
 bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
@@ -1313,6 +1368,8 @@ void VulkanBackend::draw_frame(RenderPacket *packet) {
   } else if (result != VK_SUCCESS) {
     HERROR("Failed to present swap chain image!");
   }
+
+  free_queued_resources();
   ++frame_number;
 }
 
