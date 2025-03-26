@@ -2,10 +2,12 @@
 #include "Core/Input.hpp"
 #include "Core/Log.hpp"
 #include "Platform/Platform.hpp"
-#include "SDL3/SDL_events.h"
-#include "SDL3/SDL_scancode.h"
+#include "glm/ext/scalar_common.hpp"
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_scancode.h>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
 
@@ -37,12 +39,12 @@ glm::mat4 Camera::get_rotation() {
 void Camera::update(f32 delta_time) {
   glm::mat4 camera_rotation = get_rotation();
   position +=
-      glm::vec3(camera_rotation * glm::vec4(velocity * 0.5f, 0.f)) * delta_time;
+      glm::vec3(camera_rotation * glm::vec4(velocity * move_speed, 1.f)) *
+      delta_time;
 }
 
 bool Camera::on_key_event(u16 event_code, void *sender, void *listener,
                           EventContext context) {
-
   if (!is_active)
     return false;
 
@@ -120,4 +122,17 @@ bool Camera::on_mouse_button_event(u16 event_code, void *sender, void *listener,
   return false;
 }
 
+bool Camera::on_mouse_scroll_event(u16 event_code, void *sender, void *listener,
+                                   EventContext context) {
+  if (event_code == SDL_EVENT_MOUSE_WHEEL) {
+    if (InputService::instance()->is_key_down(SDL_SCANCODE_LSHIFT)) {
+
+      move_speed =
+          context.data.i8[0] > 0 ? (move_speed + 0.5f) : (move_speed - 0.5f);
+
+      move_speed = glm::clamp(move_speed, 0.5f, 10.f);
+    }
+  }
+  return false;
+}
 } // namespace Helix

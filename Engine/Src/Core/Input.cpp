@@ -97,7 +97,7 @@ void InputService::process_mouse_move(i16 x, i16 y) {
 
 void InputService::process_mouse_wheel(i8 z_delta) {
   EventContext context;
-  context.data.u8[0] = z_delta;
+  context.data.i8[0] = z_delta;
   EventService::instance()->fire_event(SDL_EVENT_MOUSE_WHEEL, 0, context);
 }
 

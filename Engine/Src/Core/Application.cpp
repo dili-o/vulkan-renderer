@@ -2,6 +2,7 @@
 #include "Core/Event.hpp"
 #include "Core/Input.hpp"
 #include "Core/Log.hpp"
+#include "Core/String.hpp"
 #include "Game.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
@@ -49,6 +50,10 @@ void Application::run() {
   u8 frame_count = 0;
   f64 target_frame_seconds = 1.0 / 60.0;
 
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  StringBuffer string;
+  string.init(allocator, 32);
+
   while (!platform->requested_exit) {
     platform->handle_os_messages();
 
@@ -86,10 +91,15 @@ void Application::run() {
         frame_count++;
       }
       // HDEBUG("Delta: {}", delta_time);
+      cstring update_title = string.append_use_f(
+          "%s - frame time: %.3f ms", Platform::instance()->name, delta_time);
+      Platform::instance()->set_title(update_title);
 
       last_time = current_time;
     }
+    string.clear();
   }
+  string.shutdown();
 }
 
 void Application::shutdown() {

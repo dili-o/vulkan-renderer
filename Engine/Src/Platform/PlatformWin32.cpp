@@ -97,6 +97,8 @@ f64 Platform::get_absolute_time() {
 
 void Platform::sleep(u64 ms) { SDL_Delay(ms); }
 
+void Platform::set_title(cstring title) { SDL_SetWindowTitle(window, title); }
+
 void Platform::shutdown() {
   SDL_DestroyWindow(window);
   window = nullptr;

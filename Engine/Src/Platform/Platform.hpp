@@ -22,6 +22,8 @@ struct Platform : public Service {
   f64 get_absolute_time();
   void sleep(u64 ms);
 
+  void set_title(cstring title);
+
   void *platform_handle = nullptr;
   bool requested_exit{true};
   bool is_suspended{false};

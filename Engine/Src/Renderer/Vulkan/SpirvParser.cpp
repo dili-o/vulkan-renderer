@@ -12,9 +12,10 @@ namespace Helix {
 // Returns a new set layout if one does not already exist in the ParseResult
 VulkanDescriptorSetLayout &
 get_set(Array<VulkanDescriptorSetLayout> &set_layouts, u32 set_index) {
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   if (set_layouts.size == 0) {
     VulkanDescriptorSetLayout &layout = set_layouts.push_use();
-    layout.vk_bindings = nullptr;
+    layout.vk_bindings.init(allocator, 4);
     return layout;
   }
 
@@ -24,10 +25,29 @@ get_set(Array<VulkanDescriptorSetLayout> &set_layouts, u32 set_index) {
   }
 
   VulkanDescriptorSetLayout &layout = set_layouts.push_use();
-  layout.vk_bindings = nullptr;
+  layout.vk_bindings.init(allocator, 4);
   return layout;
 }
 
+// Returns a new set binding if one does not already exist in the ParseResult
+VkDescriptorSetLayoutBinding &
+get_binding(Array<VkDescriptorSetLayoutBinding> &set_bindings,
+            u32 binding_index, bool &is_unique) {
+  if (set_bindings.size == 0) {
+    is_unique = true;
+    return set_bindings.push_use();
+  }
+
+  for (u32 i = 0; i < set_bindings.size; ++i) {
+    if (set_bindings[i].binding == binding_index) {
+      is_unique = false;
+      return set_bindings[i];
+    }
+  }
+
+  is_unique = true;
+  return set_bindings.push_use();
+}
 void parse_binary(const u32 *data, size_t data_size,
                   ParseResult &parse_result) {
   // NOTE: StackAllocator clearing is handled by VulkanBackend::create_pipeline
@@ -52,22 +72,14 @@ void parse_binary(const u32 *data, size_t data_size,
     VulkanDescriptorSetLayout &set_layout =
         get_set(parse_result.set_layouts, sets[i]->set);
     set_layout.set_index = sets[i]->set;
-    set_layout.num_bindings = sets[i]->binding_count;
-
-    if (set_layout.vk_bindings == nullptr) {
-      set_layout.vk_bindings = (VkDescriptorSetLayoutBinding *)halloca(
-          sizeof(VkDescriptorSetLayoutBinding) * set_layout.num_bindings,
-          allocator);
-      memset(set_layout.vk_bindings, -1,
-             sizeof(VkDescriptorSetLayoutBinding) * set_layout.num_bindings);
-    }
 
     for (u32 j = 0; j < sets[i]->binding_count; ++j) {
       SpvReflectDescriptorBinding *spirv_binding = sets[i]->bindings[j];
-      VkDescriptorSetLayoutBinding &vk_binding = set_layout.vk_bindings[j];
+      bool is_unique = false;
+      VkDescriptorSetLayoutBinding &vk_binding = get_binding(
+          set_layout.vk_bindings, spirv_binding->binding, is_unique);
       // First pass
-      if (vk_binding.binding == -1) {
-
+      if (is_unique) {
         vk_binding.binding = spirv_binding->binding;
         vk_binding.descriptorType =
             (VkDescriptorType)spirv_binding->descriptor_type;
@@ -75,7 +87,6 @@ void parse_binary(const u32 *data, size_t data_size,
         vk_binding.stageFlags = (VkShaderStageFlagBits)module.shader_stage;
         vk_binding.pImmutableSamplers = nullptr;
       } else {
-
         vk_binding.stageFlags |= (VkShaderStageFlagBits)module.shader_stage;
       }
     }

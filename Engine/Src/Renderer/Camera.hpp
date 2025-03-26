@@ -11,6 +11,8 @@ struct Camera {
   glm::vec3 velocity{0.f};
   glm::vec3 position{0.f};
 
+  f32 move_speed{1.f};
+
   f32 pitch{0.f};
   f32 yaw{0.f};
 
@@ -25,6 +27,8 @@ struct Camera {
   bool on_mouse_event(u16 event_code, void *sender, void *listener,
                       EventContext context);
   bool on_mouse_button_event(u16 event_code, void *sender, void *listener,
+                             EventContext context);
+  bool on_mouse_scroll_event(u16 event_code, void *sender, void *listener,
                              EventContext context);
 };
 } // namespace Helix

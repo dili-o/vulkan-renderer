@@ -43,9 +43,8 @@ struct VulkanBuffer {
 
 struct VulkanDescriptorSetLayout {
   VkDescriptorSetLayout vk_handle{VK_NULL_HANDLE};
-  VkDescriptorSetLayoutBinding *vk_bindings = nullptr;
+  Array<VkDescriptorSetLayoutBinding> vk_bindings;
   u32 set_index = 0;
-  u32 num_bindings = 0;
 
   Array<DescriptorSetHandle> allocated_sets{};
 };

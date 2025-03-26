@@ -742,22 +742,6 @@ void VulkanBackend::create_buffers() {
 
   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
                    staging_buffer.vma_allocation);
-
-  // Uniform Buffers
-  // buffer_size = sizeof(UniformBufferObject);
-
-  // HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  // uniform_buffers.init(allocator, max_frames_in_flight,
-  // max_frames_in_flight);
-
-  // for (u32 i = 0; i < max_frames_in_flight; ++i) {
-  //   vk_create_buffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-  //                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-  //                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-  //                    uniform_buffers[i]);
-  //   vmaMapMemory(vma_allocator, uniform_buffers[i].vma_allocation,
-  //                &uniform_buffers[i].mapped_data);
-  // }
 }
 
 void VulkanBackend::vk_create_buffer(VkDeviceSize size,
@@ -1037,14 +1021,13 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
           descriptor_set_layouts.obtain(dset_layout_handle);
 
       dset_layout->vk_bindings = parse_result.set_layouts[i].vk_bindings;
-      dset_layout->num_bindings = parse_result.set_layouts[i].num_bindings;
       dset_layout->set_index = parse_result.set_layouts[i].set_index;
       dset_layout->allocated_sets.init(allocator, 4);
 
       VkDescriptorSetLayoutCreateInfo layout_info{
           VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-      layout_info.bindingCount = dset_layout->num_bindings;
-      layout_info.pBindings = dset_layout->vk_bindings;
+      layout_info.bindingCount = dset_layout->vk_bindings.size;
+      layout_info.pBindings = dset_layout->vk_bindings.data;
 
       VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &layout_info,
                                            vk_allocation_callbacks,
@@ -1191,8 +1174,7 @@ void VulkanBackend::destroy_descriptor_set_layout_instant(
     descriptor_sets.release(layout->allocated_sets[i]);
   }
   layout->allocated_sets.shutdown();
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  hfree(layout->vk_bindings, allocator);
+  layout->vk_bindings.shutdown();
   vkDestroyDescriptorSetLayout(vk_device, layout->vk_handle,
                                vk_allocation_callbacks);
 
@@ -1252,15 +1234,17 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
 
   // TODO: Assuming a max number of bindings for a descriptor set
   VkWriteDescriptorSet descriptor_writes[10];
+  VkDescriptorBufferInfo buffer_infos[10];
   HASSERT(set.uniform_count <= 10);
   for (u32 i = 0; i < set.uniform_count; i++) {
     if (set.uniforms[i].resource_type == ResourceType::Buffer) {
-      VkDescriptorBufferInfo buffer_info{};
+      VkDescriptorBufferInfo &buffer_info = buffer_infos[i];
       VulkanBuffer *buffer =
           buffers.obtain(set.uniforms[i].internal_resource_handle);
+
       buffer_info.buffer = buffer->vk_handle;
-      buffer_info.offset = 0;
-      buffer_info.range = sizeof(UniformBufferObject);
+      buffer_info.offset = set.uniforms[i].buffer_info.offset;
+      buffer_info.range = set.uniforms[i].buffer_info.range;
 
       VkWriteDescriptorSet &descriptor_write = descriptor_writes[i];
       descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1277,10 +1261,10 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
       HERROR("Unkown descriptor type");
       return false;
     }
-
-    vkUpdateDescriptorSets(vk_device, set.uniform_count, descriptor_writes, 0,
-                           nullptr);
   }
+  vkUpdateDescriptorSets(vk_device, set.uniform_count, descriptor_writes, 0,
+                         nullptr);
+
   layout->allocated_sets.push(handle);
 
   return true;
@@ -1377,17 +1361,11 @@ void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
 
   UniformBufferObject ubo{};
   ubo.model = glm::mat4(1.f);
-  // ubo.model =
-  //     glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f,
-  //     0.0f));
-  // ubo.model =
-  //     glm::rotate(ubo.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f,
-  //     0.0f));
   ubo.view = packet->camera->get_view();
   ubo.proj = glm::perspective(glm::radians(45.0f),
                               swapchain.vk_extents.width /
                                   (float)swapchain.vk_extents.height,
-                              0.1f, 10.0f);
+                              0.1f, 100.0f);
   ubo.proj[1][1] *= -1;
 
   VulkanBuffer *uniform_buffer = buffers.obtain(packet->scene_data_buffer);

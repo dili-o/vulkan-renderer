@@ -76,6 +76,17 @@ struct ShaderUniform {
   ResourceHandle internal_resource_handle;
   ResourceType::Enum resource_type;
   u32 binding;
+  union {
+    struct {
+      u32 offset;
+      u32 range;
+    } buffer_info;
+
+    struct {
+      // TODO: Texture data
+      u32 size;
+    } texture_info;
+  };
 };
 
 struct ShaderUniformSet {

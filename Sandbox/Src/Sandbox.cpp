@@ -23,6 +23,11 @@ static bool camera_mouse_button_event(u16 code, void *sender, void *listener,
   return cam->on_mouse_button_event(code, sender, listener, context);
 }
 
+static bool camera_scroll_event(u16 code, void *sender, void *listener,
+                                EventContext context) {
+  Camera *cam = (Camera *)listener;
+  return cam->on_mouse_scroll_event(code, sender, listener, context);
+}
 void Sandbox::init() {
 
   camera.init();
@@ -36,6 +41,8 @@ void Sandbox::init() {
                                 camera_mouse_button_event);
   event_service->register_event(SDL_EVENT_MOUSE_BUTTON_UP, &camera,
                                 camera_mouse_button_event);
+  event_service->register_event(SDL_EVENT_MOUSE_WHEEL, &camera,
+                                camera_scroll_event);
 
   HINFO("Game Initialised");
 }

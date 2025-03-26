@@ -43,6 +43,8 @@ void RendererFrontEnd::init(void *_config) {
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
 
+  string_buffer.init(allocator, hkilo(1));
+
   // Create Uniform Buffers
   {
     BufferCreation creation{};
@@ -52,9 +54,23 @@ void RendererFrontEnd::init(void *_config) {
     creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
     creation.size = sizeof(UniformBufferObject);
     creation.initial_data = nullptr;
-    creation.name = "uniform_buffer_";
     for (u32 i = 0; i < max_frames_in_flight; ++i) {
+      creation.name = string_buffer.append_use_f("uniform_buffer_%d", i);
       uniform_buffers[i] = create_buffer(creation);
+    }
+  }
+  {
+    BufferCreation creation{};
+    creation.reset();
+    creation.usage_flags = BufferUsage::Uniform;
+    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
+    creation.size = sizeof(f32);
+    float init_data = 0.5f;
+    creation.initial_data = &init_data;
+    for (u32 i = 0; i < max_frames_in_flight; ++i) {
+      creation.name = string_buffer.append_use_f("second_buffer_%d", i);
+      second_buffers[i] = create_buffer(creation);
     }
   }
 
@@ -69,16 +85,26 @@ void RendererFrontEnd::init(void *_config) {
   pipeline = create_pipeline(creation);
 
   ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
-      sizeof(ShaderUniform) * max_frames_in_flight, stack_allocator);
+      sizeof(ShaderUniform) * max_frames_in_flight * 2, stack_allocator);
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
-    shader_uniforms[i].binding = 0;
+    shader_uniforms[i * 2].binding = 0;
     BufferResource *buffer = buffers.obtain(uniform_buffers[i]);
-    shader_uniforms[i].internal_resource_handle = buffer->internal_handle;
-    shader_uniforms[i].resource_type = ResourceType::Buffer;
+    shader_uniforms[i * 2].internal_resource_handle = buffer->internal_handle;
+    shader_uniforms[i * 2].resource_type = ResourceType::Buffer;
+    shader_uniforms[i * 2].buffer_info.offset = 0;
+    shader_uniforms[i * 2].buffer_info.range = sizeof(UniformBufferObject);
+
+    shader_uniforms[i * 2 + 1].binding = 1;
+    BufferResource *buffer2 = buffers.obtain(second_buffers[i]);
+    shader_uniforms[i * 2 + 1].internal_resource_handle =
+        buffer2->internal_handle;
+    shader_uniforms[i * 2 + 1].resource_type = ResourceType::Buffer;
+    shader_uniforms[i * 2 + 1].buffer_info.offset = 0;
+    shader_uniforms[i * 2 + 1].buffer_info.range = sizeof(f32);
 
     ShaderUniformSet set{};
-    set.uniform_count = 1;
-    set.uniforms = &shader_uniforms[i];
+    set.uniform_count = 2;
+    set.uniforms = &shader_uniforms[i * 2];
     set.set_index = 0;
     update_shader_uniform_set(set, pipeline);
   }
@@ -91,11 +117,14 @@ void RendererFrontEnd::shutdown() {
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
+    destroy_buffer(second_buffers[i]);
   }
   backend->shutdown();
   buffers.shutdown();
   pipelines.shutdown();
   hfree(backend, &MemoryService::instance()->system_allocator);
+
+  string_buffer.shutdown();
   HELIX_SERVICE_SHUTDOWN_MSG(RendererFrontEnd);
 }
 
@@ -126,8 +155,8 @@ bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::end_frame(RenderPacket *packet) {
-  return backend->end_frame(packet);
   current_frame = (current_frame + 1) % max_frames_in_flight;
+  return backend->end_frame(packet);
 }
 
 bool RendererFrontEnd::load_model(cstring path) {

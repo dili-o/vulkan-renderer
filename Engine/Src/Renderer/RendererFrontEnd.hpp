@@ -2,6 +2,7 @@
 
 #include "Containers/ResourcePool.hpp"
 #include "Core/Service.hpp"
+#include "Core/String.hpp"
 #include "GPUResources.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "RendererTypes.hpp"
@@ -40,11 +41,14 @@ struct RendererFrontEnd : public Service {
   u32 current_frame;
   RendererBackend *backend{nullptr};
 
+  StringBuffer string_buffer{};
+
   ResourcePool<BufferResource> buffers{};
   ResourcePool<PipelineResource> pipelines{};
   BufferHandle vertex_buffer{};
   BufferHandle index_buffer{};
   BufferHandle uniform_buffers[max_frames_in_flight];
+  BufferHandle second_buffers[max_frames_in_flight];
   PipelineHandle pipeline{};
 };
 } // namespace Helix
