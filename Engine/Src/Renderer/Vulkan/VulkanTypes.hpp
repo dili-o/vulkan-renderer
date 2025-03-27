@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <vk_mem_alloc.h>
 #include <volk.h>
+#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 
@@ -59,6 +60,7 @@ struct VulkanPipeline {
   VkPipelineLayout vk_layout{VK_NULL_HANDLE};
   DescriptorSetLayoutHandle *set_layouts = nullptr;
   u32 set_layout_count = 0;
+  VkPipelineBindPoint bind_point;
 };
 
 } // namespace Helix

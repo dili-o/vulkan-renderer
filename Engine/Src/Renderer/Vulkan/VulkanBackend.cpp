@@ -12,6 +12,7 @@
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererTypes.hpp"
+#include "Renderer/Vulkan/CommandBuffer.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
 #include "SpirvParser.hpp"
@@ -44,12 +45,6 @@ template <> struct hash<Helix::Vertex> {
 namespace Helix {
 
 #pragma region HelperFunctions
-
-#define VK_CHECK(call)                                                         \
-  do {                                                                         \
-    VkResult result_ = call;                                                   \
-    HASSERT_MSGS(result_ == VK_SUCCESS, "Error code: {}", (u32)result_);       \
-  } while (0)
 
 static VkBool32
 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -346,7 +341,10 @@ bool VulkanBackend::init(void *_config) {
   query_swapchain_support(vk_physical_device, vk_surface, swapchain);
   create_swapchain();
 
-  create_command_pool(indices);
+  command_buffer_manager.init(this, indices.graphics_family_index, 1,
+                              config->max_frames_in_flight);
+  transfer_command_buffer_manager.init(this, indices.transfer_family_index, 1,
+                                       1);
 
   vertices.init(allocator, 3);
   indexes.init(allocator, 10);
@@ -358,7 +356,6 @@ bool VulkanBackend::init(void *_config) {
 
   load_model();
   create_buffers();
-  create_command_buffers(config->max_frames_in_flight);
   create_sync_objects(config->max_frames_in_flight);
   create_descriptor_pool(config->max_frames_in_flight);
 
@@ -390,10 +387,8 @@ bool VulkanBackend::shutdown() {
   vkDestroyDescriptorPool(vk_device, vk_descriptor_pool,
                           vk_allocation_callbacks);
 
-  vkDestroyCommandPool(vk_device, vk_command_pool, vk_allocation_callbacks);
-  vkDestroyCommandPool(vk_device, vk_transfer_pool, vk_allocation_callbacks);
-  vk_command_buffers.shutdown();
-
+  command_buffer_manager.shutdown();
+  transfer_command_buffer_manager.shutdown();
   // vkDestroyPipeline(vk_device, vk_pipeline, vk_allocation_callbacks);
   // vkDestroyPipelineLayout(vk_device, vk_pipeline_layout,
   //                         vk_allocation_callbacks);
@@ -448,11 +443,44 @@ void VulkanBackend::resize_swapchain() {
 }
 
 bool VulkanBackend::begin_frame(RenderPacket *packet) {
-  draw_frame(packet);
+  VK_CHECK(vkWaitForFences(vk_device, 1,
+                           &in_flight_fences[packet->current_frame], VK_TRUE,
+                           UINT64_MAX));
+
+  uint32_t image_index;
+  VkResult result =
+      vkAcquireNextImageKHR(vk_device, swapchain.vk_handle, UINT64_MAX,
+                            image_available_semaphores[packet->current_frame],
+                            VK_NULL_HANDLE, &image_index);
+
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    resize_swapchain();
+    return false;
+  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    HERROR("Failed to acquire swap chain image!");
+  }
+
+  VK_CHECK(
+      vkResetFences(vk_device, 1, &in_flight_fences[packet->current_frame]));
+
+  update_uniform_buffer(packet);
+
+  VulkanCommandBuffer *command_buffer =
+      command_buffer_manager.get_command_buffer(packet->current_frame, 0, true);
+
+  command_buffer->reset();
+
+  draw_frame(packet, image_index);
   return true;
 }
 
-bool VulkanBackend::end_frame(RenderPacket *packet) { return true; }
+bool VulkanBackend::end_frame(RenderPacket *packet) {
+
+  free_queued_resources();
+  ++frame_number;
+
+  return true;
+}
 
 void VulkanBackend::create_swapchain() {
   VkSurfaceCapabilitiesKHR surface_capabilities;
@@ -515,162 +543,43 @@ void VulkanBackend::destroy_swapchain() {
   swapchain.vk_handle = VK_NULL_HANDLE;
 }
 
-void VulkanBackend::create_command_pool(QueueFamilyIndices &indices) {
-  VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-  pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  pool_info.queueFamilyIndex = indices.graphics_family_index;
-  VK_CHECK(vkCreateCommandPool(vk_device, &pool_info, vk_allocation_callbacks,
-                               &vk_command_pool));
-
-  pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  pool_info.queueFamilyIndex = indices.transfer_family_index;
-  VK_CHECK(vkCreateCommandPool(vk_device, &pool_info, vk_allocation_callbacks,
-                               &vk_transfer_pool));
-}
-
-void VulkanBackend::create_command_buffers(u32 max_frames_in_flight) {
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  vk_command_buffers.init(allocator, max_frames_in_flight,
-                          max_frames_in_flight);
-  VkCommandBufferAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  alloc_info.commandPool = vk_command_pool;
-  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  alloc_info.commandBufferCount = vk_command_buffers.size;
-
-  VK_CHECK(vkAllocateCommandBuffers(vk_device, &alloc_info,
-                                    vk_command_buffers.data));
-}
-
-void VulkanBackend::record_command_buffer(VkCommandBuffer vk_command_buffer,
+void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                           u32 image_index, u32 current_frame) {
-  VkCommandBufferBeginInfo begin_info{};
-  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  begin_info.flags = 0;                  // Optional
-  begin_info.pInheritanceInfo = nullptr; // Optional
+  command_buffer->begin();
 
-  VK_CHECK(vkBeginCommandBuffer(vk_command_buffer, &begin_info));
+  command_buffer->transition_image(swapchain.vk_images[image_index]);
 
-  // Transition Image
-  {
-    VkImageMemoryBarrier image_barrier = {};
-    image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    image_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_barrier.image = swapchain.vk_images[image_index];
-    image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    image_barrier.subresourceRange.baseMipLevel = 0;
-    image_barrier.subresourceRange.levelCount = 1;
-    image_barrier.subresourceRange.baseArrayLayer = 0;
-    image_barrier.subresourceRange.layerCount = 1;
-
-    // Synchronization settings
-    image_barrier.srcAccessMask = 0;
-    image_barrier.dstAccessMask =
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT; // No further writes needed before
-                                              // presenting
-
-    VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    VkPipelineStageFlags dst_stage =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-    vkCmdPipelineBarrier(vk_command_buffer, src_stage, dst_stage, 0, 0, nullptr,
-                         0, nullptr, 1, &image_barrier);
-  }
-  ////////////////////
-  VkRenderingAttachmentInfo color_attachment_info{
-      VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-
-  color_attachment_info.imageView = swapchain.vk_image_views[image_index];
-  color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  color_attachment_info.clearValue = {{{0.0f, 0.0f, 0.1f, 1.0f}}};
-  color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
-
-  VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
-  render_info.layerCount = 1;
-  render_info.renderArea = {
-      {0, 0}, {swapchain.vk_extents.width, swapchain.vk_extents.height}};
-  render_info.viewMask = 0;
-  render_info.colorAttachmentCount = 1;
-  render_info.pColorAttachments = &color_attachment_info;
-  render_info.pDepthAttachment = nullptr;
-  render_info.pStencilAttachment = nullptr;
-
-  vkCmdBeginRendering(vk_command_buffer, &render_info);
+  command_buffer->bind_renderpass(
+      {swapchain.vk_extents.width, swapchain.vk_extents.height},
+      swapchain.vk_image_views[image_index]);
 
   // TODO:
-  VulkanPipeline *pipeline = pipelines.obtain({0, 0});
-  vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    pipeline->vk_handle);
+  VulkanPipeline *pipeline = access_pipeline({0, 0});
+  command_buffer->bind_pipeline({0, 0});
 
-  VkViewport viewport{};
-  viewport.x = 0.0f;
-  viewport.y = 0.0f;
-  viewport.width = (f32)swapchain.vk_extents.width;
-  viewport.height = (f32)swapchain.vk_extents.height;
-  viewport.minDepth = 0.0f;
-  viewport.maxDepth = 1.0f;
-  vkCmdSetViewport(vk_command_buffer, 0, 1, &viewport);
+  command_buffer->bind_viewport(swapchain.vk_extents);
 
-  VkRect2D scissor{};
-  scissor.offset = {0, 0};
-  scissor.extent = swapchain.vk_extents;
-  vkCmdSetScissor(vk_command_buffer, 0, 1, &scissor);
+  command_buffer->bind_scissors(swapchain.vk_extents);
 
-  VkBuffer vertex_buffers[] = {vertex_buffer.vk_handle};
-  VkDeviceSize offsets[] = {0};
-  vkCmdBindVertexBuffers(vk_command_buffer, 0, 1, vertex_buffers, offsets);
-  vkCmdBindIndexBuffer(vk_command_buffer, index_buffer.vk_handle, 0,
-                       VK_INDEX_TYPE_UINT32);
+  command_buffer->bind_vertex_buffer(vertex_buffer.vk_handle);
+
+  command_buffer->bind_index_buffer(index_buffer.vk_handle);
 
   // TODO:
   VulkanDescriptorSetLayout *dset_layout =
-      descriptor_set_layouts.obtain(pipeline->set_layouts[0]);
+      access_descriptor_set_layout(pipeline->set_layouts[0]);
   VulkanDescriptorSet *dset =
-      descriptor_sets.obtain(dset_layout->allocated_sets[current_frame]);
+      access_descriptor_set(dset_layout->allocated_sets[current_frame]);
 
-  vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          pipeline->vk_layout, 0, 1, &dset->vk_handle, 0,
-                          nullptr);
-  vkCmdDrawIndexed(vk_command_buffer, indexes.size, 1, 0, 0, 0);
-  vkCmdEndRendering(vk_command_buffer);
+  command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle);
 
+  command_buffer->draw_indexed(indexes.size, 1, 0, 0, 0);
+
+  command_buffer->end_current_renderpass();
   // Transition to Present
-  {
-    VkImageMemoryBarrier image_barrier = {};
-    image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    image_barrier.oldLayout =
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Previous layout (after
-                                                  // rendering)
-    image_barrier.newLayout =
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Layout for presentation
-    image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    image_barrier.image = swapchain.vk_images[image_index];
-    image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    image_barrier.subresourceRange.baseMipLevel = 0;
-    image_barrier.subresourceRange.levelCount = 1;
-    image_barrier.subresourceRange.baseArrayLayer = 0;
-    image_barrier.subresourceRange.layerCount = 1;
+  command_buffer->transition_image2(swapchain.vk_images[image_index]);
 
-    // Synchronization settings
-    image_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    image_barrier.dstAccessMask =
-        0; // No further writes needed before presenting
-
-    VkPipelineStageFlags src_stage =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-
-    vkCmdPipelineBarrier(vk_command_buffer, src_stage, dst_stage, 0, 0, nullptr,
-                         0, nullptr, 1, &image_barrier);
-  }
-
-  VK_CHECK(vkEndCommandBuffer(vk_command_buffer));
+  command_buffer->end();
 }
 
 void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
@@ -699,6 +608,24 @@ void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
   }
 }
 
+VulkanBuffer *VulkanBackend::access_buffer(BufferHandle handle) {
+  return buffers.obtain(handle);
+}
+
+VulkanPipeline *VulkanBackend::access_pipeline(PipelineHandle handle) {
+  return pipelines.obtain(handle);
+}
+
+VulkanDescriptorSetLayout *
+VulkanBackend::access_descriptor_set_layout(DescriptorSetLayoutHandle handle) {
+  return descriptor_set_layouts.obtain(handle);
+}
+
+VulkanDescriptorSet *
+VulkanBackend::access_descriptor_set(DescriptorSetHandle handle) {
+  return descriptor_sets.obtain(handle);
+}
+
 void VulkanBackend::create_buffers() {
   VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size;
 
@@ -718,7 +645,11 @@ void VulkanBackend::create_buffers() {
   memcpy(data, vertices.data, (size_t)buffer_size);
   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
-  copy_buffer(staging_buffer.vk_handle, vertex_buffer.vk_handle, buffer_size);
+  VulkanCommandBuffer *command_buffer =
+      transfer_command_buffer_manager.get_command_buffer(0, 0, false);
+  command_buffer->copy_buffer_to_buffer(vertex_buffer.vk_handle,
+                                        staging_buffer.vk_handle, buffer_size,
+                                        vk_transfer_queue);
 
   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
                    staging_buffer.vma_allocation);
@@ -738,7 +669,9 @@ void VulkanBackend::create_buffers() {
   memcpy(data, indexes.data, (size_t)buffer_size);
   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
-  copy_buffer(staging_buffer.vk_handle, index_buffer.vk_handle, buffer_size);
+  command_buffer->copy_buffer_to_buffer(index_buffer.vk_handle,
+                                        staging_buffer.vk_handle, buffer_size,
+                                        vk_transfer_queue);
 
   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
                    staging_buffer.vma_allocation);
@@ -797,7 +730,7 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
           : 0;
 
   // TODO: Make use of MemoryState::Enum
-  VulkanBuffer *buffer = buffers.obtain(handle);
+  VulkanBuffer *buffer = access_buffer(handle);
   VmaAllocationInfo alloc_info{};
 
   VK_CHECK(vmaCreateBuffer(vma_allocator, &buffer_info, &memory_info,
@@ -832,7 +765,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     return handle;
   }
 
-  VulkanPipeline *pipeline = pipelines.obtain(handle);
+  VulkanPipeline *pipeline = access_pipeline(handle);
   pipeline->vk_handle = VK_NULL_HANDLE;
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
@@ -1018,7 +951,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
         descriptor_set_layouts.obtain_new();
     if (dset_layout_handle.index != k_invalid_index) {
       VulkanDescriptorSetLayout *dset_layout =
-          descriptor_set_layouts.obtain(dset_layout_handle);
+          access_descriptor_set_layout(dset_layout_handle);
 
       dset_layout->vk_bindings = parse_result.set_layouts[i].vk_bindings;
       dset_layout->set_index = parse_result.set_layouts[i].set_index;
@@ -1055,6 +988,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   pipeline_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
   if (creation.pipeline_type == PipelineType::Graphics) {
+    pipeline->bind_point = to_vk_bind_point(creation.pipeline_type);
 
     VkGraphicsPipelineCreateInfo pipeline_info{
         VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -1105,7 +1039,7 @@ void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
     return;
   }
 
-  VulkanPipeline *pipeline = pipelines.obtain(handle);
+  VulkanPipeline *pipeline = access_pipeline(handle);
 
   for (u32 i = 0; i < pipeline->set_layout_count; ++i) {
     destroy_descriptor_set_layout(pipeline->set_layouts[i]);
@@ -1131,7 +1065,7 @@ void VulkanBackend::destroy_buffer_instant(BufferHandle handle) {
     HWARN("Attempting to free an invalid VulkanBuffer");
     return;
   }
-  VulkanBuffer *buffer = buffers.obtain(handle);
+  VulkanBuffer *buffer = access_buffer(handle);
   VmaAllocationInfo alloc_info{};
   alloc_info.pMappedData = nullptr;
   vmaGetAllocationInfo(vma_allocator, buffer->vma_allocation, &alloc_info);
@@ -1150,7 +1084,7 @@ void VulkanBackend::destroy_pipeline_instant(PipelineHandle handle) {
     return;
   }
 
-  VulkanPipeline *pipeline = pipelines.obtain(handle);
+  VulkanPipeline *pipeline = access_pipeline(handle);
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   hfree(pipeline->set_layouts, allocator);
@@ -1169,7 +1103,7 @@ void VulkanBackend::destroy_descriptor_set_layout_instant(
     HERROR("Attempting to free an invalid VulkanDescriptorSetLayout");
     return;
   }
-  VulkanDescriptorSetLayout *layout = descriptor_set_layouts.obtain(handle);
+  VulkanDescriptorSetLayout *layout = access_descriptor_set_layout(handle);
   for (u32 i = 0; i < layout->allocated_sets.size; ++i) {
     descriptor_sets.release(layout->allocated_sets[i]);
   }
@@ -1212,16 +1146,16 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
     HERROR("Failed to obtain a VulkanDescriptorSet resource!");
     return false;
   }
-  VulkanDescriptorSet *d_set = descriptor_sets.obtain(handle);
+  VulkanDescriptorSet *d_set = access_descriptor_set(handle);
 
-  VulkanPipeline *pipeline = pipelines.obtain(pipeline_handle);
+  VulkanPipeline *pipeline = access_pipeline(pipeline_handle);
   if (pipeline_handle.index == k_invalid_index) {
     HERROR("Invalid VulkanPipeline resource!");
     return false;
   }
 
   VulkanDescriptorSetLayout *layout =
-      descriptor_set_layouts.obtain(pipeline->set_layouts[set.set_index]);
+      access_descriptor_set_layout(pipeline->set_layouts[set.set_index]);
 
   VkDescriptorSetLayout vk_layout = layout->vk_handle;
   VkDescriptorSetAllocateInfo alloc_info{};
@@ -1240,7 +1174,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
     if (set.uniforms[i].resource_type == ResourceType::Buffer) {
       VkDescriptorBufferInfo &buffer_info = buffer_infos[i];
       VulkanBuffer *buffer =
-          buffers.obtain(set.uniforms[i].internal_resource_handle);
+          access_buffer(set.uniforms[i].internal_resource_handle);
 
       buffer_info.buffer = buffer->vk_handle;
       buffer_info.offset = set.uniforms[i].buffer_info.offset;
@@ -1285,32 +1219,12 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
 }
 
-void VulkanBackend::draw_frame(RenderPacket *packet) {
-  VK_CHECK(vkWaitForFences(vk_device, 1,
-                           &in_flight_fences[packet->current_frame], VK_TRUE,
-                           UINT64_MAX));
+void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 
-  uint32_t image_index;
-  VkResult result =
-      vkAcquireNextImageKHR(vk_device, swapchain.vk_handle, UINT64_MAX,
-                            image_available_semaphores[packet->current_frame],
-                            VK_NULL_HANDLE, &image_index);
+  VulkanCommandBuffer *command_buffer =
+      command_buffer_manager.get_command_buffer(packet->current_frame, 0, true);
 
-  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-    resize_swapchain();
-    return;
-  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-    HERROR("Failed to acquire swap chain image!");
-  }
-
-  VK_CHECK(
-      vkResetFences(vk_device, 1, &in_flight_fences[packet->current_frame]));
-
-  VK_CHECK(vkResetCommandBuffer(vk_command_buffers[packet->current_frame], 0));
-
-  update_uniform_buffer(packet);
-  record_command_buffer(vk_command_buffers[packet->current_frame], image_index,
-                        packet->current_frame);
+  record_command_buffer(command_buffer, image_index, packet->current_frame);
 
   VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
 
@@ -1322,7 +1236,7 @@ void VulkanBackend::draw_frame(RenderPacket *packet) {
   submit_info.pWaitSemaphores = wait_semaphores;
   submit_info.pWaitDstStageMask = wait_stages;
   submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &vk_command_buffers[packet->current_frame];
+  submit_info.pCommandBuffers = &command_buffer->vk_handle;
 
   VkSemaphore signal_semaphores[] = {
       render_finished_semaphores[packet->current_frame]};
@@ -1343,7 +1257,7 @@ void VulkanBackend::draw_frame(RenderPacket *packet) {
   present_info.pImageIndices = &image_index;
   present_info.pResults = nullptr;
 
-  result = vkQueuePresentKHR(vk_graphics_queue, &present_info);
+  VkResult result = vkQueuePresentKHR(vk_graphics_queue, &present_info);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
       resize_frame) {
@@ -1352,9 +1266,6 @@ void VulkanBackend::draw_frame(RenderPacket *packet) {
   } else if (result != VK_SUCCESS) {
     HERROR("Failed to present swap chain image!");
   }
-
-  free_queued_resources();
-  ++frame_number;
 }
 
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
@@ -1368,44 +1279,9 @@ void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
                               0.1f, 100.0f);
   ubo.proj[1][1] *= -1;
 
-  VulkanBuffer *uniform_buffer = buffers.obtain(packet->scene_data_buffer);
+  VulkanBuffer *uniform_buffer = access_buffer(packet->scene_data_buffer);
 
   memcpy(uniform_buffer->mapped_data, &ubo, sizeof(ubo));
-}
-
-void VulkanBackend::copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer,
-                                VkDeviceSize size) {
-
-  VkCommandBufferAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  alloc_info.commandPool = vk_transfer_pool;
-  alloc_info.commandBufferCount = 1;
-
-  VkCommandBuffer command_buffer;
-  vkAllocateCommandBuffers(vk_device, &alloc_info, &command_buffer);
-
-  VkCommandBufferBeginInfo begin_info{};
-  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-  vkBeginCommandBuffer(command_buffer, &begin_info);
-
-  VkBufferCopy copy_region{};
-  copy_region.size = size;
-  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
-
-  vkEndCommandBuffer(command_buffer);
-
-  VkSubmitInfo submit_info{};
-  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &command_buffer;
-
-  vkQueueSubmit(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
-  vkQueueWaitIdle(vk_transfer_queue);
-
-  vkFreeCommandBuffers(vk_device, vk_transfer_pool, 1, &command_buffer);
 }
 
 void VulkanBackend::upload_buffer_data(void *data, VkBuffer dst_buffer,
@@ -1420,7 +1296,11 @@ void VulkanBackend::upload_buffer_data(void *data, VkBuffer dst_buffer,
   memcpy(data, vertices.data, (size_t)buffer_size);
   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
-  copy_buffer(staging_buffer.vk_handle, vertex_buffer.vk_handle, buffer_size);
+  VulkanCommandBuffer *command_buffer =
+      transfer_command_buffer_manager.get_command_buffer(0, 0, false);
+  command_buffer->copy_buffer_to_buffer(vertex_buffer.vk_handle,
+                                        staging_buffer.vk_handle, buffer_size,
+                                        vk_transfer_queue);
 
   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
                    staging_buffer.vma_allocation);

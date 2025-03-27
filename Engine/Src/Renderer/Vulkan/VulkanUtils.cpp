@@ -1,4 +1,5 @@
 #include "VulkanUtils.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan_core.h>
@@ -52,6 +53,15 @@ VmaMemoryUsage to_vma_mem_usage_flags(MemoryAccess::Enum _usage) {
     return VMA_MEMORY_USAGE_GPU_TO_CPU;
   case MemoryAccess::CPU_ONLY:
     return VMA_MEMORY_USAGE_CPU_ONLY;
+  }
+}
+
+VkPipelineBindPoint to_vk_bind_point(PipelineType::Enum type) {
+  switch (type) {
+  case PipelineType::Graphics:
+    return VK_PIPELINE_BIND_POINT_GRAPHICS;
+  case PipelineType::Compute:
+    return VK_PIPELINE_BIND_POINT_COMPUTE;
   }
 }
 } // namespace Helix

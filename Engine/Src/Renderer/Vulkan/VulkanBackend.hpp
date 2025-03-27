@@ -1,12 +1,12 @@
 #pragma once
 
+#include "CommandBuffer.hpp"
 #include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "VulkanTypes.hpp"
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 
@@ -26,8 +26,8 @@ struct VulkanBackend : public RendererBackend {
   void destroy_swapchain();
   void resize_swapchain();
 
-  void record_command_buffer(VkCommandBuffer vk_command_buffer, u32 image_index,
-                             u32 current_frame);
+  void record_command_buffer(VulkanCommandBuffer *command_buffer,
+                             u32 image_index, u32 current_frame);
 
   // TODO: Make a generic create_buffers
   void create_buffers();
@@ -35,13 +35,16 @@ struct VulkanBackend : public RendererBackend {
                         VkMemoryPropertyFlags properties, VulkanBuffer &buffer);
   virtual BufferHandle create_buffer(BufferCreation &creation) override;
   virtual PipelineHandle create_pipeline(PipelineCreation &creation) override;
-  // CreateDescriptorSet
   virtual bool update_shader_uniform_set(ShaderUniformSet &set,
                                          PipelineHandle pipeline) override;
   void create_descriptor_pool(u32 max_frames_in_flight);
   void create_sync_objects(u32 max_frames_in_flight);
-  void create_command_pool(QueueFamilyIndices &indices);
-  void create_command_buffers(u32 max_frames_in_flight);
+
+  VulkanBuffer *access_buffer(BufferHandle handle);
+  VulkanPipeline *access_pipeline(PipelineHandle handle);
+  VulkanDescriptorSetLayout *
+  access_descriptor_set_layout(DescriptorSetLayoutHandle handle);
+  VulkanDescriptorSet *access_descriptor_set(DescriptorSetHandle handle);
 
   virtual void destroy_buffer(BufferHandle handle) override;
   virtual void destroy_pipeline(PipelineHandle handle) override;
@@ -53,12 +56,11 @@ struct VulkanBackend : public RendererBackend {
 
   void free_queued_resources();
 
-  void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
   void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);
 
   void load_model();
 
-  void draw_frame(RenderPacket *packet);
+  void draw_frame(RenderPacket *packet, u32 image_index);
   void update_uniform_buffer(RenderPacket *packet);
 
   void set_resource_name(VkObjectType type, u64 handle, cstring name);
@@ -74,9 +76,8 @@ struct VulkanBackend : public RendererBackend {
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};
 
-  VkCommandPool vk_command_pool{VK_NULL_HANDLE};
-  VkCommandPool vk_transfer_pool{VK_NULL_HANDLE};
-  Array<VkCommandBuffer> vk_command_buffers;
+  CommandBufferManager command_buffer_manager{};
+  CommandBufferManager transfer_command_buffer_manager{};
 
   Array<VkSemaphore> image_available_semaphores;
   Array<VkSemaphore> render_finished_semaphores;

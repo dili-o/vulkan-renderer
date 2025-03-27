@@ -1,11 +1,5 @@
 #version 450
 
-layout(binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-} ubo;
-
 layout(set = 0, binding = 1) uniform TestObject {
   float multiplier;
 } testObj;
