@@ -39,7 +39,7 @@ enum Enum {
 }
 
 namespace TextureFormat {
-enum Enum { Undefined, D32, B8G8R8A8_UNORM };
+enum Enum { Undefined, D32, B8G8R8A8_UNORM, R8G8B8A8_SRGB };
 }
 
 namespace TextureUsage {
@@ -111,6 +111,11 @@ struct BufferInfo {
 struct PipelineResource {
   PipelineHandle handle;
   PipelineHandle internal_handle;
+};
+
+struct TextureResource {
+  TextureHandle handle;
+  TextureHandle internal_handle;
 };
 
 // TODO: Maybe add a union that lets you specify other details about the rosouce

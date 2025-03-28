@@ -65,7 +65,6 @@ void parse_binary(const u32 *data, size_t data_size,
   HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
 
   for (u32 i = 0; i < (u32)sets.size(); ++i) {
     // Check if we've already added the set

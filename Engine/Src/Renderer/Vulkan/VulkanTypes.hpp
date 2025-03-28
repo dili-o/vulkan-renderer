@@ -32,6 +32,7 @@ struct VulkanBuffer {
   VkBuffer vk_handle{VK_NULL_HANDLE};
   VmaAllocation vma_allocation{VK_NULL_HANDLE};
   void *mapped_data{nullptr};
+  cstring name{nullptr};
 };
 
 struct VulkanDescriptorSetLayout {
@@ -40,11 +41,13 @@ struct VulkanDescriptorSetLayout {
   u32 set_index = 0;
 
   Array<DescriptorSetHandle> allocated_sets{};
+  cstring name{nullptr};
 };
 
 struct VulkanDescriptorSet {
   VkDescriptorSet vk_handle{VK_NULL_HANDLE};
   DescriptorSetLayoutHandle set_layout;
+  cstring name{nullptr};
 };
 
 struct VulkanPipeline {
@@ -53,6 +56,7 @@ struct VulkanPipeline {
   DescriptorSetLayoutHandle *set_layouts = nullptr;
   u32 set_layout_count = 0;
   VkPipelineBindPoint bind_point;
+  cstring name{nullptr};
 };
 
 struct VulkanImage {
@@ -60,6 +64,7 @@ struct VulkanImage {
   VmaAllocation vma_allocation{VK_NULL_HANDLE};
   VkImageLayout current_layout{VK_IMAGE_LAYOUT_UNDEFINED};
   VkFormat format;
+  VkExtent3D vk_extents;
   u32 views_count = 0; // Tracks the number of views that view this image;
   cstring name = nullptr;
 };

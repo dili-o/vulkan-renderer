@@ -234,13 +234,12 @@ bool VulkanBackend::init(void *_config) {
     return false;
   }
 
-  QueueFamilyIndices indices{};
   Array<cstring> device_extensions{};
   device_extensions.init(stack_allocator, 1, 1);
   device_extensions[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
   // Create Physical Device
-  if (!select_physical_device(vk_instance, vk_physical_device, indices,
-                              vk_surface)) {
+  if (!select_physical_device(vk_instance, vk_physical_device,
+                              queue_family_indices, vk_surface)) {
     HERROR("Failed to create physical device!");
     return false;
   }
@@ -252,15 +251,17 @@ bool VulkanBackend::init(void *_config) {
 
   VkDeviceQueueCreateInfo main_queue_info{
       VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-  main_queue_info.queueFamilyIndex = indices.graphics_family_index;
+  main_queue_info.queueFamilyIndex = queue_family_indices.graphics_family_index;
   main_queue_info.queueCount = 1;
   main_queue_info.pQueuePriorities = &queue_priority;
   queue_create_infos.push(main_queue_info);
 
-  if (indices.graphics_family_index != indices.transfer_family_index) {
+  if (queue_family_indices.graphics_family_index !=
+      queue_family_indices.transfer_family_index) {
     VkDeviceQueueCreateInfo queue_create_info{
         VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-    queue_create_info.queueFamilyIndex = indices.transfer_family_index;
+    queue_create_info.queueFamilyIndex =
+        queue_family_indices.transfer_family_index;
     queue_create_info.queueCount = 1;
     queue_create_info.pQueuePriorities = &queue_priority;
     queue_create_infos.push(queue_create_info);
@@ -330,11 +331,12 @@ bool VulkanBackend::init(void *_config) {
 
   VK_CHECK(vmaCreateAllocator(&allocator_create_info, &vma_allocator));
 
-  vkGetDeviceQueue(vk_device, indices.graphics_family_index, 0,
+  vkGetDeviceQueue(vk_device, queue_family_indices.graphics_family_index, 0,
                    &vk_graphics_queue);
   vk_transfer_queue = vk_graphics_queue;
-  if (indices.graphics_family_index != indices.transfer_family_index) {
-    vkGetDeviceQueue(vk_device, indices.transfer_family_index, 0,
+  if (queue_family_indices.graphics_family_index !=
+      queue_family_indices.transfer_family_index) {
+    vkGetDeviceQueue(vk_device, queue_family_indices.transfer_family_index, 0,
                      &vk_transfer_queue);
   }
 
@@ -350,10 +352,10 @@ bool VulkanBackend::init(void *_config) {
   // Create swapchain
   create_swapchain();
 
-  command_buffer_manager.init(this, indices.graphics_family_index, 1,
-                              config->max_frames_in_flight);
-  transfer_command_buffer_manager.init(this, indices.transfer_family_index, 1,
-                                       1);
+  command_buffer_manager.init(this, queue_family_indices.graphics_family_index,
+                              1, config->max_frames_in_flight);
+  transfer_command_buffer_manager.init(
+      this, queue_family_indices.transfer_family_index, 1, 1);
 
   load_model();
   create_buffers();
@@ -465,7 +467,8 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
   update_uniform_buffer(packet);
 
   VulkanCommandBuffer *command_buffer =
-      command_buffer_manager.get_command_buffer(packet->current_frame, 0, true);
+      command_buffer_manager.get_command_buffer(packet->current_frame, 0,
+                                                false);
 
   command_buffer->reset();
 
@@ -816,6 +819,7 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
     vmaMapMemory(vma_allocator, buffer->vma_allocation, &buffer->mapped_data);
   }
 
+  buffer->name = creation.name;
   set_resource_name(VK_OBJECT_TYPE_BUFFER, (u64)buffer->vk_handle,
                     creation.name);
 
@@ -1090,6 +1094,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
                           vk_allocation_callbacks);
   }
 
+  pipeline->name = creation.name;
   set_resource_name(VK_OBJECT_TYPE_PIPELINE, (u64)pipeline->vk_handle,
                     creation.name);
 
@@ -1145,6 +1150,48 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
   image->views_count = 0;
   image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   image->format = to_vk_format(creation.format);
+  image->vk_extents = {creation.width, creation.height, creation.depth};
+
+  if (creation.initial_data) {
+    VulkanBuffer staging_buffer{};
+    // TODO: Make more configurable for different image formats
+    VkDeviceSize buffer_size = creation.width * creation.height * 4;
+
+    vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     staging_buffer);
+
+    void *data;
+    vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
+    memcpy(data, creation.initial_data, (size_t)buffer_size);
+    vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
+
+    VulkanCommandBuffer *command_buffer =
+        command_buffer_manager.get_command_buffer(0, 0, true);
+    command_buffer->copy_buffer_to_image(handle, staging_buffer.vk_handle,
+                                         buffer_size, vk_transfer_queue);
+
+    // TODO: Maybe make it possible to configure images to not be
+    // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    // Also consider queue transfer
+    command_buffer->transition_image(
+        handle, image->current_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    command_buffer->end();
+
+    VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &command_buffer->vk_handle;
+
+    vkQueueSubmit(vk_graphics_queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(vk_graphics_queue);
+
+    command_buffer->reset();
+    vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
+                     staging_buffer.vma_allocation);
+  }
 
   return handle;
 }
@@ -1187,7 +1234,8 @@ void VulkanBackend::destroy_buffer(BufferHandle handle) {
     HWARN("Attempting to free an invalid VulkanBuffer");
     return;
   }
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_BUFFER, handle};
+  VulkanBuffer *buffer = access_buffer(handle);
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_BUFFER, handle, buffer->name};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1203,7 +1251,7 @@ void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
     destroy_descriptor_set_layout(pipeline->set_layouts[i]);
   }
 
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle, pipeline->name};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1272,6 +1320,10 @@ void VulkanBackend::destroy_buffer_instant(BufferHandle handle) {
     vmaUnmapMemory(vma_allocator, buffer->vma_allocation);
 
   vmaDestroyBuffer(vma_allocator, buffer->vk_handle, buffer->vma_allocation);
+  buffer->name = nullptr;
+  buffer->vk_handle = VK_NULL_HANDLE;
+  buffer->vma_allocation = VK_NULL_HANDLE;
+  buffer->mapped_data = nullptr;
 
   buffers.release(handle);
 }
@@ -1446,7 +1498,8 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 
   VulkanCommandBuffer *command_buffer =
-      command_buffer_manager.get_command_buffer(packet->current_frame, 0, true);
+      command_buffer_manager.get_command_buffer(packet->current_frame, 0,
+                                                false);
 
   record_command_buffer(command_buffer, image_index, packet->current_frame);
 
@@ -1617,7 +1670,7 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 
 static bool select_physical_device(VkInstance instance,
                                    VkPhysicalDevice &_physical_device,
-                                   QueueFamilyIndices &indices,
+                                   QueueFamilyIndices &queue_family_indices,
                                    VkSurfaceKHR surface) {
   u32 physical_device_count = 0;
   VK_CHECK(
@@ -1686,17 +1739,17 @@ static bool select_physical_device(VkInstance instance,
                                            &present_queue_support);
       if (present_queue_support &&
           queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
-          indices.graphics_family_index == UINT32_MAX) {
-        indices.graphics_family_index = idx;
+          queue_family_indices.graphics_family_index == UINT32_MAX) {
+        queue_family_indices.graphics_family_index = idx;
         continue;
       }
 
       if (queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
-        indices.transfer_family_index = idx;
+        queue_family_indices.transfer_family_index = idx;
         continue;
       }
     }
-    if (indices.is_complete()) {
+    if (queue_family_indices.is_complete()) {
       found_suitable_device = true;
       _physical_device = device;
       HTRACE("Suitable device found: {}", device_properties.deviceName);

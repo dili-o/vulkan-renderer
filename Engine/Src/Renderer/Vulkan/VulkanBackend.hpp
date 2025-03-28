@@ -13,6 +13,7 @@ namespace Helix {
 struct ResourceQueueObject {
   VkObjectType type;
   ResourceHandle handle;
+  cstring name{nullptr};
 };
 
 struct VulkanBackend : public RendererBackend {
@@ -86,6 +87,8 @@ struct VulkanBackend : public RendererBackend {
   VkDevice vk_device{VK_NULL_HANDLE};
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};
+
+  QueueFamilyIndices queue_family_indices{};
 
   CommandBufferManager command_buffer_manager{};
   CommandBufferManager transfer_command_buffer_manager{};

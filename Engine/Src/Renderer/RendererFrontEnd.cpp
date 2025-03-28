@@ -42,6 +42,7 @@ void RendererFrontEnd::init(void *_config) {
 
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
+  textures.init(allocator, 10);
 
   string_buffer.init(allocator, hkilo(1));
 
@@ -74,15 +75,17 @@ void RendererFrontEnd::init(void *_config) {
     }
   }
 
-  PipelineCreation creation;
-  creation.name = "test";
-  creation.shader_create_infos = (ShaderCreateInfo *)halloca(
-      sizeof(ShaderCreateInfo) * 2, stack_allocator);
-  creation.shader_create_infos[0] = {"shader.vert", ShaderStage::Vertex};
-  creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
-  creation.shader_count = 2;
-  creation.pipeline_type = PipelineType::Graphics;
-  pipeline = create_pipeline(creation);
+  {
+    PipelineCreation creation;
+    creation.name = "test";
+    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+        sizeof(ShaderCreateInfo) * 2, stack_allocator);
+    creation.shader_create_infos[0] = {"shader.vert", ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
+    creation.shader_count = 2;
+    creation.pipeline_type = PipelineType::Graphics;
+    pipeline = create_pipeline(creation);
+  }
 
   ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
       sizeof(ShaderUniform) * max_frames_in_flight * 2, stack_allocator);
@@ -109,16 +112,36 @@ void RendererFrontEnd::init(void *_config) {
     update_shader_uniform_set(set, pipeline);
   }
 
+  // Magenta
+  u8 def_colour[4] = {255, 0, 255, 255};
+  TextureCreation tex_creation{};
+  tex_creation.name = "default_texture";
+  tex_creation.initial_data = def_colour;
+  tex_creation.width = 4;
+  tex_creation.height = 4;
+  tex_creation.depth = 1;
+  tex_creation.array_layer_count = 1;
+  tex_creation.array_base_level = 0;
+  tex_creation.mip_level_count = 1;
+  tex_creation.mip_base_level = 0;
+  tex_creation.usage = TextureUsage::TransferDest;
+  tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
+  tex_creation.type = TextureType::Texture2D;
+  default_texture = create_texture(tex_creation);
+
   stack_allocator->free_marker(stack_marker);
 }
 
 void RendererFrontEnd::shutdown() {
   destroy_pipeline(pipeline);
+  destroy_texture(default_texture);
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
     destroy_buffer(second_buffers[i]);
   }
+
+  textures.shutdown();
   backend->shutdown();
   buffers.shutdown();
   pipelines.shutdown();
@@ -207,6 +230,27 @@ PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
   return handle;
 }
 
+TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
+  TextureHandle handle = textures.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain new TextureResource");
+    return handle;
+  }
+
+  TextureHandle internal_handle = backend->create_texture(creation);
+  if (internal_handle.index == k_invalid_index) {
+    textures.release(handle);
+    handle.index = k_invalid_index;
+    return handle;
+  }
+
+  TextureResource *texture = textures.obtain(handle);
+  texture->handle = handle;
+  texture->internal_handle = internal_handle;
+
+  return handle;
+}
+
 void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
   if (handle.index == k_invalid_index) {
     HERROR("Attempting to destroy an invalid buffer");
@@ -228,6 +272,18 @@ void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
   backend->destroy_pipeline(pipeline->internal_handle);
 
   pipelines.release(handle);
+}
+
+void RendererFrontEnd::destroy_texture(TextureHandle handle) {
+
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to destroy an invalid texture");
+    return;
+  }
+  TextureResource *texture = textures.obtain(handle);
+  backend->destroy_texture(texture->internal_handle);
+
+  textures.release(handle);
 }
 
 bool RendererFrontEnd::update_shader_uniform_set(ShaderUniformSet &set,

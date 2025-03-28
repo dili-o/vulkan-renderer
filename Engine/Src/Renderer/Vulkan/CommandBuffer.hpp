@@ -19,11 +19,12 @@ struct VulkanCommandBuffer {
   void reset();
   void free();
 
-  // TODO: Fully implement this when you've added textures
   void transition_image(TextureHandle image_handle, VkImageLayout old_layout,
                         VkImageLayout new_layout,
                         VkPipelineStageFlags src_stage,
-                        VkPipelineStageFlags dst_stage);
+                        VkPipelineStageFlags dst_stage,
+                        u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
+                        u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
 
   // TODO: Fully implement this when you've added renderpasses and framebuffers
   void bind_renderpass(VkExtent2D extents, TextureHandle view_handle);
@@ -46,8 +47,16 @@ struct VulkanCommandBuffer {
 
   // TODO: Right now each call always submits and waits for the queue to be idle
   // This should be able to record any upload commands
+  // Maybe also have a version of this function that takes in ResourceHandles
+  // instead
   void copy_buffer_to_buffer(VkBuffer dst_buffer, VkBuffer src_buffer, u32 size,
                              VkQueue vk_queue);
+
+  // Note: This function transitions the image to
+  // VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL but doesn't transition it back to it's
+  // previous state
+  void copy_buffer_to_image(TextureHandle dst_image, VkBuffer src_buffer,
+                            u32 size, VkQueue vk_queue);
 
   VulkanBackend *backend{nullptr};
   VkCommandBuffer vk_handle{VK_NULL_HANDLE};
@@ -65,6 +74,7 @@ struct CommandBufferManager {
   VulkanCommandBuffer *get_command_buffer(u32 frame, u32 thread_index,
                                           bool begin);
 
+  // TODO: Make a function to submit all command buffers for a pool index;
   u32 max_frames_in_flight = 0;
   Array<VkCommandPool> vk_command_pools;
   Array<VulkanCommandBuffer> command_buffers;

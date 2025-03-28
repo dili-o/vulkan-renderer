@@ -30,10 +30,12 @@ struct RendererFrontEnd : public Service {
   bool load_model(cstring path);
 
   BufferHandle create_buffer(BufferCreation &creation);
-  void destroy_buffer(BufferHandle handle);
-
   PipelineHandle create_pipeline(PipelineCreation &creation);
+  TextureHandle create_texture(TextureCreation &creation);
+
+  void destroy_buffer(BufferHandle handle);
   void destroy_pipeline(PipelineHandle handle);
+  void destroy_texture(TextureHandle handle);
 
   bool update_shader_uniform_set(ShaderUniformSet &set,
                                  PipelineHandle pipeline);
@@ -45,10 +47,13 @@ struct RendererFrontEnd : public Service {
 
   ResourcePool<BufferResource> buffers{};
   ResourcePool<PipelineResource> pipelines{};
+  ResourcePool<TextureResource> textures{};
   BufferHandle vertex_buffer{};
   BufferHandle index_buffer{};
   BufferHandle uniform_buffers[max_frames_in_flight];
   BufferHandle second_buffers[max_frames_in_flight];
   PipelineHandle pipeline{};
+
+  TextureHandle default_texture;
 };
 } // namespace Helix

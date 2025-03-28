@@ -17,6 +17,8 @@ VkAccessFlags to_vk_src_access_flags(VkImageLayout layout) {
     return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_UNDEFINED:
     return VK_ACCESS_NONE;
+  case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+    return VK_ACCESS_TRANSFER_WRITE_BIT;
   default:
     HERROR("Unknown layout");
     return VK_ACCESS_NONE;
@@ -33,6 +35,10 @@ VkAccessFlags to_vk_dst_access_flags(VkImageLayout layout) {
     return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
     return 0;
+  case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+    return VK_ACCESS_TRANSFER_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_SHADER_READ_BIT;
   default:
     HERROR("Unknown layout");
     return VK_ACCESS_NONE;
@@ -80,12 +86,18 @@ void VulkanCommandBuffer::end() {
   VK_CHECK(vkEndCommandBuffer(vk_handle));
   state = CommandBufferState::Executable;
 }
+
 void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
                                            VkImageLayout old_layout,
                                            VkImageLayout new_layout,
                                            VkPipelineStageFlags src_stage,
-                                           VkPipelineStageFlags dst_stage) {
+                                           VkPipelineStageFlags dst_stage,
+                                           u32 src_queue_family_index,
+                                           u32 dst_queue_family_index) {
+  // TODO: Better way to select src and dst stages
 
+  // TODO: Should there be a check to see if the command buffer has already
+  // begun?
   VulkanImage *image = backend->images.obtain(image_handle);
   if (old_layout == new_layout)
     return;
@@ -93,8 +105,8 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
   VkImageMemoryBarrier image_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
   image_barrier.oldLayout = old_layout;
   image_barrier.newLayout = new_layout;
-  image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  image_barrier.srcQueueFamilyIndex = src_queue_family_index;
+  image_barrier.dstQueueFamilyIndex = dst_queue_family_index;
   image_barrier.image = image->vk_handle;
   image_barrier.subresourceRange.aspectMask =
       has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
@@ -210,6 +222,7 @@ void VulkanCommandBuffer::draw_indexed(u32 index_count, u32 instance_count,
 void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
                                                 VkBuffer src_buffer, u32 size,
                                                 VkQueue vk_queue) {
+  // TODO: Add a flag that lets you record multiple commands before submitting
 
   begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
@@ -226,8 +239,30 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
 
   vkQueueSubmit(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
   vkQueueWaitIdle(vk_queue);
+}
 
-  //  free();
+void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
+                                               VkBuffer src_buffer, u32 size,
+                                               VkQueue vk_queue) {
+  // Tranisiton image
+  VulkanImage *image = backend->access_image(dst_image);
+  transition_image(
+      dst_image, image->current_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+  VkBufferImageCopy region{};
+  region.bufferOffset = 0;
+  region.bufferRowLength = 0;
+  region.bufferImageHeight = 0;
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = image->vk_extents;
+
+  vkCmdCopyBufferToImage(vk_handle, src_buffer, image->vk_handle,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 #pragma endregion VulkanCommandBuffer
 
@@ -281,7 +316,12 @@ VulkanCommandBuffer *CommandBufferManager::get_command_buffer(u32 frame,
                                                               u32 thread_index,
                                                               bool begin) {
   // TODO: Safety checks
-  return &command_buffers[(max_frames_in_flight * thread_index) + frame];
+  VulkanCommandBuffer *buffer =
+      &command_buffers[(max_frames_in_flight * thread_index) + frame];
+  if (begin) {
+    buffer->begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+  }
+  return buffer;
 }
 #pragma endregion CommandBufferManager
 } // namespace Helix
