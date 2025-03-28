@@ -4,8 +4,41 @@
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "VulkanBackend.hpp"
 #include "VulkanUtils.hpp"
+#include <vulkan/vulkan_core.h>
 
 namespace Helix {
+VkAccessFlags to_vk_src_access_flags(VkImageLayout layout) {
+  switch (layout) {
+  case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_UNDEFINED:
+    return VK_ACCESS_NONE;
+  default:
+    HERROR("Unknown layout");
+    return VK_ACCESS_NONE;
+  }
+}
+
+VkAccessFlags to_vk_dst_access_flags(VkImageLayout layout) {
+  switch (layout) {
+  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+    return 0;
+  default:
+    HERROR("Unknown layout");
+    return VK_ACCESS_NONE;
+  }
+}
+
 #pragma region VulkanCommandBuffer
 
 void VulkanCommandBuffer::init(VkCommandPool pool, VkCommandBufferLevel level,
@@ -47,75 +80,64 @@ void VulkanCommandBuffer::end() {
   VK_CHECK(vkEndCommandBuffer(vk_handle));
   state = CommandBufferState::Executable;
 }
-void VulkanCommandBuffer::transition_image(VkImage image) {
+void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
+                                           VkImageLayout old_layout,
+                                           VkImageLayout new_layout,
+                                           VkPipelineStageFlags src_stage,
+                                           VkPipelineStageFlags dst_stage) {
 
-  VkImageMemoryBarrier image_barrier = {};
-  image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  image_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  image_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  VulkanImage *image = backend->images.obtain(image_handle);
+  if (old_layout == new_layout)
+    return;
+
+  VkImageMemoryBarrier image_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  image_barrier.oldLayout = old_layout;
+  image_barrier.newLayout = new_layout;
   image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  image_barrier.image = image;
-  image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  image_barrier.image = image->vk_handle;
+  image_barrier.subresourceRange.aspectMask =
+      has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                          : VK_IMAGE_ASPECT_COLOR_BIT;
   image_barrier.subresourceRange.baseMipLevel = 0;
   image_barrier.subresourceRange.levelCount = 1;
   image_barrier.subresourceRange.baseArrayLayer = 0;
   image_barrier.subresourceRange.layerCount = 1;
 
   // Synchronization settings
-  image_barrier.srcAccessMask = 0;
-  image_barrier.dstAccessMask =
-      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT; // No further writes needed before
-                                            // presenting
-
-  VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-  VkPipelineStageFlags dst_stage =
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  image_barrier.srcAccessMask = to_vk_src_access_flags(old_layout);
+  image_barrier.dstAccessMask = to_vk_dst_access_flags(new_layout);
 
   vkCmdPipelineBarrier(vk_handle, src_stage, dst_stage, 0, 0, nullptr, 0,
                        nullptr, 1, &image_barrier);
-}
 
-void VulkanCommandBuffer::transition_image2(VkImage image) {
-  VkImageMemoryBarrier image_barrier = {};
-  image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  image_barrier.oldLayout =
-      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Previous layout (after
-                                                // rendering)
-  image_barrier.newLayout =
-      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Layout for presentation
-  image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  image_barrier.image = image;
-  image_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  image_barrier.subresourceRange.baseMipLevel = 0;
-  image_barrier.subresourceRange.levelCount = 1;
-  image_barrier.subresourceRange.baseArrayLayer = 0;
-  image_barrier.subresourceRange.layerCount = 1;
-
-  // Synchronization settings
-  image_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-  image_barrier.dstAccessMask = 0; // No further writes needed before presenting
-
-  VkPipelineStageFlags src_stage =
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-
-  vkCmdPipelineBarrier(vk_handle, src_stage, dst_stage, 0, 0, nullptr, 0,
-                       nullptr, 1, &image_barrier);
+  image->current_layout = image_barrier.newLayout;
 }
 
 void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
-                                          VkImageView image_view) {
+                                          TextureHandle view_handle) {
+  VulkanImageView *view = backend->access_image_view(view_handle);
+
   VkRenderingAttachmentInfo color_attachment_info{
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-
-  color_attachment_info.imageView = image_view;
+  color_attachment_info.imageView = view->vk_handle;
   color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
   color_attachment_info.clearValue = {{{0.0f, 0.0f, 0.1f, 1.0f}}};
   color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+
+  VkRenderingAttachmentInfo depth_attachment_info{
+      VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+  depth_attachment_info.imageView =
+      backend->image_views.obtain(backend->depth_handle)->vk_handle;
+  depth_attachment_info.imageLayout =
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  depth_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depth_attachment_info.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  depth_attachment_info.clearValue.depthStencil = {1.f, 0};
+  depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
 
   VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
   render_info.layerCount = 1;
@@ -123,7 +145,7 @@ void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
   render_info.viewMask = 0;
   render_info.colorAttachmentCount = 1;
   render_info.pColorAttachments = &color_attachment_info;
-  render_info.pDepthAttachment = nullptr;
+  render_info.pDepthAttachment = &depth_attachment_info;
   render_info.pStencilAttachment = nullptr;
 
   vkCmdBeginRendering(vk_handle, &render_info);

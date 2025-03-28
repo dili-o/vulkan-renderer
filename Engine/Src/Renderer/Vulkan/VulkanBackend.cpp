@@ -90,6 +90,16 @@ bool VulkanBackend::init(void *_config) {
 
   RendererConfig *config = (RendererConfig *)_config;
 
+  vertices.init(allocator, 3);
+  indexes.init(allocator, 10);
+
+  buffers.init(allocator, 10);
+  pipelines.init(allocator, 10);
+  descriptor_set_layouts.init(allocator, 10);
+  descriptor_sets.init(allocator, 10);
+  images.init(allocator, 10);
+  image_views.init(allocator, 10);
+
 #pragma region Instance_Creation
   VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
   app_info.apiVersion = VK_API_VERSION_1_3;
@@ -338,7 +348,6 @@ bool VulkanBackend::init(void *_config) {
   }
 
   // Create swapchain
-  query_swapchain_support(vk_physical_device, vk_surface, swapchain);
   create_swapchain();
 
   command_buffer_manager.init(this, indices.graphics_family_index, 1,
@@ -346,20 +355,13 @@ bool VulkanBackend::init(void *_config) {
   transfer_command_buffer_manager.init(this, indices.transfer_family_index, 1,
                                        1);
 
-  vertices.init(allocator, 3);
-  indexes.init(allocator, 10);
-
-  buffers.init(allocator, 10);
-  pipelines.init(allocator, 10);
-  descriptor_set_layouts.init(allocator, 10);
-  descriptor_sets.init(allocator, 10);
-
   load_model();
   create_buffers();
   create_sync_objects(config->max_frames_in_flight);
   create_descriptor_pool(config->max_frames_in_flight);
 
   resource_deletion_queue.init(allocator, 10);
+
   frame_number = 0;
   HINFO("Vulkan Backend Initialized");
   return true;
@@ -368,6 +370,7 @@ bool VulkanBackend::init(void *_config) {
 bool VulkanBackend::shutdown() {
   vkDeviceWaitIdle(vk_device);
 
+  destroy_swapchain();
   free_queued_resources();
   resource_deletion_queue.shutdown();
 
@@ -389,10 +392,6 @@ bool VulkanBackend::shutdown() {
 
   command_buffer_manager.shutdown();
   transfer_command_buffer_manager.shutdown();
-  // vkDestroyPipeline(vk_device, vk_pipeline, vk_allocation_callbacks);
-  // vkDestroyPipelineLayout(vk_device, vk_pipeline_layout,
-  //                         vk_allocation_callbacks);
-  destroy_swapchain();
 
   vmaDestroyBuffer(vma_allocator, vertex_buffer.vk_handle,
                    vertex_buffer.vma_allocation);
@@ -401,11 +400,12 @@ bool VulkanBackend::shutdown() {
 
   vertices.shutdown();
   indexes.shutdown();
-
   pipelines.shutdown();
   descriptor_set_layouts.shutdown();
   descriptor_sets.shutdown();
   buffers.shutdown();
+  images.shutdown();
+  image_views.shutdown();
   vmaDestroyAllocator(vma_allocator);
 
   vkDestroyDevice(vk_device, vk_allocation_callbacks);
@@ -438,7 +438,6 @@ void VulkanBackend::resize_swapchain() {
   }
 
   destroy_swapchain();
-  query_swapchain_support(vk_physical_device, vk_surface, swapchain);
   create_swapchain();
 }
 
@@ -483,6 +482,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
 }
 
 void VulkanBackend::create_swapchain() {
+  query_swapchain_support(vk_physical_device, vk_surface, swapchain);
   VkSurfaceCapabilitiesKHR surface_capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_physical_device, vk_surface,
                                             &surface_capabilities);
@@ -506,37 +506,73 @@ void VulkanBackend::create_swapchain() {
   VK_CHECK(vkCreateSwapchainKHR(vk_device, &create_info,
                                 vk_allocation_callbacks, &swapchain.vk_handle));
 
+  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   HASSERT(swapchain.image_count <= MAX_SWAPCHAIN_IMAGES);
   vkGetSwapchainImagesKHR(vk_device, swapchain.vk_handle,
-                          &swapchain.image_count, swapchain.vk_images);
+                          &swapchain.image_count, nullptr);
+  VkImage *vk_images = (VkImage *)halloca(
+      sizeof(VkImage) * swapchain.image_count, stack_allocator);
+  vkGetSwapchainImagesKHR(vk_device, swapchain.vk_handle,
+                          &swapchain.image_count, vk_images);
 
   for (u32 i = 0; i < swapchain.image_count; ++i) {
-    VkImageViewCreateInfo view_create_info{
-        VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-    view_create_info.image = swapchain.vk_images[i];
-    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_create_info.format = swapchain.vk_surface_format.format;
-    view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view_create_info.subresourceRange.baseMipLevel = 0;
-    view_create_info.subresourceRange.levelCount = 1;
-    view_create_info.subresourceRange.baseArrayLayer = 0;
-    view_create_info.subresourceRange.layerCount = 1;
-    VK_CHECK(vkCreateImageView(vk_device, &view_create_info, nullptr,
-                               &swapchain.vk_image_views[i]));
+    // Create VulkanImage resources for the swapchain images
+    ResourceHandle swapchain_image = images.obtain_new();
+    HASSERT(swapchain_image.index != k_invalid_index);
+    swapchain.images[i] = swapchain_image;
+
+    VulkanImage *image = images.obtain(swapchain_image);
+
+    image->vk_handle = vk_images[i];
+    image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image->format = swapchain.vk_surface_format.format;
+
+    TextureCreation view_creation{};
+    view_creation.width = swapchain.vk_extents.width;
+    view_creation.height = swapchain.vk_extents.height;
+    view_creation.depth = 1;
+    view_creation.array_layer_count = 1;
+    view_creation.array_base_level = 0;
+    view_creation.mip_level_count = 1;
+    view_creation.mip_base_level = 0;
+    view_creation.usage = TextureUsage::RenderTarget;
+    view_creation.alias_image = swapchain.images[i];
+    view_creation.format =
+        TextureFormat::B8G8R8A8_UNORM; // TODO: This is hardcoded, fix
+    view_creation.type = TextureType::Texture2D;
+    view_creation.name = "Swapchain_view";
+
+    swapchain.image_views[i] = create_image_view(view_creation);
   }
+  TextureCreation tex_creation{};
+  tex_creation.initial_data = nullptr;
+  tex_creation.width = swapchain.vk_extents.width;
+  tex_creation.height = swapchain.vk_extents.height;
+  tex_creation.depth = 1;
+  tex_creation.array_layer_count = 1;
+  tex_creation.array_base_level = 0;
+  tex_creation.mip_level_count = 1;
+  tex_creation.mip_base_level = 0;
+  tex_creation.usage = TextureUsage::RenderTarget;
+  tex_creation.alias_image = {k_invalid_index, 0};
+  tex_creation.format = TextureFormat::D32;
+  tex_creation.type = TextureType::Texture2D;
+  tex_creation.name = "depth";
+
+  depth_handle = create_texture(tex_creation);
+
   HTRACE("Created swapchain successfully");
 }
 
 void VulkanBackend::destroy_swapchain() {
   for (u32 i = 0; i < swapchain.image_count; ++i) {
-    vkDestroyImageView(vk_device, swapchain.vk_image_views[i],
-                       vk_allocation_callbacks);
-    swapchain.vk_image_views[i] = VK_NULL_HANDLE;
+    images.release(swapchain.images[i]);
+    destroy_image_view_instant(swapchain.image_views[i]);
   }
+
+  VulkanImageView *depth_view = image_views.obtain(depth_handle);
+  destroy_image_instant(depth_view->image);
+  destroy_image_view_instant(depth_handle);
 
   vkDestroySwapchainKHR(vk_device, swapchain.vk_handle,
                         vk_allocation_callbacks);
@@ -547,11 +583,26 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                           u32 image_index, u32 current_frame) {
   command_buffer->begin();
 
-  command_buffer->transition_image(swapchain.vk_images[image_index]);
+  command_buffer->transition_image(
+      swapchain.images[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+  VulkanImageView *depth_view = image_views.obtain(depth_handle);
+  VulkanImage *depth_image = images.obtain(depth_view->image);
+
+  command_buffer->transition_image(
+      depth_view->image, depth_image->current_layout,
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+          VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+          VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
 
   command_buffer->bind_renderpass(
       {swapchain.vk_extents.width, swapchain.vk_extents.height},
-      swapchain.vk_image_views[image_index]);
+      swapchain.image_views[image_index]);
 
   // TODO:
   VulkanPipeline *pipeline = access_pipeline({0, 0});
@@ -577,7 +628,11 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   command_buffer->end_current_renderpass();
   // Transition to Present
-  command_buffer->transition_image2(swapchain.vk_images[image_index]);
+  command_buffer->transition_image(
+      swapchain.images[image_index], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
   command_buffer->end();
 }
@@ -608,6 +663,7 @@ void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
   }
 }
 
+// Maybe add checks? MAYBE INLINE AS WELL
 VulkanBuffer *VulkanBackend::access_buffer(BufferHandle handle) {
   return buffers.obtain(handle);
 }
@@ -624,6 +680,14 @@ VulkanBackend::access_descriptor_set_layout(DescriptorSetLayoutHandle handle) {
 VulkanDescriptorSet *
 VulkanBackend::access_descriptor_set(DescriptorSetHandle handle) {
   return descriptor_sets.obtain(handle);
+}
+
+VulkanImage *VulkanBackend::access_image(TextureHandle handle) {
+  return images.obtain(handle);
+}
+
+VulkanImageView *VulkanBackend::access_image_view(TextureHandle handle) {
+  return image_views.obtain(handle);
 }
 
 void VulkanBackend::create_buffers() {
@@ -712,7 +776,7 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
     HERROR("Creating a buffer with no usage flags");
   }
 
-  buffer_info.usage = to_vk_usage_flags(creation.usage_flags);
+  buffer_info.usage = to_vk_buffer_usage_flags(creation.usage_flags);
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   VmaAllocationCreateInfo memory_info{};
@@ -853,7 +917,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   VkPipelineVertexInputStateCreateInfo vertex_input_state{
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
   vertex_input_state.vertexBindingDescriptionCount =
-      1; // TODO: For now assume only one descriptor binding
+      1; // TODO: For now assume only one vertex binding
   vertex_input_state.pVertexBindingDescriptions = &parse_result.vertex_binding;
   vertex_input_state.vertexAttributeDescriptionCount =
       parse_result.vertex_attribute_count;
@@ -913,6 +977,15 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   multisampling.alphaToOneEnable = VK_FALSE;      // Optional
 
   // Depth and Stencil State
+  VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+  depth_stencil.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depth_stencil.depthTestEnable = VK_TRUE;
+  depth_stencil.depthWriteEnable = VK_TRUE;
+  depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+  depth_stencil.depthBoundsTestEnable = VK_FALSE;
+  depth_stencil.minDepthBounds = 0.0f;
+  depth_stencil.maxDepthBounds = 1.0f;
 
   // Color Blend State
   VkPipelineColorBlendAttachmentState color_blend_attachment{};
@@ -984,7 +1057,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   pipeline_create.pNext = VK_NULL_HANDLE;
   pipeline_create.colorAttachmentCount = 1;
   pipeline_create.pColorAttachmentFormats = &swapchain.vk_surface_format.format;
-  pipeline_create.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+  pipeline_create.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
   pipeline_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
   if (creation.pipeline_type == PipelineType::Graphics) {
@@ -999,7 +1072,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     pipeline_info.pViewportState = &viewport_state;
     pipeline_info.pRasterizationState = &rasterizer;
     pipeline_info.pMultisampleState = &multisampling;
-    pipeline_info.pDepthStencilState = nullptr; // Optional
+    pipeline_info.pDepthStencilState = &depth_stencil; // Optional
     pipeline_info.pColorBlendState = &color_blending;
     pipeline_info.pDynamicState = &dynamic_state;
     pipeline_info.layout = pipeline->vk_layout;
@@ -1021,6 +1094,91 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
                     creation.name);
 
   stack_allocator->free_marker(stack_marker);
+  return handle;
+}
+
+TextureHandle VulkanBackend::create_texture(TextureCreation &creation) {
+  creation.alias_image = create_image(creation);
+
+  return create_image_view(creation);
+}
+
+TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
+  TextureHandle handle = images.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain a Vulkan image Resource!");
+    return handle;
+  }
+
+  VulkanImage *image = images.obtain(handle);
+
+  VkImageCreateInfo image_info{};
+  image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  image_info.imageType = VK_IMAGE_TYPE_2D;
+  image_info.extent.width = creation.width;
+  image_info.extent.height = creation.height;
+  image_info.extent.depth = creation.depth;
+  image_info.mipLevels = creation.mip_level_count;
+  image_info.arrayLayers = creation.array_layer_count;
+  image_info.format = to_vk_format(creation.format);
+  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+
+  if (has_depth_or_stencil(creation.format))
+    image_info.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  else {
+    image_info.usage |= to_vk_image_usage_flags(creation.usage);
+  }
+
+  // TODO: Texture aliasing
+  VmaAllocationCreateInfo memory_info{};
+  memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+  VK_CHECK(vmaCreateImage(vma_allocator, &image_info, &memory_info,
+                          &image->vk_handle, &image->vma_allocation, nullptr));
+
+  set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)image->vk_handle, creation.name);
+
+  image->views_count = 0;
+  image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image->format = to_vk_format(creation.format);
+
+  return handle;
+}
+
+TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
+  TextureHandle handle = image_views.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain a Vulkan image view Resource!");
+    return handle;
+  }
+
+  VulkanImage *vk_image = images.obtain(creation.alias_image);
+  VulkanImageView *view = image_views.obtain(handle);
+  VkImageViewCreateInfo view_info{};
+  view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  view_info.image = vk_image->vk_handle;
+  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.format = to_vk_format(creation.format);
+  view_info.subresourceRange.aspectMask = has_depth_or_stencil(creation.format)
+                                              ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                              : VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.baseMipLevel = creation.mip_base_level;
+  view_info.subresourceRange.levelCount = creation.mip_level_count;
+  view_info.subresourceRange.baseArrayLayer = creation.array_base_level;
+  view_info.subresourceRange.layerCount = creation.array_layer_count;
+
+  VK_CHECK(vkCreateImageView(vk_device, &view_info, vk_allocation_callbacks,
+                             &view->vk_handle));
+
+  set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)view->vk_handle,
+                    creation.name);
+  view->image = creation.alias_image;
+  ++vk_image->views_count;
+
   return handle;
 }
 
@@ -1046,6 +1204,46 @@ void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
   }
 
   ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VulkanBackend::destroy_texture(TextureHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid Texture");
+    return;
+  }
+
+  destroy_image_view(handle);
+}
+
+void VulkanBackend::destroy_image(TextureHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanImage");
+    return;
+  }
+  VulkanImage *image = images.obtain(handle);
+
+  if (image->views_count != 0) {
+    HWARN(
+        "Attempting to free a VulkanImage that is still used by a VulkanView");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VulkanBackend::destroy_image_view(TextureHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HWARN("Attempting to free an invalid VulkanImageView");
+    return;
+  }
+  VulkanImageView *view = image_views.obtain(handle);
+  VulkanImage *image = images.obtain(view->image);
+  --image->views_count;
+
+  destroy_image(view->image);
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE_VIEW, handle};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1115,6 +1313,26 @@ void VulkanBackend::destroy_descriptor_set_layout_instant(
   descriptor_set_layouts.release(handle);
 }
 
+void VulkanBackend::destroy_image_instant(TextureHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanImage");
+    return;
+  }
+  VulkanImage *image = images.obtain(handle);
+  vmaDestroyImage(vma_allocator, image->vk_handle, image->vma_allocation);
+  images.release(handle);
+}
+
+void VulkanBackend::destroy_image_view_instant(TextureHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanImageView");
+    return;
+  }
+  VulkanImageView *image_view = image_views.obtain(handle);
+  vkDestroyImageView(vk_device, image_view->vk_handle, vk_allocation_callbacks);
+  image_views.release(handle);
+}
+
 void VulkanBackend::free_queued_resources() {
   if (resource_deletion_queue.size > 0) {
     vkDeviceWaitIdle(vk_device);
@@ -1129,6 +1347,12 @@ void VulkanBackend::free_queued_resources() {
         break;
       case VK_OBJECT_TYPE_PIPELINE:
         destroy_pipeline_instant(queue_object.handle);
+        break;
+      case VK_OBJECT_TYPE_IMAGE:
+        destroy_image_instant(queue_object.handle);
+        break;
+      case VK_OBJECT_TYPE_IMAGE_VIEW:
+        destroy_image_view_instant(queue_object.handle);
         break;
       default:
         HERROR("Trying to delete an unknown type");
@@ -1331,6 +1555,8 @@ void VulkanBackend::load_model() {
   HDEBUG("# of materials = {}", materials.size());
   HDEBUG("# of shapes = {}", shapes.size());
   HDEBUG("# of indices in shape[0]: {}", shapes[0].mesh.indices.size());
+  HDEBUG("# of materials in shape[0]: {}", shapes[0].mesh.material_ids.size());
+  HDEBUG("# of faces in shape[0]: {}", shapes[0].mesh.num_face_vertices.size());
 
   std::unordered_map<Vertex, uint32_t> unique_vertices{};
   for (const auto &shape : shapes) {

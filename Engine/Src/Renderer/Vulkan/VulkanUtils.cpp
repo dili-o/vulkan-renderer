@@ -6,7 +6,7 @@
 
 namespace Helix {
 
-VkBufferUsageFlags to_vk_usage_flags(BufferUsage::Enum _usage) {
+VkBufferUsageFlags to_vk_buffer_usage_flags(BufferUsage::Enum _usage) {
   VkBufferUsageFlags usage{};
   if (_usage & BufferUsage::Vertex)
     usage |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -64,4 +64,31 @@ VkPipelineBindPoint to_vk_bind_point(PipelineType::Enum type) {
     return VK_PIPELINE_BIND_POINT_COMPUTE;
   }
 }
+
+VkFormat to_vk_format(TextureFormat::Enum format) {
+  switch (format) {
+  case TextureFormat::Undefined:
+    return VK_FORMAT_UNDEFINED;
+  case TextureFormat::D32:
+    return VK_FORMAT_D32_SFLOAT;
+  case TextureFormat::B8G8R8A8_UNORM:
+    return VK_FORMAT_B8G8R8A8_UNORM;
+  }
+}
+
+VkImageUsageFlags to_vk_image_usage_flags(TextureUsage::Enum _usage) {
+  VkImageUsageFlags usage = 0;
+  switch (_usage) {
+  case TextureUsage::Compute:
+    usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+  case TextureUsage::RenderTarget:
+    usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  case TextureUsage::TransferSrc:
+    usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  case TextureUsage::TransferDest:
+    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  }
+  return usage;
+}
+
 } // namespace Helix

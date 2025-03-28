@@ -20,10 +20,13 @@ struct VulkanCommandBuffer {
   void free();
 
   // TODO: Fully implement this when you've added textures
-  void transition_image(VkImage image);
-  void transition_image2(VkImage image);
+  void transition_image(TextureHandle image_handle, VkImageLayout old_layout,
+                        VkImageLayout new_layout,
+                        VkPipelineStageFlags src_stage,
+                        VkPipelineStageFlags dst_stage);
+
   // TODO: Fully implement this when you've added renderpasses and framebuffers
-  void bind_renderpass(VkExtent2D extents, VkImageView image);
+  void bind_renderpass(VkExtent2D extents, TextureHandle view_handle);
   void end_current_renderpass();
 
   void bind_pipeline(PipelineHandle handle);

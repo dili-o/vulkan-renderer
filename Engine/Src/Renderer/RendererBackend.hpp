@@ -17,9 +17,11 @@ struct RendererBackend {
 
   virtual BufferHandle create_buffer(BufferCreation &creation) = 0;
   virtual PipelineHandle create_pipeline(PipelineCreation &creation) = 0;
+  virtual TextureHandle create_texture(TextureCreation &creation) = 0;
 
-  virtual void destroy_buffer(ResourceHandle handle) = 0;
-  virtual void destroy_pipeline(ResourceHandle handle) = 0;
+  virtual void destroy_buffer(BufferHandle handle) = 0;
+  virtual void destroy_pipeline(BufferHandle handle) = 0;
+  virtual void destroy_texture(TextureHandle handle) = 0;
 
   virtual bool update_shader_uniform_set(ShaderUniformSet &set,
                                          PipelineHandle pipeline) = 0;

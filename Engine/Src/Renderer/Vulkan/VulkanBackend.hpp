@@ -35,6 +35,10 @@ struct VulkanBackend : public RendererBackend {
                         VkMemoryPropertyFlags properties, VulkanBuffer &buffer);
   virtual BufferHandle create_buffer(BufferCreation &creation) override;
   virtual PipelineHandle create_pipeline(PipelineCreation &creation) override;
+  // NOTE: Internal TextureResource handle is a VulkanImageView
+  virtual TextureHandle create_texture(TextureCreation &creation) override;
+  ImageViewHandle create_image_view(TextureCreation &creation);
+  ImageHandle create_image(TextureCreation &creation);
   virtual bool update_shader_uniform_set(ShaderUniformSet &set,
                                          PipelineHandle pipeline) override;
   void create_descriptor_pool(u32 max_frames_in_flight);
@@ -45,14 +49,21 @@ struct VulkanBackend : public RendererBackend {
   VulkanDescriptorSetLayout *
   access_descriptor_set_layout(DescriptorSetLayoutHandle handle);
   VulkanDescriptorSet *access_descriptor_set(DescriptorSetHandle handle);
+  VulkanImage *access_image(TextureHandle handle);
+  VulkanImageView *access_image_view(TextureHandle handle);
 
   virtual void destroy_buffer(BufferHandle handle) override;
   virtual void destroy_pipeline(PipelineHandle handle) override;
+  virtual void destroy_texture(TextureHandle handle) override;
+  void destroy_image(TextureHandle handle);
+  void destroy_image_view(TextureHandle handle);
   void destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle);
 
   void destroy_buffer_instant(BufferHandle handle);
   void destroy_pipeline_instant(PipelineHandle handle);
   void destroy_descriptor_set_layout_instant(DescriptorSetLayoutHandle handle);
+  void destroy_image_instant(TextureHandle handle);
+  void destroy_image_view_instant(TextureHandle handle);
 
   void free_queued_resources();
 
@@ -90,6 +101,7 @@ struct VulkanBackend : public RendererBackend {
   VulkanBuffer index_buffer{};
 
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
+  TextureHandle depth_handle{};
 
   Array<Vertex> vertices{};
   Array<u32> indexes{};
@@ -98,6 +110,8 @@ struct VulkanBackend : public RendererBackend {
   ResourcePool<VulkanPipeline> pipelines{};
   ResourcePool<VulkanDescriptorSetLayout> descriptor_set_layouts{};
   ResourcePool<VulkanDescriptorSet> descriptor_sets{};
+  ResourcePool<VulkanImageView> image_views{};
+  ResourcePool<VulkanImage> images{};
 
   Array<ResourceQueueObject> resource_deletion_queue{};
 

@@ -27,6 +27,29 @@ enum Enum {
   CPU_ONLY = 1 << 3
 };
 }
+namespace TextureType {
+enum Enum {
+  Texture1D,
+  Texture2D,
+  Texture3D,
+  Texture_1D_Array,
+  Texture_2D_Array,
+  Texture_3D_Array,
+};
+}
+
+namespace TextureFormat {
+enum Enum { Undefined, D32, B8G8R8A8_UNORM };
+}
+
+namespace TextureUsage {
+enum Enum {
+  RenderTarget = 0,
+  Compute = 1 << 0,
+  TransferSrc = 1 << 1,
+  TransferDest = 1 << 2
+};
+}
 
 #pragma region Creation
 struct BufferCreation {
@@ -52,6 +75,26 @@ struct PipelineCreation {
   cstring name;
 
   PipelineCreation &reset();
+};
+
+struct TextureCreation {
+  void *initial_data = nullptr;
+  u16 width = 1;
+  u16 height = 1;
+  u16 depth = 1;
+  u16 array_layer_count = 1;
+  u16 array_base_level = 0;
+  u8 mip_level_count = 1;
+  u8 mip_base_level = 0;
+
+  TextureUsage::Enum usage;
+
+  ResourceHandle alias_image{};
+
+  TextureFormat::Enum format = TextureFormat::Undefined;
+  TextureType::Enum type = TextureType::Texture2D;
+
+  cstring name = nullptr;
 };
 #pragma endregion Creation
 
