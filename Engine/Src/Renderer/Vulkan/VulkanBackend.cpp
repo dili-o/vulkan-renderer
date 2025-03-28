@@ -1168,27 +1168,61 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
     VulkanCommandBuffer *command_buffer =
-        command_buffer_manager.get_command_buffer(0, 0, true);
+        transfer_command_buffer_manager.get_command_buffer(0, 0, true);
     command_buffer->copy_buffer_to_image(handle, staging_buffer.vk_handle,
                                          buffer_size, vk_transfer_queue);
 
     // TODO: Maybe make it possible to configure images to not be
     // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    // Also consider queue transfer
-    command_buffer->transition_image(
-        handle, image->current_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    VkSemaphore transfer_finish_semaphore;
+    VkSemaphoreCreateInfo semaphore_info{};
+    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(vk_device, &semaphore_info, nullptr,
+                      &transfer_finish_semaphore);
 
+    // Transfer Ownership to graphics queue
+    command_buffer->transition_image(
+        handle, image->current_layout, image->current_layout,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        queue_family_indices.graphics_family_index,
+        queue_family_indices.transfer_family_index);
     command_buffer->end();
 
-    VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &command_buffer->vk_handle;
+    {
+      VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+      submit_info.commandBufferCount = 1;
+      submit_info.pCommandBuffers = &command_buffer->vk_handle;
+      submit_info.pSignalSemaphores = &transfer_finish_semaphore;
+      submit_info.signalSemaphoreCount = 1;
+      vkQueueSubmit(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
 
-    vkQueueSubmit(vk_graphics_queue, 1, &submitInfo, VK_NULL_HANDLE);
+    VulkanCommandBuffer *graphics_c_buffer =
+        command_buffer_manager.get_command_buffer(0, 0, true);
+
+    graphics_c_buffer->transition_image(
+        handle, image->current_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    graphics_c_buffer->end();
+
+    {
+      VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT};
+      VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+      submit_info.commandBufferCount = 1;
+      submit_info.pCommandBuffers = &graphics_c_buffer->vk_handle;
+      submit_info.pWaitSemaphores = &transfer_finish_semaphore;
+      submit_info.waitSemaphoreCount = 1;
+      submit_info.pWaitDstStageMask = wait_stages;
+      vkQueueSubmit(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    vkQueueWaitIdle(vk_transfer_queue);
     vkQueueWaitIdle(vk_graphics_queue);
 
+    vkDestroySemaphore(vk_device, transfer_finish_semaphore,
+                       vk_allocation_callbacks);
+
     command_buffer->reset();
+    graphics_c_buffer->reset();
     vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
                      staging_buffer.vma_allocation);
   }

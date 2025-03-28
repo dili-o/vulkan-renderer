@@ -126,6 +126,11 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
   image->current_layout = image_barrier.newLayout;
 }
 
+void VulkanCommandBuffer::transfer_image_queue_ownership(
+    TextureHandle image_handle, VkSemaphore signal_semaphore,
+    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage,
+    u32 src_queue_family_index, u32 dst_queue_family_index) {}
+
 void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
                                           TextureHandle view_handle) {
   VulkanImageView *view = backend->access_image_view(view_handle);

@@ -117,8 +117,8 @@ void RendererFrontEnd::init(void *_config) {
   TextureCreation tex_creation{};
   tex_creation.name = "default_texture";
   tex_creation.initial_data = def_colour;
-  tex_creation.width = 4;
-  tex_creation.height = 4;
+  tex_creation.width = 1;
+  tex_creation.height = 1;
   tex_creation.depth = 1;
   tex_creation.array_layer_count = 1;
   tex_creation.array_base_level = 0;
