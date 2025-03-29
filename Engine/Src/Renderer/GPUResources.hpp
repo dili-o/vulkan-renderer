@@ -94,6 +94,8 @@ struct TextureCreation {
   TextureFormat::Enum format = TextureFormat::Undefined;
   TextureType::Enum type = TextureType::Texture2D;
 
+  bool sampled = true;
+
   cstring name = nullptr;
 };
 #pragma endregion Creation
@@ -118,8 +120,6 @@ struct TextureResource {
   TextureHandle internal_handle;
 };
 
-// TODO: Maybe add a union that lets you specify other details about the rosouce
-// we want to update
 struct ShaderUniform {
   ResourceHandle internal_resource_handle;
   ResourceType::Enum resource_type;

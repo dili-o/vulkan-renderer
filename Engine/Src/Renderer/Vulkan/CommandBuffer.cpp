@@ -101,6 +101,14 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
   VulkanImage *image = backend->images.obtain(image_handle);
   if (old_layout == new_layout)
     return;
+  transition_image(image, old_layout, new_layout, src_stage, dst_stage,
+                   src_queue_family_index, dst_queue_family_index);
+}
+
+void VulkanCommandBuffer::transition_image(
+    VulkanImage *image, VkImageLayout old_layout, VkImageLayout new_layout,
+    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage,
+    u32 src_queue_family_index, u32 dst_queue_family_index) {
 
   VkImageMemoryBarrier image_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
   image_barrier.oldLayout = old_layout;
@@ -126,18 +134,12 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
   image->current_layout = image_barrier.newLayout;
 }
 
-void VulkanCommandBuffer::transfer_image_queue_ownership(
-    TextureHandle image_handle, VkSemaphore signal_semaphore,
-    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage,
-    u32 src_queue_family_index, u32 dst_queue_family_index) {}
-
 void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
-                                          TextureHandle view_handle) {
-  VulkanImageView *view = backend->access_image_view(view_handle);
+                                          VkImageView view) {
 
   VkRenderingAttachmentInfo color_attachment_info{
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-  color_attachment_info.imageView = view->vk_handle;
+  color_attachment_info.imageView = view;
   color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -209,11 +211,12 @@ void VulkanCommandBuffer::bind_index_buffer(VkBuffer index_buffer) {
 }
 
 void VulkanCommandBuffer::bind_descriptor_sets(PipelineHandle pipeline_handle,
-                                               VkDescriptorSet dset) {
+                                               VkDescriptorSet dset,
+                                               u32 set_index) {
 
   VulkanPipeline *pipeline = backend->access_pipeline(pipeline_handle);
   vkCmdBindDescriptorSets(vk_handle, pipeline->bind_point, pipeline->vk_layout,
-                          0, 1, &dset, 0, nullptr);
+                          set_index, 1, &dset, 0, nullptr);
 }
 
 void VulkanCommandBuffer::draw_indexed(u32 index_count, u32 instance_count,

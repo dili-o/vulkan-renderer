@@ -3,6 +3,7 @@
 #include "Core/Defines.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "VulkanTypes.hpp"
+#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 struct VulkanBackend;
@@ -19,6 +20,13 @@ struct VulkanCommandBuffer {
   void reset();
   void free();
 
+  void transition_image(VulkanImage *image, VkImageLayout old_layout,
+                        VkImageLayout new_layout,
+                        VkPipelineStageFlags src_stage,
+                        VkPipelineStageFlags dst_stage,
+                        u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
+                        u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
+
   void transition_image(TextureHandle image_handle, VkImageLayout old_layout,
                         VkImageLayout new_layout,
                         VkPipelineStageFlags src_stage,
@@ -26,15 +34,8 @@ struct VulkanCommandBuffer {
                         u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
                         u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
 
-  void transfer_image_queue_ownership(TextureHandle image_handle,
-                                      VkSemaphore signal_semaphore,
-                                      VkPipelineStageFlags src_stage,
-                                      VkPipelineStageFlags dst_stage,
-                                      u32 src_queue_family_index,
-                                      u32 dst_queue_family_index);
-
   // TODO: Fully implement this when you've added renderpasses and framebuffers
-  void bind_renderpass(VkExtent2D extents, TextureHandle view_handle);
+  void bind_renderpass(VkExtent2D extents, VkImageView view);
   void end_current_renderpass();
 
   void bind_pipeline(PipelineHandle handle);
@@ -47,7 +48,7 @@ struct VulkanCommandBuffer {
   void bind_vertex_buffer(VkBuffer vertex_buffer);
   void bind_index_buffer(VkBuffer index_buffer);
   void bind_descriptor_sets(PipelineHandle pipeline_handle,
-                            VkDescriptorSet dset);
+                            VkDescriptorSet dset, u32 set_index);
 
   void draw_indexed(u32 index_count, u32 instance_count, u32 first_index,
                     i32 vertex_offset, u32 first_instance);

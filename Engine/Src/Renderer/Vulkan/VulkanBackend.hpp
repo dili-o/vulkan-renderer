@@ -44,6 +44,7 @@ struct VulkanBackend : public RendererBackend {
                                          PipelineHandle pipeline) override;
   void create_descriptor_pool(u32 max_frames_in_flight);
   void create_sync_objects(u32 max_frames_in_flight);
+  SamplerHandle create_sampler(SamplerCreation &creation);
 
   VulkanBuffer *access_buffer(BufferHandle handle);
   VulkanPipeline *access_pipeline(PipelineHandle handle);
@@ -52,6 +53,7 @@ struct VulkanBackend : public RendererBackend {
   VulkanDescriptorSet *access_descriptor_set(DescriptorSetHandle handle);
   VulkanImage *access_image(TextureHandle handle);
   VulkanImageView *access_image_view(TextureHandle handle);
+  VulkanSampler *access_sampler(SamplerHandle handle);
 
   virtual void destroy_buffer(BufferHandle handle) override;
   virtual void destroy_pipeline(PipelineHandle handle) override;
@@ -59,12 +61,14 @@ struct VulkanBackend : public RendererBackend {
   void destroy_image(TextureHandle handle);
   void destroy_image_view(TextureHandle handle);
   void destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle);
+  void destroy_sampler(SamplerHandle handle);
 
   void destroy_buffer_instant(BufferHandle handle);
   void destroy_pipeline_instant(PipelineHandle handle);
   void destroy_descriptor_set_layout_instant(DescriptorSetLayoutHandle handle);
   void destroy_image_instant(TextureHandle handle);
   void destroy_image_view_instant(TextureHandle handle);
+  void destroy_sampler_instant(SamplerHandle handle);
 
   void free_queued_resources();
 
@@ -96,6 +100,7 @@ struct VulkanBackend : public RendererBackend {
   Array<VkSemaphore> image_available_semaphores;
   Array<VkSemaphore> render_finished_semaphores;
   Array<VkFence> in_flight_fences;
+  SamplerHandle default_sampler{};
 
   VulkanSwapchain swapchain{};
 
@@ -115,6 +120,7 @@ struct VulkanBackend : public RendererBackend {
   ResourcePool<VulkanDescriptorSet> descriptor_sets{};
   ResourcePool<VulkanImageView> image_views{};
   ResourcePool<VulkanImage> images{};
+  ResourcePool<VulkanSampler> samplers{};
 
   Array<ResourceQueueObject> resource_deletion_queue{};
 

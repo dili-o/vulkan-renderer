@@ -51,7 +51,6 @@ struct RendererFrontEnd : public Service {
   BufferHandle vertex_buffer{};
   BufferHandle index_buffer{};
   BufferHandle uniform_buffers[max_frames_in_flight];
-  BufferHandle second_buffers[max_frames_in_flight];
   PipelineHandle pipeline{};
 
   TextureHandle default_texture;

@@ -60,20 +60,6 @@ void RendererFrontEnd::init(void *_config) {
       uniform_buffers[i] = create_buffer(creation);
     }
   }
-  {
-    BufferCreation creation{};
-    creation.reset();
-    creation.usage_flags = BufferUsage::Uniform;
-    creation.memory_state_flags = MemoryState::Persistent;
-    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
-    creation.size = sizeof(f32);
-    float init_data = 0.5f;
-    creation.initial_data = &init_data;
-    for (u32 i = 0; i < max_frames_in_flight; ++i) {
-      creation.name = string_buffer.append_use_f("second_buffer_%d", i);
-      second_buffers[i] = create_buffer(creation);
-    }
-  }
 
   {
     PipelineCreation creation;
@@ -88,27 +74,19 @@ void RendererFrontEnd::init(void *_config) {
   }
 
   ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
-      sizeof(ShaderUniform) * max_frames_in_flight * 2, stack_allocator);
+      sizeof(ShaderUniform) * max_frames_in_flight, stack_allocator);
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
-    shader_uniforms[i * 2].binding = 0;
+    shader_uniforms[i].binding = 0;
     BufferResource *buffer = buffers.obtain(uniform_buffers[i]);
-    shader_uniforms[i * 2].internal_resource_handle = buffer->internal_handle;
-    shader_uniforms[i * 2].resource_type = ResourceType::Buffer;
-    shader_uniforms[i * 2].buffer_info.offset = 0;
-    shader_uniforms[i * 2].buffer_info.range = sizeof(UniformBufferObject);
-
-    shader_uniforms[i * 2 + 1].binding = 1;
-    BufferResource *buffer2 = buffers.obtain(second_buffers[i]);
-    shader_uniforms[i * 2 + 1].internal_resource_handle =
-        buffer2->internal_handle;
-    shader_uniforms[i * 2 + 1].resource_type = ResourceType::Buffer;
-    shader_uniforms[i * 2 + 1].buffer_info.offset = 0;
-    shader_uniforms[i * 2 + 1].buffer_info.range = sizeof(f32);
+    shader_uniforms[i].internal_resource_handle = buffer->internal_handle;
+    shader_uniforms[i].resource_type = ResourceType::Buffer;
+    shader_uniforms[i].buffer_info.offset = 0;
+    shader_uniforms[i].buffer_info.range = sizeof(UniformBufferObject);
 
     ShaderUniformSet set{};
-    set.uniform_count = 2;
-    set.uniforms = &shader_uniforms[i * 2];
-    set.set_index = 0;
+    set.uniform_count = 1;
+    set.uniforms = &shader_uniforms[i];
+    set.set_index = 1;
     update_shader_uniform_set(set, pipeline);
   }
 
@@ -129,6 +107,19 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.type = TextureType::Texture2D;
   default_texture = create_texture(tex_creation);
 
+  TextureResource *default_tex = textures.obtain(default_texture);
+  ShaderUniform texture_uniform{};
+  texture_uniform.binding = 0;
+  texture_uniform.internal_resource_handle = default_tex->internal_handle;
+  texture_uniform.resource_type = ResourceType::Texture;
+  texture_uniform.texture_info;
+
+  ShaderUniformSet set{};
+  set.uniform_count = 1;
+  set.set_index = 0;
+  set.uniforms = &texture_uniform;
+  update_shader_uniform_set(set, pipeline);
+
   stack_allocator->free_marker(stack_marker);
 }
 
@@ -138,7 +129,6 @@ void RendererFrontEnd::shutdown() {
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
-    destroy_buffer(second_buffers[i]);
   }
 
   textures.shutdown();

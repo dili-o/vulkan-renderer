@@ -20,6 +20,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
 #include <tiny_obj_loader.h>
+#include <utility>
 #include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -92,13 +93,13 @@ bool VulkanBackend::init(void *_config) {
 
   vertices.init(allocator, 3);
   indexes.init(allocator, 10);
-
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
   descriptor_set_layouts.init(allocator, 10);
   descriptor_sets.init(allocator, 10);
   images.init(allocator, 10);
   image_views.init(allocator, 10);
+  samplers.init(allocator, 10);
 
 #pragma region Instance_Creation
   VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -276,10 +277,18 @@ bool VulkanBackend::init(void *_config) {
   device_create_info.enabledExtensionCount = device_extensions.size;
   device_create_info.ppEnabledExtensionNames = device_extensions.data;
 
+  // Enable Bindless descriptors
+  VkPhysicalDeviceDescriptorIndexingFeatures bindless_features{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+  bindless_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+  bindless_features.runtimeDescriptorArray = VK_TRUE;
+  bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+
   // Enable Dynamic Rendering
   VkPhysicalDeviceVulkan13Features features13 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
   features13.dynamicRendering = VK_TRUE;
+  features13.pNext = &bindless_features;
 
   device_create_info.pNext = &features13;
 
@@ -361,11 +370,17 @@ bool VulkanBackend::init(void *_config) {
   create_buffers();
   create_sync_objects(config->max_frames_in_flight);
   create_descriptor_pool(config->max_frames_in_flight);
+  {
+    SamplerCreation sampler_creation{};
+    sampler_creation.name = "default_sampler";
+    default_sampler = create_sampler(sampler_creation);
+  }
 
   resource_deletion_queue.init(allocator, 10);
 
   frame_number = 0;
   HINFO("Vulkan Backend Initialized");
+
   return true;
 }
 
@@ -373,6 +388,9 @@ bool VulkanBackend::shutdown() {
   vkDeviceWaitIdle(vk_device);
 
   destroy_swapchain();
+  // TODO: Right now im manually destroying samplers, maybe link sampler with
+  // image views
+  destroy_sampler(default_sampler);
   free_queued_resources();
   resource_deletion_queue.shutdown();
 
@@ -408,6 +426,7 @@ bool VulkanBackend::shutdown() {
   buffers.shutdown();
   images.shutdown();
   image_views.shutdown();
+  samplers.shutdown();
   vmaDestroyAllocator(vma_allocator);
 
   vkDestroyDevice(vk_device, vk_allocation_callbacks);
@@ -520,32 +539,25 @@ void VulkanBackend::create_swapchain() {
 
   for (u32 i = 0; i < swapchain.image_count; ++i) {
     // Create VulkanImage resources for the swapchain images
-    ResourceHandle swapchain_image = images.obtain_new();
-    HASSERT(swapchain_image.index != k_invalid_index);
-    swapchain.images[i] = swapchain_image;
+    swapchain.images[i].vk_handle = vk_images[i];
+    swapchain.images[i].current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    swapchain.images[i].format = swapchain.vk_surface_format.format;
+    swapchain.images[i].vk_extents = {swapchain.vk_extents.width,
+                                      swapchain.vk_extents.height, 1};
 
-    VulkanImage *image = images.obtain(swapchain_image);
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.image = swapchain.images[i].vk_handle;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = swapchain.vk_surface_format.format;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
 
-    image->vk_handle = vk_images[i];
-    image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    image->format = swapchain.vk_surface_format.format;
-
-    TextureCreation view_creation{};
-    view_creation.width = swapchain.vk_extents.width;
-    view_creation.height = swapchain.vk_extents.height;
-    view_creation.depth = 1;
-    view_creation.array_layer_count = 1;
-    view_creation.array_base_level = 0;
-    view_creation.mip_level_count = 1;
-    view_creation.mip_base_level = 0;
-    view_creation.usage = TextureUsage::RenderTarget;
-    view_creation.alias_image = swapchain.images[i];
-    view_creation.format =
-        TextureFormat::B8G8R8A8_UNORM; // TODO: This is hardcoded, fix
-    view_creation.type = TextureType::Texture2D;
-    view_creation.name = "Swapchain_view";
-
-    swapchain.image_views[i] = create_image_view(view_creation);
+    VK_CHECK(vkCreateImageView(vk_device, &view_info, vk_allocation_callbacks,
+                               &swapchain.image_views[i].vk_handle));
   }
   TextureCreation tex_creation{};
   tex_creation.initial_data = nullptr;
@@ -569,8 +581,10 @@ void VulkanBackend::create_swapchain() {
 
 void VulkanBackend::destroy_swapchain() {
   for (u32 i = 0; i < swapchain.image_count; ++i) {
-    images.release(swapchain.images[i]);
-    destroy_image_view_instant(swapchain.image_views[i]);
+    vkDestroyImageView(vk_device, swapchain.image_views[i].vk_handle,
+                       vk_allocation_callbacks);
+    swapchain.images[i].vk_handle = VK_NULL_HANDLE;
+    swapchain.image_views[i].vk_handle = VK_NULL_HANDLE;
   }
 
   VulkanImageView *depth_view = image_views.obtain(depth_handle);
@@ -587,7 +601,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->begin();
 
   command_buffer->transition_image(
-      swapchain.images[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
+      &swapchain.images[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
@@ -605,7 +619,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   command_buffer->bind_renderpass(
       {swapchain.vk_extents.width, swapchain.vk_extents.height},
-      swapchain.image_views[image_index]);
+      swapchain.image_views[image_index].vk_handle);
 
   // TODO:
   VulkanPipeline *pipeline = access_pipeline({0, 0});
@@ -621,18 +635,24 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   // TODO:
   VulkanDescriptorSetLayout *dset_layout =
-      access_descriptor_set_layout(pipeline->set_layouts[0]);
+      access_descriptor_set_layout(pipeline->set_layouts[1]);
   VulkanDescriptorSet *dset =
       access_descriptor_set(dset_layout->allocated_sets[current_frame]);
 
-  command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle);
+  VulkanDescriptorSetLayout *dset_layout2 =
+      access_descriptor_set_layout(pipeline->set_layouts[0]);
+  VulkanDescriptorSet *dset2 =
+      access_descriptor_set(dset_layout2->allocated_sets[0]);
+
+  command_buffer->bind_descriptor_sets({0, 0}, dset2->vk_handle, 0);
+  command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle, 1);
 
   command_buffer->draw_indexed(indexes.size, 1, 0, 0, 0);
 
   command_buffer->end_current_renderpass();
   // Transition to Present
   command_buffer->transition_image(
-      swapchain.images[image_index], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      &swapchain.images[image_index], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
@@ -666,6 +686,38 @@ void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
   }
 }
 
+SamplerHandle VulkanBackend::create_sampler(SamplerCreation &creation) {
+  SamplerHandle handle = samplers.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain VulkanSampler");
+    return handle;
+  }
+  VulkanSampler *sampler = access_sampler(handle);
+  VkPhysicalDeviceProperties properties{};
+  // TODO: Maybe not do this everytime you create a sampler
+  vkGetPhysicalDeviceProperties(vk_physical_device, &properties);
+
+  VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  sampler_info.minFilter = creation.min_filter;
+  sampler_info.magFilter = creation.mag_filter;
+  sampler_info.addressModeU = creation.address_mode_u;
+  sampler_info.addressModeV = creation.address_mode_v;
+  sampler_info.addressModeW = creation.address_mode_w;
+  sampler_info.mipmapMode = creation.mip_filter;
+  sampler_info.anisotropyEnable = VK_FALSE; // TODO: Maybe use this eventually ?
+  sampler_info.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+  sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  sampler_info.unnormalizedCoordinates = VK_FALSE;
+  sampler_info.compareEnable = VK_FALSE;
+  sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+
+  VK_CHECK(vkCreateSampler(vk_device, &sampler_info, vk_allocation_callbacks,
+                           &sampler->vk_handle));
+  set_resource_name(VK_OBJECT_TYPE_SAMPLER, (u64)sampler->vk_handle,
+                    creation.name);
+  return handle;
+}
+
 // Maybe add checks? MAYBE INLINE AS WELL
 VulkanBuffer *VulkanBackend::access_buffer(BufferHandle handle) {
   return buffers.obtain(handle);
@@ -691,6 +743,10 @@ VulkanImage *VulkanBackend::access_image(TextureHandle handle) {
 
 VulkanImageView *VulkanBackend::access_image_view(TextureHandle handle) {
   return image_views.obtain(handle);
+}
+
+VulkanSampler *VulkanBackend::access_sampler(SamplerHandle handle) {
+  return samplers.obtain(handle);
 }
 
 void VulkanBackend::create_buffers() {
@@ -876,7 +932,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
         to_compiler_stage(shader.stage), shader.filename, shader.filename,
         compiler_debug);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
-    HDEBUG("{}", process_get_output());
+    HERROR("{}", process_get_output()); // TODO: Better error display
 
     cstring binary_name =
         temp_string_buffer.append_use_f("%s.spv", shader.filename);
@@ -1019,10 +1075,21 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   VkDescriptorSetLayout *layouts = (VkDescriptorSetLayout *)halloca(
       sizeof(VkDescriptorSetLayout) * parse_result.set_layouts.size,
       stack_allocator);
+
   pipeline->set_layouts = (DescriptorSetLayoutHandle *)halloca(
       sizeof(DescriptorSetLayoutHandle) * parse_result.set_layouts.size,
       allocator);
+
   pipeline->set_layout_count = parse_result.set_layouts.size;
+
+  // Sort by set_index in ascending order
+  std::sort(&parse_result.set_layouts[0],
+            &parse_result.set_layouts[0] + parse_result.set_layouts.size,
+            [](const VulkanDescriptorSetLayout &a,
+               const VulkanDescriptorSetLayout &b) {
+              return a.set_index < b.set_index;
+            });
+
   for (u32 i = 0; i < parse_result.set_layouts.size; ++i) {
     DescriptorSetLayoutHandle dset_layout_handle =
         descriptor_set_layouts.obtain_new();
@@ -1129,8 +1196,8 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
   image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
   image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
   image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  image_info.usage = creation.sampled ? VK_IMAGE_USAGE_SAMPLED_BIT : 0;
 
   if (has_depth_or_stencil(creation.format))
     image_info.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -1340,6 +1407,16 @@ void VulkanBackend::destroy_descriptor_set_layout(
   resource_deletion_queue.push(q_object);
 }
 
+void VulkanBackend::destroy_sampler(SamplerHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanSampler");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_SAMPLER, handle};
+  resource_deletion_queue.push(q_object);
+}
+
 void VulkanBackend::destroy_buffer_instant(BufferHandle handle) {
   if (handle.index == k_invalid_index) {
     HWARN("Attempting to free an invalid VulkanBuffer");
@@ -1419,6 +1496,16 @@ void VulkanBackend::destroy_image_view_instant(TextureHandle handle) {
   image_views.release(handle);
 }
 
+void VulkanBackend::destroy_sampler_instant(SamplerHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to free an invalid VulkanSampler");
+    return;
+  }
+  VulkanSampler *sampler = samplers.obtain(handle);
+  vkDestroySampler(vk_device, sampler->vk_handle, vk_allocation_callbacks);
+  samplers.release(handle);
+}
+
 void VulkanBackend::free_queued_resources() {
   if (resource_deletion_queue.size > 0) {
     vkDeviceWaitIdle(vk_device);
@@ -1439,6 +1526,9 @@ void VulkanBackend::free_queued_resources() {
         break;
       case VK_OBJECT_TYPE_IMAGE_VIEW:
         destroy_image_view_instant(queue_object.handle);
+        break;
+      case VK_OBJECT_TYPE_SAMPLER:
+        destroy_sampler_instant(queue_object.handle);
         break;
       default:
         HERROR("Trying to delete an unknown type");
@@ -1479,6 +1569,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
   // TODO: Assuming a max number of bindings for a descriptor set
   VkWriteDescriptorSet descriptor_writes[10];
   VkDescriptorBufferInfo buffer_infos[10];
+  VkDescriptorImageInfo image_infos[10];
   HASSERT(set.uniform_count <= 10);
   for (u32 i = 0; i < set.uniform_count; i++) {
     if (set.uniforms[i].resource_type == ResourceType::Buffer) {
@@ -1501,6 +1592,29 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
       descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
       descriptor_write.descriptorCount = 1;
       descriptor_write.pBufferInfo = &buffer_info;
+    } else if (set.uniforms[i].resource_type == ResourceType::Texture) {
+      VkDescriptorImageInfo &image_info = image_infos[i];
+      VulkanImageView *image_view =
+          access_image_view(set.uniforms[i].internal_resource_handle);
+
+      image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      image_info.imageView = image_view->vk_handle;
+      VulkanSampler *sampler = access_sampler(default_sampler);
+      image_info.sampler = sampler->vk_handle;
+
+      VkWriteDescriptorSet &descriptor_write = descriptor_writes[i];
+      descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_write.pNext = nullptr;
+      descriptor_write.pImageInfo = &image_info;
+      descriptor_write.pTexelBufferView = nullptr;
+      descriptor_write.dstSet = d_set->vk_handle;
+      descriptor_write.dstBinding = set.uniforms[i].binding;
+      descriptor_write.dstArrayElement = 0;
+      descriptor_write.descriptorType =
+          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptor_write.descriptorCount = 1;
+      descriptor_write.pBufferInfo = nullptr;
+
     } else {
       HERROR("Unkown descriptor type");
       return false;
@@ -1519,11 +1633,17 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_size.descriptorCount = (max_frames_in_flight);
 
+  VkDescriptorPoolSize pool_size_2{};
+  pool_size_2.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  pool_size_2.descriptorCount = 1;
+
+  VkDescriptorPoolSize pool_sizes[] = {pool_size, pool_size_2};
+
   VkDescriptorPoolCreateInfo pool_info{};
   pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pool_info.poolSizeCount = 1;
-  pool_info.pPoolSizes = &pool_size;
-  pool_info.maxSets = max_frames_in_flight;
+  pool_info.poolSizeCount = ArraySize(pool_sizes);
+  pool_info.pPoolSizes = pool_sizes;
+  pool_info.maxSets = max_frames_in_flight * 2;
 
   VK_CHECK(vkCreateDescriptorPool(
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
@@ -1666,6 +1786,7 @@ void VulkanBackend::load_model() {
       indexes.push(unique_vertices[vertex]);
     }
   }
+
   HDEBUG("Vertex size = {}", vertices.size);
 }
 
