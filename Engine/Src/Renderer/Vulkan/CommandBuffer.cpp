@@ -19,6 +19,8 @@ VkAccessFlags to_vk_src_access_flags(VkImageLayout layout) {
     return VK_ACCESS_NONE;
   case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
     return VK_ACCESS_TRANSFER_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+    return 0;
   default:
     HERROR("Unknown layout");
     return VK_ACCESS_NONE;
@@ -99,8 +101,6 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
   // TODO: Should there be a check to see if the command buffer has already
   // begun?
   VulkanImage *image = backend->images.obtain(image_handle);
-  if (old_layout == new_layout)
-    return;
   transition_image(image, old_layout, new_layout, src_stage, dst_stage,
                    src_queue_family_index, dst_queue_family_index);
 }

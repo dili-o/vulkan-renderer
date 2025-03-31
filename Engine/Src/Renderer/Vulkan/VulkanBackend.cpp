@@ -20,8 +20,6 @@
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
 #include <tiny_obj_loader.h>
-#include <utility>
-#include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_ENABLE_EXPERIMENTAL
@@ -29,6 +27,7 @@
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
+#define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 #define MIN_BUFFER_SIZE 4
@@ -195,8 +194,21 @@ bool VulkanBackend::init(void *_config) {
       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
   debug_create_info.pfnUserCallback = debug_callback;
-
+#if defined(VULKAN_EXTRA_VALIDATION)
+  const VkValidationFeatureEnableEXT features_requested[] = {
+      VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
+      VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+      VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT};
+  VkValidationFeaturesEXT features = {};
+  features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+  features.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debug_create_info;
+  features.enabledValidationFeatureCount = ArraySize(features_requested);
+  features.pEnabledValidationFeatures = features_requested;
+  create_info.pNext = &features;
+#else
   create_info.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debug_create_info;
+#endif // VULKAN_EXTRA_VALIDATION
+
 #endif // VULKAN_DEBUG_REPORT
   create_info.enabledLayerCount = validation_layer_names.size;
   create_info.ppEnabledLayerNames = validation_layer_names.data;
@@ -358,13 +370,13 @@ bool VulkanBackend::init(void *_config) {
             vk_device, "vkSetDebugUtilsObjectNameEXT");
   }
 
-  // Create swapchain
-  create_swapchain();
-
   command_buffer_manager.init(this, queue_family_indices.graphics_family_index,
                               1, config->max_frames_in_flight);
   transfer_command_buffer_manager.init(
       this, queue_family_indices.transfer_family_index, 1, 1);
+
+  // Create swapchain
+  create_swapchain();
 
   load_model();
   create_buffers();
@@ -537,6 +549,9 @@ void VulkanBackend::create_swapchain() {
   vkGetSwapchainImagesKHR(vk_device, swapchain.vk_handle,
                           &swapchain.image_count, vk_images);
 
+  VulkanCommandBuffer *command_buffer =
+      command_buffer_manager.get_command_buffer(0, 0, true);
+
   for (u32 i = 0; i < swapchain.image_count; ++i) {
     // Create VulkanImage resources for the swapchain images
     swapchain.images[i].vk_handle = vk_images[i];
@@ -558,7 +573,21 @@ void VulkanBackend::create_swapchain() {
 
     VK_CHECK(vkCreateImageView(vk_device, &view_info, vk_allocation_callbacks,
                                &swapchain.image_views[i].vk_handle));
+
+    command_buffer->transition_image(
+        &swapchain.images[i], swapchain.images[i].current_layout,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
   }
+
+  command_buffer->end();
+
+  VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer->vk_handle;
+  vkQueueSubmit(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(vk_graphics_queue);
+
   TextureCreation tex_creation{};
   tex_creation.initial_data = nullptr;
   tex_creation.width = swapchain.vk_extents.width;
@@ -601,9 +630,10 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->begin();
 
   command_buffer->transition_image(
-      &swapchain.images[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
+      &swapchain.images[image_index],
+      swapchain.images[image_index].current_layout,
       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 
   VulkanImageView *depth_view = image_views.obtain(depth_handle);
@@ -1251,8 +1281,8 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     command_buffer->transition_image(
         handle, image->current_layout, image->current_layout,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        queue_family_indices.graphics_family_index,
-        queue_family_indices.transfer_family_index);
+        queue_family_indices.transfer_family_index,
+        queue_family_indices.graphics_family_index);
     command_buffer->end();
 
     {
@@ -1269,7 +1299,9 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
 
     graphics_c_buffer->transition_image(
         handle, image->current_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        queue_family_indices.transfer_family_index,
+        queue_family_indices.graphics_family_index);
     graphics_c_buffer->end();
 
     {
@@ -1643,7 +1675,7 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   pool_info.poolSizeCount = ArraySize(pool_sizes);
   pool_info.pPoolSizes = pool_sizes;
-  pool_info.maxSets = max_frames_in_flight * 2;
+  pool_info.maxSets = max_frames_in_flight + 1;
 
   VK_CHECK(vkCreateDescriptorPool(
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
@@ -1702,7 +1734,7 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
 
   UniformBufferObject ubo{};
-  ubo.model = glm::mat4(1.f);
+  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
   ubo.view = packet->camera->get_view();
   ubo.proj = glm::perspective(glm::radians(45.0f),
                               swapchain.vk_extents.width /

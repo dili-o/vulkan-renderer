@@ -90,8 +90,8 @@ void RendererFrontEnd::init(void *_config) {
     update_shader_uniform_set(set, pipeline);
   }
 
-  // Magenta
-  u8 def_colour[4] = {255, 0, 255, 255};
+  // White
+  u8 def_colour[4] = {255, 255, 255, 255};
   TextureCreation tex_creation{};
   tex_creation.name = "default_texture";
   tex_creation.initial_data = def_colour;
@@ -107,12 +107,15 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.type = TextureType::Texture2D;
   default_texture = create_texture(tex_creation);
 
+  def_colour[1] = 0;
+  // default_texture2 = create_texture(tex_creation);
+
   TextureResource *default_tex = textures.obtain(default_texture);
   ShaderUniform texture_uniform{};
   texture_uniform.binding = 0;
   texture_uniform.internal_resource_handle = default_tex->internal_handle;
   texture_uniform.resource_type = ResourceType::Texture;
-  texture_uniform.texture_info;
+  // Not needed yet texture_uniform.texture_info;
 
   ShaderUniformSet set{};
   set.uniform_count = 1;

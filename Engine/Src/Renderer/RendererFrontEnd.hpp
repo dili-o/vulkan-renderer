@@ -54,5 +54,6 @@ struct RendererFrontEnd : public Service {
   PipelineHandle pipeline{};
 
   TextureHandle default_texture;
+  TextureHandle default_texture2;
 };
 } // namespace Helix
