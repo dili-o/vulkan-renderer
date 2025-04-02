@@ -7,43 +7,43 @@
 #include <vulkan/vulkan_core.h>
 
 namespace Helix {
-VkAccessFlags to_vk_src_access_flags(VkImageLayout layout) {
+VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
   switch (layout) {
   case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_UNDEFINED:
-    return VK_ACCESS_NONE;
+    return VK_ACCESS_2_NONE;
   case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-    return VK_ACCESS_TRANSFER_WRITE_BIT;
+    return VK_ACCESS_2_TRANSFER_WRITE_BIT;
   case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-    return 0;
+    return VK_ACCESS_2_NONE;
   default:
     HERROR("Unknown layout");
-    return VK_ACCESS_NONE;
+    return VK_ACCESS_2_NONE;
   }
 }
 
-VkAccessFlags to_vk_dst_access_flags(VkImageLayout layout) {
+VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
   switch (layout) {
-  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-    return 0;
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_UNDEFINED:
+    return VK_ACCESS_2_NONE;
   case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-    return VK_ACCESS_TRANSFER_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-    return VK_ACCESS_SHADER_READ_BIT;
+    return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+    return VK_ACCESS_2_NONE;
   default:
     HERROR("Unknown layout");
-    return VK_ACCESS_NONE;
+    return VK_ACCESS_2_NONE;
   }
 }
 
@@ -92,8 +92,8 @@ void VulkanCommandBuffer::end() {
 void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
                                            VkImageLayout old_layout,
                                            VkImageLayout new_layout,
-                                           VkPipelineStageFlags src_stage,
-                                           VkPipelineStageFlags dst_stage,
+                                           VkPipelineStageFlags2 src_stage,
+                                           VkPipelineStageFlags2 dst_stage,
                                            u32 src_queue_family_index,
                                            u32 dst_queue_family_index) {
   // TODO: Better way to select src and dst stages
@@ -107,10 +107,13 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
 
 void VulkanCommandBuffer::transition_image(
     VulkanImage *image, VkImageLayout old_layout, VkImageLayout new_layout,
-    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage,
+    VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage,
     u32 src_queue_family_index, u32 dst_queue_family_index) {
-
-  VkImageMemoryBarrier image_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  VkImageMemoryBarrier2 image_barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+  image_barrier.srcStageMask = src_stage;
+  image_barrier.srcAccessMask = to_vk_src_access_flags(old_layout);
+  image_barrier.dstStageMask = dst_stage;
+  image_barrier.dstAccessMask = to_vk_dst_access_flags(new_layout);
   image_barrier.oldLayout = old_layout;
   image_barrier.newLayout = new_layout;
   image_barrier.srcQueueFamilyIndex = src_queue_family_index;
@@ -124,19 +127,18 @@ void VulkanCommandBuffer::transition_image(
   image_barrier.subresourceRange.baseArrayLayer = 0;
   image_barrier.subresourceRange.layerCount = 1;
 
-  // Synchronization settings
-  image_barrier.srcAccessMask = to_vk_src_access_flags(old_layout);
-  image_barrier.dstAccessMask = to_vk_dst_access_flags(new_layout);
+  VkDependencyInfo dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dependency_info.dependencyFlags = 0;
+  dependency_info.imageMemoryBarrierCount = 1;
+  dependency_info.pImageMemoryBarriers = &image_barrier;
 
-  vkCmdPipelineBarrier(vk_handle, src_stage, dst_stage, 0, 0, nullptr, 0,
-                       nullptr, 1, &image_barrier);
+  vkCmdPipelineBarrier2(vk_handle, &dependency_info);
 
   image->current_layout = image_barrier.newLayout;
 }
 
 void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
                                           VkImageView view) {
-
   VkRenderingAttachmentInfo color_attachment_info{
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
   color_attachment_info.imageView = view;
@@ -234,9 +236,18 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
 
   begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-  VkBufferCopy copy_region{};
-  copy_region.size = size;
-  vkCmdCopyBuffer(vk_handle, src_buffer, dst_buffer, 1, &copy_region);
+  VkBufferCopy2 region{VK_STRUCTURE_TYPE_BUFFER_COPY_2};
+  region.srcOffset = 0;
+  region.dstOffset = 0;
+  region.size = size;
+
+  VkCopyBufferInfo2 buffer_info{VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2};
+  buffer_info.srcBuffer = src_buffer;
+  buffer_info.dstBuffer = dst_buffer;
+  buffer_info.regionCount = 1;
+  buffer_info.pRegions = &region;
+
+  vkCmdCopyBuffer2(vk_handle, &buffer_info);
 
   end();
 
@@ -255,22 +266,29 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
   // Tranisiton image
   VulkanImage *image = backend->access_image(dst_image);
   transition_image(
-      dst_image, image->current_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+      image, image->current_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
 
-  VkBufferImageCopy region{};
+  VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
   region.bufferOffset = 0;
-  region.bufferRowLength = 0;
-  region.bufferImageHeight = 0;
-  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.aspectMask = has_depth_or_stencil(image->format)
+                                           ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                           : VK_IMAGE_ASPECT_COLOR_BIT;
   region.imageSubresource.mipLevel = 0;
   region.imageSubresource.baseArrayLayer = 0;
   region.imageSubresource.layerCount = 1;
   region.imageOffset = {0, 0, 0};
   region.imageExtent = image->vk_extents;
 
-  vkCmdCopyBufferToImage(vk_handle, src_buffer, image->vk_handle,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+  VkCopyBufferToImageInfo2 buffer_image_info{
+      VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2};
+  buffer_image_info.srcBuffer = src_buffer;
+  buffer_image_info.dstImage = image->vk_handle;
+  buffer_image_info.dstImageLayout = image->current_layout;
+  buffer_image_info.regionCount = 1;
+  buffer_image_info.pRegions = &region;
+
+  vkCmdCopyBufferToImage2(vk_handle, &buffer_image_info);
 }
 #pragma endregion VulkanCommandBuffer
 

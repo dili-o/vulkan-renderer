@@ -22,15 +22,15 @@ struct VulkanCommandBuffer {
 
   void transition_image(VulkanImage *image, VkImageLayout old_layout,
                         VkImageLayout new_layout,
-                        VkPipelineStageFlags src_stage,
-                        VkPipelineStageFlags dst_stage,
+                        VkPipelineStageFlags2 src_stage,
+                        VkPipelineStageFlags2 dst_stage,
                         u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
                         u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
 
   void transition_image(TextureHandle image_handle, VkImageLayout old_layout,
                         VkImageLayout new_layout,
-                        VkPipelineStageFlags src_stage,
-                        VkPipelineStageFlags dst_stage,
+                        VkPipelineStageFlags2 src_stage,
+                        VkPipelineStageFlags2 dst_stage,
                         u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
                         u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
 

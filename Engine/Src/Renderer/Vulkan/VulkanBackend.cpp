@@ -20,6 +20,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
 #include <tiny_obj_loader.h>
+#include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_ENABLE_EXPERIMENTAL
@@ -296,10 +297,11 @@ bool VulkanBackend::init(void *_config) {
   bindless_features.runtimeDescriptorArray = VK_TRUE;
   bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
 
-  // Enable Dynamic Rendering
+  // Enable Dynamic Rendering and Synchronization 2
   VkPhysicalDeviceVulkan13Features features13 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
   features13.dynamicRendering = VK_TRUE;
+  features13.synchronization2 = VK_TRUE;
   features13.pNext = &bindless_features;
 
   device_create_info.pNext = &features13;
@@ -582,10 +584,16 @@ void VulkanBackend::create_swapchain() {
 
   command_buffer->end();
 
-  VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &command_buffer->vk_handle;
-  vkQueueSubmit(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+  VkCommandBufferSubmitInfo command_submit_info{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  command_submit_info.commandBuffer = command_buffer->vk_handle;
+
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.flags = 0;
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &command_submit_info;
+
+  vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
   vkQueueWaitIdle(vk_graphics_queue);
 
   TextureCreation tex_creation{};
@@ -633,8 +641,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       &swapchain.images[image_index],
       swapchain.images[image_index].current_layout,
       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
   VulkanImageView *depth_view = image_views.obtain(depth_handle);
   VulkanImage *depth_image = images.obtain(depth_view->image);
@@ -642,10 +650,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->transition_image(
       depth_view->image, depth_image->current_layout,
       VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-          VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-          VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
+      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT);
 
   command_buffer->bind_renderpass(
       {swapchain.vk_extents.width, swapchain.vk_extents.height},
@@ -684,8 +690,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->transition_image(
       &swapchain.images[image_index], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
   command_buffer->end();
 }
@@ -1286,12 +1292,21 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     command_buffer->end();
 
     {
-      VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-      submit_info.commandBufferCount = 1;
-      submit_info.pCommandBuffers = &command_buffer->vk_handle;
-      submit_info.pSignalSemaphores = &transfer_finish_semaphore;
-      submit_info.signalSemaphoreCount = 1;
-      vkQueueSubmit(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+      VkCommandBufferSubmitInfo command_submit_info{
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+      command_submit_info.commandBuffer = command_buffer->vk_handle;
+
+      VkSemaphoreSubmitInfo semaphore_submit_info{
+          VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+      semaphore_submit_info.semaphore = transfer_finish_semaphore;
+      semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+
+      VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+      submit_info.commandBufferInfoCount = 1;
+      submit_info.pCommandBufferInfos = &command_submit_info;
+      submit_info.signalSemaphoreInfoCount = 1;
+      submit_info.pSignalSemaphoreInfos = &semaphore_submit_info;
+      vkQueueSubmit2(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
     }
 
     VulkanCommandBuffer *graphics_c_buffer =
@@ -1305,14 +1320,21 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     graphics_c_buffer->end();
 
     {
-      VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT};
-      VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-      submit_info.commandBufferCount = 1;
-      submit_info.pCommandBuffers = &graphics_c_buffer->vk_handle;
-      submit_info.pWaitSemaphores = &transfer_finish_semaphore;
-      submit_info.waitSemaphoreCount = 1;
-      submit_info.pWaitDstStageMask = wait_stages;
-      vkQueueSubmit(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+      VkCommandBufferSubmitInfo command_submit_info{
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+      command_submit_info.commandBuffer = graphics_c_buffer->vk_handle;
+
+      VkSemaphoreSubmitInfo semaphore_submit_info{
+          VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+      semaphore_submit_info.semaphore = transfer_finish_semaphore;
+      semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+
+      VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+      submit_info.commandBufferInfoCount = 1;
+      submit_info.pCommandBufferInfos = &command_submit_info;
+      submit_info.waitSemaphoreInfoCount = 1;
+      submit_info.pWaitSemaphoreInfos = &semaphore_submit_info;
+      vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
     }
     vkQueueWaitIdle(vk_transfer_queue);
     vkQueueWaitIdle(vk_graphics_queue);
@@ -1689,25 +1711,38 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 
   record_command_buffer(command_buffer, image_index, packet->current_frame);
 
-  VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  // Submit
+  VkCommandBufferSubmitInfo command_submit_info{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  command_submit_info.commandBuffer = command_buffer->vk_handle;
 
-  VkSemaphore wait_semaphores[] = {
-      image_available_semaphores[packet->current_frame]};
-  VkPipelineStageFlags wait_stages[] = {
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-  submit_info.waitSemaphoreCount = 1;
-  submit_info.pWaitSemaphores = wait_semaphores;
-  submit_info.pWaitDstStageMask = wait_stages;
-  submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &command_buffer->vk_handle;
+  VkSemaphoreSubmitInfo wait_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  wait_semaphore_submit_info.semaphore =
+      image_available_semaphores[packet->current_frame];
+  wait_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  VkSemaphoreSubmitInfo signal_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_semaphore_submit_info.semaphore =
+      render_finished_semaphores[packet->current_frame];
+  signal_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &command_submit_info;
+  submit_info.waitSemaphoreInfoCount = 1;
+  submit_info.pWaitSemaphoreInfos = &wait_semaphore_submit_info;
+  submit_info.signalSemaphoreInfoCount = 1;
+  submit_info.pSignalSemaphoreInfos = &signal_semaphore_submit_info;
 
   VkSemaphore signal_semaphores[] = {
       render_finished_semaphores[packet->current_frame]};
-  submit_info.signalSemaphoreCount = 1;
-  submit_info.pSignalSemaphores = signal_semaphores;
 
-  VK_CHECK(vkQueueSubmit(vk_graphics_queue, 1, &submit_info,
-                         in_flight_fences[packet->current_frame]));
+  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info,
+                          in_flight_fences[packet->current_frame]));
 
   VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
 
