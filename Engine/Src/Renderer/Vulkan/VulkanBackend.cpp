@@ -11,6 +11,7 @@
 #include "Renderer/Camera.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
+#include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/CommandBuffer.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
@@ -290,12 +291,18 @@ bool VulkanBackend::init(void *_config) {
   device_create_info.enabledExtensionCount = device_extensions.size;
   device_create_info.ppEnabledExtensionNames = device_extensions.data;
 
+  // Timeline semaphores
+  VkPhysicalDeviceTimelineSemaphoreFeatures timeline_feature{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES};
+  timeline_feature.timelineSemaphore = VK_TRUE;
+
   // Enable Bindless descriptors
   VkPhysicalDeviceDescriptorIndexingFeatures bindless_features{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
   bindless_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
   bindless_features.runtimeDescriptorArray = VK_TRUE;
   bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+  bindless_features.pNext = &timeline_feature;
 
   // Enable Dynamic Rendering and Synchronization 2
   VkPhysicalDeviceVulkan13Features features13 = {
@@ -414,12 +421,13 @@ bool VulkanBackend::shutdown() {
                        vk_allocation_callbacks);
     vkDestroySemaphore(vk_device, render_finished_semaphores[i],
                        vk_allocation_callbacks);
-    vkDestroyFence(vk_device, in_flight_fences[i], vk_allocation_callbacks);
   }
+
+  vkDestroySemaphore(vk_device, vk_timeline_graphics_semaphore,
+                     vk_allocation_callbacks);
 
   image_available_semaphores.shutdown();
   render_finished_semaphores.shutdown();
-  in_flight_fences.shutdown();
 
   vkDestroyDescriptorPool(vk_device, vk_descriptor_pool,
                           vk_allocation_callbacks);
@@ -477,9 +485,12 @@ void VulkanBackend::resize_swapchain() {
 }
 
 bool VulkanBackend::begin_frame(RenderPacket *packet) {
-  VK_CHECK(vkWaitForFences(vk_device, 1,
-                           &in_flight_fences[packet->current_frame], VK_TRUE,
-                           UINT64_MAX));
+  u64 wait_value = frame_number < max_frames_in_flight ? 0 : frame_number;
+  VkSemaphoreWaitInfo wait_info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+  wait_info.semaphoreCount = 1;
+  wait_info.pSemaphores = &vk_timeline_graphics_semaphore;
+  wait_info.pValues = &wait_value;
+  vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
 
   uint32_t image_index;
   VkResult result =
@@ -493,9 +504,6 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
   } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
     HERROR("Failed to acquire swap chain image!");
   }
-
-  VK_CHECK(
-      vkResetFences(vk_device, 1, &in_flight_fences[packet->current_frame]));
 
   update_uniform_buffer(packet);
 
@@ -703,12 +711,8 @@ void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
                                   max_frames_in_flight);
   render_finished_semaphores.init(allocator, max_frames_in_flight,
                                   max_frames_in_flight);
-  in_flight_fences.init(allocator, max_frames_in_flight, max_frames_in_flight);
 
   VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-
-  VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
@@ -717,9 +721,17 @@ void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
     VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
                                vk_allocation_callbacks,
                                &render_finished_semaphores[i]));
-    VK_CHECK(vkCreateFence(vk_device, &fence_info, vk_allocation_callbacks,
-                           &in_flight_fences[i]));
   }
+
+  VkSemaphoreTypeCreateInfo timeline_create_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+  timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+  timeline_create_info.initialValue = 0;
+  semaphore_info.pNext = &timeline_create_info;
+
+  VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
+                             vk_allocation_callbacks,
+                             &vk_timeline_graphics_semaphore));
 }
 
 SamplerHandle VulkanBackend::create_sampler(SamplerCreation &creation) {
@@ -1729,20 +1741,31 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
       render_finished_semaphores[packet->current_frame];
   signal_semaphore_submit_info.stageMask =
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  VkSemaphoreSubmitInfo signal_timeline_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_timeline_semaphore_submit_info.semaphore =
+      vk_timeline_graphics_semaphore;
+  signal_timeline_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  signal_timeline_semaphore_submit_info.value =
+      frame_number + max_frames_in_flight;
+
+  VkSemaphoreSubmitInfo signal_semaphore_submit_infos[2] = {
+      signal_semaphore_submit_info, signal_timeline_semaphore_submit_info};
 
   VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
   submit_info.commandBufferInfoCount = 1;
   submit_info.pCommandBufferInfos = &command_submit_info;
   submit_info.waitSemaphoreInfoCount = 1;
   submit_info.pWaitSemaphoreInfos = &wait_semaphore_submit_info;
-  submit_info.signalSemaphoreInfoCount = 1;
-  submit_info.pSignalSemaphoreInfos = &signal_semaphore_submit_info;
+  submit_info.signalSemaphoreInfoCount =
+      ArraySize(signal_semaphore_submit_infos);
+  submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
 
   VkSemaphore signal_semaphores[] = {
       render_finished_semaphores[packet->current_frame]};
 
-  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info,
-                          in_flight_fences[packet->current_frame]));
+  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
 
   VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
 
@@ -1834,6 +1857,7 @@ void VulkanBackend::load_model() {
 
   std::unordered_map<Vertex, uint32_t> unique_vertices{};
   for (const auto &shape : shapes) {
+    tinyobj::material_t &material = materials[shape.mesh.material_ids[0]];
     for (const auto &index : shape.mesh.indices) {
       Vertex vertex{};
 

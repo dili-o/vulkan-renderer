@@ -10,3 +10,4 @@ A renderer for viewing 3d models
 - [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect)
 - [tinyobjloader](https://github.com/tinyobjloader)
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+- [stb_image](https://github.com/nothings/stb/blob/master/stb_image.h)

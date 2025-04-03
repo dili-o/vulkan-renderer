@@ -99,7 +99,8 @@ struct VulkanBackend : public RendererBackend {
 
   Array<VkSemaphore> image_available_semaphores;
   Array<VkSemaphore> render_finished_semaphores;
-  Array<VkFence> in_flight_fences;
+  VkSemaphore vk_timeline_graphics_semaphore{VK_NULL_HANDLE};
+  // Array<VkFence> in_flight_fences;
   SamplerHandle default_sampler{};
 
   VulkanSwapchain swapchain{};
