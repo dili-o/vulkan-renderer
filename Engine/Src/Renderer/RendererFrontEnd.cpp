@@ -7,6 +7,22 @@
 #include "RendererBackend.hpp"
 #include "RendererTypes.hpp"
 
+#include <stb_image.h>
+#include <tiny_obj_loader.h>
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+
+namespace std {
+template <> struct hash<Helix::Vertex> {
+  size_t operator()(Helix::Vertex const &vertex) const {
+    size_t h1 = hash<glm::vec3>()(vertex.pos);
+    size_t h2 = hash<glm::vec2>()(vertex.tex_coord);
+    return h1 ^ (h2 << 1); // Combine hashes safely
+  }
+};
+
+} // namespace std
 namespace Helix {
 
 static RendererFrontEnd *s_renderer_frontend{nullptr};
@@ -123,6 +139,12 @@ void RendererFrontEnd::init(void *_config) {
   set.uniforms = &texture_uniform;
   update_shader_uniform_set(set, pipeline);
 
+  meshes.init(allocator, 10);
+  index_buffers.init(allocator, 10);
+
+  load_model(ASSETS_PATH "/Models/Sponza/",
+             ASSETS_PATH "/Models/Sponza/sponza.obj");
+
   stack_allocator->free_marker(stack_marker);
 }
 
@@ -133,6 +155,9 @@ void RendererFrontEnd::shutdown() {
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
   }
+  destroy_model();
+
+  meshes.shutdown();
 
   textures.shutdown();
   backend->shutdown();
@@ -149,6 +174,8 @@ void RendererFrontEnd::on_resize(u16 width, u16 height) {
 }
 
 bool RendererFrontEnd::draw_frame(RenderPacket *packet) {
+  packet->meshes = meshes.data;
+  packet->mesh_count = meshes.size;
 
   if (begin_frame(packet)) {
 
@@ -175,9 +202,122 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   return backend->end_frame(packet);
 }
 
-bool RendererFrontEnd::load_model(cstring path) {
+bool RendererFrontEnd::load_model(cstring path, cstring model) {
   // TODO: Create Vertex buffer
   // TODO: Create Index buffer
+  // int texWidth, texHeight, texChannels;
+  // stbi_uc *texture_data = stbi_load("textures/texture.jpg", &texWidth,
+  //                                   &texHeight, &texChannels,
+  //                                   STBI_rgb_alpha);
+  // u64 imageSize = texWidth * texHeight * 4;
+  tinyobj::attrib_t attrib;
+  std::vector<tinyobj::shape_t> shapes;
+  std::vector<tinyobj::material_t> materials;
+  std::string warn, err;
+
+  bool res =
+      tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model, path);
+  if (!warn.empty()) {
+    HWARN("TINYOBJLOADER: {}", warn);
+  }
+  if (!err.empty()) {
+    HERROR("TINYOBJLOADER: {}", err);
+  }
+  if (!res) {
+    HERROR("TINYOBJLOADER: Failed to load .obj");
+  }
+
+  HDEBUG("# of vertices = {}", attrib.vertices.size() / 3);
+  HDEBUG("# of normals = {}", attrib.normals.size() / 3);
+  HDEBUG("# of texcoords = {}", attrib.texcoords.size() / 2);
+  HDEBUG("# of materials = {}", materials.size());
+  HDEBUG("# of shapes = {}", shapes.size());
+  HDEBUG("# of indices in shape[0]: {}", shapes[0].mesh.indices.size());
+  HDEBUG("# of materials in shape[0]: {}", shapes[0].mesh.material_ids.size());
+  HDEBUG("# of faces in shape[0]: {}", shapes[0].mesh.num_face_vertices.size());
+
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
+  std::unordered_map<Vertex, uint32_t> unique_vertices{};
+  Mesh &mesh = meshes.push_use();
+  mesh.draws.init(allocator, shapes.size(), shapes.size());
+
+  Array<Vertex> vertices{};
+  vertices.init(stack_allocator, attrib.vertices.size() / 3);
+
+  Array<u32> indices{};
+  indices.init(stack_allocator, vertices.capacity / 2);
+
+  BufferCreation creation{};
+  for (u32 i = 0; i < shapes.size(); ++i) {
+    const auto &shape = shapes[i];
+    for (const auto &index : shape.mesh.indices) {
+      Vertex vertex{};
+
+      vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]};
+
+      if (index.texcoord_index != -1) {
+        vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index + 0],
+                            1.0f -
+                                attrib.texcoords[2 * index.texcoord_index + 1]};
+      }
+      if (unique_vertices.count(vertex) == 0) {
+        unique_vertices[vertex] = static_cast<u32>(vertices.size);
+        vertices.push(vertex);
+      }
+      indices.push(unique_vertices[vertex]);
+    }
+
+    creation.reset();
+    creation.usage_flags =
+        (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
+    creation.memory_state_flags = MemoryState::Static;
+    creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+    creation.size = sizeof(u32) * indices.size;
+    creation.initial_data = indices.data;
+    creation.name = "Index_Buffer";
+
+    index_buffers.push(create_buffer(creation));
+    mesh.draws[i].primitive_count = shape.mesh.indices.size();
+    BufferResource *index_buffer =
+        buffers.obtain(index_buffers[index_buffers.size - 1]);
+    mesh.draws[i].internal_index_buffer = index_buffer->internal_handle;
+
+    indices.clear();
+  }
+
+  creation.reset();
+  creation.usage_flags =
+      (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest);
+  creation.memory_state_flags = MemoryState::Static;
+  creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+  creation.size = sizeof(Vertex) * vertices.size;
+  creation.initial_data = vertices.data;
+  creation.name = "Model_Vertex_Buffer";
+
+  vertex_buffer = create_buffer(creation);
+  BufferResource *buffer_resource = buffers.obtain(vertex_buffer);
+
+  mesh.internal_vertex_buffer = buffer_resource->internal_handle;
+
+  // HDEBUG("Vertex size = {}", vertices.size);
+
+  return true;
+}
+
+bool RendererFrontEnd::destroy_model() {
+  for (u32 i = 0; i < index_buffers.size; ++i) {
+    destroy_buffer(index_buffers[i]);
+  }
+  for (u32 i = 0; i < meshes.size; ++i) {
+    Mesh &mesh = meshes[i];
+    mesh.draws.shutdown();
+  }
+  destroy_buffer(vertex_buffer);
+  index_buffers.shutdown();
+  meshes.shutdown();
   return true;
 }
 

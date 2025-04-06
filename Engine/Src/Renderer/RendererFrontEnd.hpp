@@ -27,7 +27,8 @@ struct RendererFrontEnd : public Service {
 
   bool end_frame(RenderPacket *packet);
 
-  bool load_model(cstring path);
+  bool load_model(cstring path, cstring model);
+  bool destroy_model();
 
   BufferHandle create_buffer(BufferCreation &creation);
   PipelineHandle create_pipeline(PipelineCreation &creation);
@@ -49,11 +50,13 @@ struct RendererFrontEnd : public Service {
   ResourcePool<PipelineResource> pipelines{};
   ResourcePool<TextureResource> textures{};
   BufferHandle vertex_buffer{};
-  BufferHandle index_buffer{};
+  Array<BufferHandle> index_buffers{};
   BufferHandle uniform_buffers[max_frames_in_flight];
   PipelineHandle pipeline{};
 
   TextureHandle default_texture;
   TextureHandle default_texture2;
+
+  Array<Mesh> meshes;
 };
 } // namespace Helix

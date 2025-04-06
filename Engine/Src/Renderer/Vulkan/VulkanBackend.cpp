@@ -20,12 +20,6 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
-#include <tiny_obj_loader.h>
-#include <vulkan/vulkan_core.h>
-
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/hash.hpp>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
@@ -33,16 +27,6 @@
 #endif // _DEBUG
 
 #define MIN_BUFFER_SIZE 4
-
-namespace std {
-template <> struct hash<Helix::Vertex> {
-  size_t operator()(Helix::Vertex const &vertex) const {
-    size_t h1 = hash<glm::vec3>()(vertex.pos);
-    size_t h2 = hash<glm::vec2>()(vertex.tex_coord);
-    return h1 ^ (h2 << 1); // Combine hashes safely
-  }
-};
-} // namespace std
 
 namespace Helix {
 
@@ -92,8 +76,6 @@ bool VulkanBackend::init(void *_config) {
 
   RendererConfig *config = (RendererConfig *)_config;
 
-  vertices.init(allocator, 3);
-  indexes.init(allocator, 10);
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
   descriptor_set_layouts.init(allocator, 10);
@@ -387,8 +369,6 @@ bool VulkanBackend::init(void *_config) {
   // Create swapchain
   create_swapchain();
 
-  load_model();
-  create_buffers();
   create_sync_objects(config->max_frames_in_flight);
   create_descriptor_pool(config->max_frames_in_flight);
   {
@@ -435,13 +415,6 @@ bool VulkanBackend::shutdown() {
   command_buffer_manager.shutdown();
   transfer_command_buffer_manager.shutdown();
 
-  vmaDestroyBuffer(vma_allocator, vertex_buffer.vk_handle,
-                   vertex_buffer.vma_allocation);
-  vmaDestroyBuffer(vma_allocator, index_buffer.vk_handle,
-                   index_buffer.vma_allocation);
-
-  vertices.shutdown();
-  indexes.shutdown();
   pipelines.shutdown();
   descriptor_set_layouts.shutdown();
   descriptor_sets.shutdown();
@@ -642,7 +615,8 @@ void VulkanBackend::destroy_swapchain() {
 }
 
 void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
-                                          u32 image_index, u32 current_frame) {
+                                          RenderPacket *packet, u32 image_index,
+                                          u32 current_frame) {
   command_buffer->begin();
 
   command_buffer->transition_image(
@@ -673,10 +647,6 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   command_buffer->bind_scissors(swapchain.vk_extents);
 
-  command_buffer->bind_vertex_buffer(vertex_buffer.vk_handle);
-
-  command_buffer->bind_index_buffer(index_buffer.vk_handle);
-
   // TODO:
   VulkanDescriptorSetLayout *dset_layout =
       access_descriptor_set_layout(pipeline->set_layouts[1]);
@@ -691,7 +661,18 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->bind_descriptor_sets({0, 0}, dset2->vk_handle, 0);
   command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle, 1);
 
-  command_buffer->draw_indexed(indexes.size, 1, 0, 0, 0);
+  for (u32 i = 0; i < packet->mesh_count; ++i) {
+
+    Mesh &mesh = packet->meshes[i];
+    command_buffer->bind_vertex_buffer(mesh.internal_vertex_buffer);
+
+    for (u32 j = 0; j < mesh.draws.size; ++j) {
+      MeshDraw &draw = mesh.draws[j];
+      command_buffer->bind_index_buffer(draw.internal_index_buffer);
+
+      command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
+    }
+  }
 
   command_buffer->end_current_renderpass();
   // Transition to Present
@@ -797,56 +778,56 @@ VulkanSampler *VulkanBackend::access_sampler(SamplerHandle handle) {
   return samplers.obtain(handle);
 }
 
-void VulkanBackend::create_buffers() {
-  VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size;
-
-  vk_create_buffer(buffer_size,
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertex_buffer);
-
-  VulkanBuffer staging_buffer{};
-  vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   staging_buffer);
-
-  void *data;
-  vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
-  memcpy(data, vertices.data, (size_t)buffer_size);
-  vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
-
-  VulkanCommandBuffer *command_buffer =
-      transfer_command_buffer_manager.get_command_buffer(0, 0, false);
-  command_buffer->copy_buffer_to_buffer(vertex_buffer.vk_handle,
-                                        staging_buffer.vk_handle, buffer_size,
-                                        vk_transfer_queue);
-
-  vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
-                   staging_buffer.vma_allocation);
-
-  buffer_size = sizeof(u32) * indexes.size;
-  vk_create_buffer(buffer_size,
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, index_buffer);
-
-  vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   staging_buffer);
-
-  vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
-  memcpy(data, indexes.data, (size_t)buffer_size);
-  vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
-
-  command_buffer->copy_buffer_to_buffer(index_buffer.vk_handle,
-                                        staging_buffer.vk_handle, buffer_size,
-                                        vk_transfer_queue);
-
-  vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
-                   staging_buffer.vma_allocation);
-}
+// void VulkanBackend::create_buffers() {
+//   VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size;
+//
+//   vk_create_buffer(buffer_size,
+//                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+//                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+//                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertex_buffer);
+//
+//   VulkanBuffer staging_buffer{};
+//   vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+//                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+//                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+//                    staging_buffer);
+//
+//   void *data;
+//   vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
+//   memcpy(data, vertices.data, (size_t)buffer_size);
+//   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
+//
+//   VulkanCommandBuffer *command_buffer =
+//       transfer_command_buffer_manager.get_command_buffer(0, 0, false);
+//   command_buffer->copy_buffer_to_buffer(vertex_buffer.vk_handle,
+//                                         staging_buffer.vk_handle,
+//                                         buffer_size, vk_transfer_queue);
+//
+//   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
+//                    staging_buffer.vma_allocation);
+//
+//   buffer_size = sizeof(u32) * indexes.size;
+//   vk_create_buffer(buffer_size,
+//                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+//                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+//                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, index_buffer);
+//
+//   vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+//                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+//                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+//                    staging_buffer);
+//
+//   vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
+//   memcpy(data, indexes.data, (size_t)buffer_size);
+//   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
+//
+//   command_buffer->copy_buffer_to_buffer(index_buffer.vk_handle,
+//                                         staging_buffer.vk_handle,
+//                                         buffer_size, vk_transfer_queue);
+//
+//   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
+//                    staging_buffer.vma_allocation);
+// }
 
 void VulkanBackend::vk_create_buffer(VkDeviceSize size,
                                      VkBufferUsageFlags usage,
@@ -874,8 +855,7 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
     return handle;
   }
 
-  VkBufferCreateInfo buffer_info{};
-  buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   buffer_info.size =
       creation.size < MIN_BUFFER_SIZE ? MIN_BUFFER_SIZE : creation.size;
 
@@ -887,7 +867,9 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   VmaAllocationCreateInfo memory_info{};
-  memory_info.usage = VMA_MEMORY_USAGE_AUTO;
+  memory_info.usage = creation.memory_access_flags & MemoryAccess::GPU_ONLY
+                          ? VMA_MEMORY_USAGE_GPU_ONLY
+                          : VMA_MEMORY_USAGE_AUTO;
   memory_info.requiredFlags =
       to_vk_mem_property_flags(creation.memory_access_flags);
   // Note to self: VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT for buffers that
@@ -1721,7 +1703,8 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,
                                                 false);
 
-  record_command_buffer(command_buffer, image_index, packet->current_frame);
+  record_command_buffer(command_buffer, packet, image_index,
+                        packet->current_frame);
 
   // Submit
   VkCommandBufferSubmitInfo command_submit_info{
@@ -1813,72 +1796,18 @@ void VulkanBackend::upload_buffer_data(void *data, VkBuffer dst_buffer,
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                    staging_buffer);
 
-  vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
-  memcpy(data, vertices.data, (size_t)buffer_size);
+  vmaMapMemory(vma_allocator, staging_buffer.vma_allocation,
+               &staging_buffer.mapped_data);
+  memcpy(staging_buffer.mapped_data, data, (size_t)buffer_size);
   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
   VulkanCommandBuffer *command_buffer =
       transfer_command_buffer_manager.get_command_buffer(0, 0, false);
-  command_buffer->copy_buffer_to_buffer(vertex_buffer.vk_handle,
-                                        staging_buffer.vk_handle, buffer_size,
-                                        vk_transfer_queue);
+  command_buffer->copy_buffer_to_buffer(dst_buffer, staging_buffer.vk_handle,
+                                        buffer_size, vk_transfer_queue);
 
   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
                    staging_buffer.vma_allocation);
-}
-
-void VulkanBackend::load_model() {
-  tinyobj::attrib_t attrib;
-  std::vector<tinyobj::shape_t> shapes;
-  std::vector<tinyobj::material_t> materials;
-  std::string warn, err;
-
-  bool res = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                              ASSETS_PATH "/Models/Sponza/sponza.obj",
-                              ASSETS_PATH "/Models/Sponza/");
-  if (!warn.empty()) {
-    HWARN("TINYOBJLOADER: {}", warn);
-  }
-  if (!err.empty()) {
-    HERROR("TINYOBJLOADER: {}", err);
-  }
-  if (!res) {
-    HERROR("TINYOBJLOADER: Failed to load .obj");
-  }
-
-  HDEBUG("# of vertices = {}", attrib.vertices.size() / 3);
-  HDEBUG("# of normals = {}", attrib.normals.size() / 3);
-  HDEBUG("# of texcoords = {}", attrib.texcoords.size() / 2);
-  HDEBUG("# of materials = {}", materials.size());
-  HDEBUG("# of shapes = {}", shapes.size());
-  HDEBUG("# of indices in shape[0]: {}", shapes[0].mesh.indices.size());
-  HDEBUG("# of materials in shape[0]: {}", shapes[0].mesh.material_ids.size());
-  HDEBUG("# of faces in shape[0]: {}", shapes[0].mesh.num_face_vertices.size());
-
-  std::unordered_map<Vertex, uint32_t> unique_vertices{};
-  for (const auto &shape : shapes) {
-    tinyobj::material_t &material = materials[shape.mesh.material_ids[0]];
-    for (const auto &index : shape.mesh.indices) {
-      Vertex vertex{};
-
-      vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]};
-
-      if (index.texcoord_index != -1) {
-        vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index + 0],
-                            1.0f -
-                                attrib.texcoords[2 * index.texcoord_index + 1]};
-      }
-      if (unique_vertices.count(vertex) == 0) {
-        unique_vertices[vertex] = static_cast<u32>(vertices.size);
-        vertices.push(vertex);
-      }
-      indexes.push(unique_vertices[vertex]);
-    }
-  }
-
-  HDEBUG("Vertex size = {}", vertices.size);
 }
 
 void VulkanBackend::set_resource_name(VkObjectType type, u64 handle,

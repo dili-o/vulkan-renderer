@@ -19,6 +19,8 @@ VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
     return VK_ACCESS_2_NONE;
   case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
     return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
   case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
     return VK_ACCESS_2_NONE;
   default:
@@ -35,6 +37,8 @@ VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
     return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
     return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
   case VK_IMAGE_LAYOUT_UNDEFINED:
     return VK_ACCESS_2_NONE;
   case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
@@ -200,12 +204,22 @@ void VulkanCommandBuffer::bind_scissors(VkExtent2D extents) {
 }
 
 // TODO Should pass in a BufferHandle instead
+void VulkanCommandBuffer::bind_vertex_buffer(BufferHandle handle) {
+  VulkanBuffer *buffer = backend->access_buffer(handle);
+  bind_vertex_buffer(buffer->vk_handle);
+}
+
 void VulkanCommandBuffer::bind_vertex_buffer(VkBuffer vertex_buffer) {
 
   VkBuffer vertex_buffers[] = {vertex_buffer};
   VkDeviceSize offsets[] = {0};
 
   vkCmdBindVertexBuffers(vk_handle, 0, 1, vertex_buffers, offsets);
+}
+
+void VulkanCommandBuffer::bind_index_buffer(BufferHandle handle) {
+  VulkanBuffer *buffer = backend->access_buffer(handle);
+  bind_index_buffer(buffer->vk_handle);
 }
 
 void VulkanCommandBuffer::bind_index_buffer(VkBuffer index_buffer) {

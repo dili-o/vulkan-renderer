@@ -1,7 +1,9 @@
 #pragma once
 
+#include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Defines.hpp"
+#include "Renderer/GPUResources.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -24,11 +26,24 @@ struct RendererConfig {
   u32 max_frames_in_flight;
 };
 
+struct MeshDraw {
+  BufferHandle internal_index_buffer;
+  u32 primitive_count;
+};
+
+struct Mesh {
+  Array<MeshDraw> draws;
+  BufferHandle internal_vertex_buffer;
+  // Transform transform;
+};
+
 struct RenderPacket {
   f32 delta_time;
   u32 current_frame;
-  Camera *camera;
+  Camera *camera{nullptr};
   ResourceHandle scene_data_buffer;
+  Mesh *meshes{nullptr};
+  u32 mesh_count{0};
 };
 
 struct Vertex {

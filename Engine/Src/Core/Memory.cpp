@@ -12,7 +12,7 @@
 
 #define HEAP_ALLOCATOR_STATS
 
-// #define DEBUG_ALLOCATIONS
+//#define DEBUG_ALLOCATIONS
 
 namespace Helix {
 #pragma region Memory_Methods ////////////////////////////////////////

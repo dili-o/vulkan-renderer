@@ -45,7 +45,9 @@ struct VulkanCommandBuffer {
   void bind_scissors(VkExtent2D extents);
 
   // TODO: Make more configurable
+  void bind_vertex_buffer(BufferHandle handle);
   void bind_vertex_buffer(VkBuffer vertex_buffer);
+  void bind_index_buffer(BufferHandle handle);
   void bind_index_buffer(VkBuffer index_buffer);
   void bind_descriptor_sets(PipelineHandle pipeline_handle,
                             VkDescriptorSet dset, u32 set_index);

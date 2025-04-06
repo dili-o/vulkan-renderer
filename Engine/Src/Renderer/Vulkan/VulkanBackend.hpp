@@ -28,10 +28,9 @@ struct VulkanBackend : public RendererBackend {
   void resize_swapchain();
 
   void record_command_buffer(VulkanCommandBuffer *command_buffer,
-                             u32 image_index, u32 current_frame);
+                             RenderPacket *packet, u32 image_index,
+                             u32 current_frame);
 
-  // TODO: Make a generic create_buffers
-  void create_buffers();
   void vk_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                         VkMemoryPropertyFlags properties, VulkanBuffer &buffer);
   virtual BufferHandle create_buffer(BufferCreation &creation) override;
@@ -74,9 +73,8 @@ struct VulkanBackend : public RendererBackend {
 
   void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);
 
-  void load_model();
-
   void draw_frame(RenderPacket *packet, u32 image_index);
+  // TODO: Move this to the RendererFrontend
   void update_uniform_buffer(RenderPacket *packet);
 
   void set_resource_name(VkObjectType type, u64 handle, cstring name);
@@ -105,15 +103,8 @@ struct VulkanBackend : public RendererBackend {
 
   VulkanSwapchain swapchain{};
 
-  // TODO: These should be stored in a MeshDraw Object
-  VulkanBuffer vertex_buffer{};
-  VulkanBuffer index_buffer{};
-
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
   TextureHandle depth_handle{};
-
-  Array<Vertex> vertices{};
-  Array<u32> indexes{};
 
   ResourcePool<VulkanBuffer> buffers{};
   ResourcePool<VulkanPipeline> pipelines{};
