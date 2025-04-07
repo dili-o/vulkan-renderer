@@ -64,9 +64,13 @@ void parse_binary(const u32 *data, size_t data_size,
   result = spvReflectEnumerateDescriptorSets(&module, &count, sets.data());
   HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
+  // Descriptor Sets
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
 
   for (u32 i = 0; i < (u32)sets.size(); ++i) {
+    // Check if set == 0 (Reserved for bindless set)
+    if (sets[i]->set == 0)
+      continue;
     // Check if we've already added the set
     VulkanDescriptorSetLayout &set_layout =
         get_set(parse_result.set_layouts, sets[i]->set);
@@ -91,7 +95,23 @@ void parse_binary(const u32 *data, size_t data_size,
     }
   }
 
-  // VERTEX ONLY
+  // Push Constants
+  u32 push_count = 0;
+  result = spvReflectEnumeratePushConstantBlocks(&module, &push_count, nullptr);
+  HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
+
+  std::vector<SpvReflectBlockVariable *> push_constants(push_count);
+  if (push_count) {
+    result = spvReflectEnumeratePushConstantBlocks(&module, &push_count,
+                                                   push_constants.data());
+    HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
+
+    parse_result.push_constant.size = push_constants[0]->size;
+    parse_result.push_constant.offset = push_constants[0]->offset;
+    parse_result.push_constant.stageFlags = module.shader_stage;
+  }
+
+  // VERTEX ONLY (Vertex bindings and attributes)
   if (module.shader_stage != SPV_REFLECT_SHADER_STAGE_VERTEX_BIT) {
     return;
   }

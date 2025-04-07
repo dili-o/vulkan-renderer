@@ -52,6 +52,9 @@ struct VulkanCommandBuffer {
   void bind_descriptor_sets(PipelineHandle pipeline_handle,
                             VkDescriptorSet dset, u32 set_index);
 
+  void push_constants(VkPipelineLayout layout, VkShaderStageFlagBits stage,
+                      u32 offset, u32 size, void *data);
+
   void draw_indexed(u32 index_count, u32 instance_count, u32 first_index,
                     i32 vertex_offset, u32 first_instance);
 

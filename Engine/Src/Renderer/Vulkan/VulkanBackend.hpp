@@ -104,6 +104,9 @@ struct VulkanBackend : public RendererBackend {
   VulkanSwapchain swapchain{};
 
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
+  VkDescriptorSetLayout vk_bindless_descriptor_layout{VK_NULL_HANDLE};
+  VkDescriptorSet vk_bindless_descriptor_set{VK_NULL_HANDLE};
+  Array<TextureHandle> bindless_textures_to_update{};
   TextureHandle depth_handle{};
 
   ResourcePool<VulkanBuffer> buffers{};

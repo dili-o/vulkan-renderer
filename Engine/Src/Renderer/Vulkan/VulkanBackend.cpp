@@ -27,6 +27,7 @@
 #endif // _DEBUG
 
 #define MIN_BUFFER_SIZE 4
+#define MAX_TEXTURES 128
 
 namespace Helix {
 
@@ -83,6 +84,8 @@ bool VulkanBackend::init(void *_config) {
   images.init(allocator, 10);
   image_views.init(allocator, 10);
   samplers.init(allocator, 10);
+
+  bindless_textures_to_update.init(allocator, 10);
 
 #pragma region Instance_Creation
   VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -284,6 +287,8 @@ bool VulkanBackend::init(void *_config) {
   bindless_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
   bindless_features.runtimeDescriptorArray = VK_TRUE;
   bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+  bindless_features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  bindless_features.descriptorBindingPartiallyBound = VK_TRUE;
   bindless_features.pNext = &timeline_feature;
 
   // Enable Dynamic Rendering and Synchronization 2
@@ -411,6 +416,8 @@ bool VulkanBackend::shutdown() {
 
   vkDestroyDescriptorPool(vk_device, vk_descriptor_pool,
                           vk_allocation_callbacks);
+  vkDestroyDescriptorSetLayout(vk_device, vk_bindless_descriptor_layout,
+                               vk_allocation_callbacks);
 
   command_buffer_manager.shutdown();
   transfer_command_buffer_manager.shutdown();
@@ -422,6 +429,8 @@ bool VulkanBackend::shutdown() {
   images.shutdown();
   image_views.shutdown();
   samplers.shutdown();
+
+  bindless_textures_to_update.shutdown();
   vmaDestroyAllocator(vma_allocator);
 
   vkDestroyDevice(vk_device, vk_allocation_callbacks);
@@ -649,16 +658,11 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   // TODO:
   VulkanDescriptorSetLayout *dset_layout =
-      access_descriptor_set_layout(pipeline->set_layouts[1]);
+      access_descriptor_set_layout(pipeline->set_layouts[0]);
   VulkanDescriptorSet *dset =
       access_descriptor_set(dset_layout->allocated_sets[current_frame]);
 
-  VulkanDescriptorSetLayout *dset_layout2 =
-      access_descriptor_set_layout(pipeline->set_layouts[0]);
-  VulkanDescriptorSet *dset2 =
-      access_descriptor_set(dset_layout2->allocated_sets[0]);
-
-  command_buffer->bind_descriptor_sets({0, 0}, dset2->vk_handle, 0);
+  command_buffer->bind_descriptor_sets({0, 0}, vk_bindless_descriptor_set, 0);
   command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle, 1);
 
   for (u32 i = 0; i < packet->mesh_count; ++i) {
@@ -669,6 +673,17 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     for (u32 j = 0; j < mesh.draws.size; ++j) {
       MeshDraw &draw = mesh.draws[j];
       command_buffer->bind_index_buffer(draw.internal_index_buffer);
+
+      PBRMaterial &material =
+          RendererFrontEnd::instance()->pbr_materials[draw.material_index];
+
+      // TODO: Access functions for RendererFrontEnd
+      TextureResource *texture_resource =
+          RendererFrontEnd::instance()->textures.obtain(
+              material.albedo_texture_handle);
+      command_buffer->push_constants(
+          pipeline->vk_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(u32),
+          &texture_resource->internal_handle.index);
 
       command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
     }
@@ -954,6 +969,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
   file_service->change_directory(ASSETS_PATH "/Shaders/");
   ParseResult parse_result{};
+  parse_result.push_constant.size = 0;
   parse_result.set_layouts.init(stack_allocator, 4);
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
@@ -1103,7 +1119,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
   // Descriptor Set Layouts
   VkDescriptorSetLayout *layouts = (VkDescriptorSetLayout *)halloca(
-      sizeof(VkDescriptorSetLayout) * parse_result.set_layouts.size,
+      sizeof(VkDescriptorSetLayout) * (parse_result.set_layouts.size + 1),
       stack_allocator);
 
   pipeline->set_layouts = (DescriptorSetLayoutHandle *)halloca(
@@ -1139,15 +1155,21 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
       VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &layout_info,
                                            vk_allocation_callbacks,
                                            &dset_layout->vk_handle));
-      layouts[i] = dset_layout->vk_handle;
+      // Adding 1 because of bindless set index at set == 0
+      layouts[i + 1] = dset_layout->vk_handle;
       pipeline->set_layouts[i] = dset_layout_handle;
     }
   }
+  layouts[0] = vk_bindless_descriptor_layout;
   // Pipeline Layout
   VkPipelineLayoutCreateInfo pipeline_layout_info{
       VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  pipeline_layout_info.setLayoutCount = parse_result.set_layouts.size;
+  pipeline_layout_info.setLayoutCount = parse_result.set_layouts.size + 1;
   pipeline_layout_info.pSetLayouts = layouts;
+  if (parse_result.push_constant.size != 0) {
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pPushConstantRanges = &parse_result.push_constant;
+  }
 
   VK_CHECK(vkCreatePipelineLayout(vk_device, &pipeline_layout_info,
                                   vk_allocation_callbacks,
@@ -1374,6 +1396,8 @@ TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
                     creation.name);
   view->image = creation.alias_image;
   ++vk_image->views_count;
+
+  bindless_textures_to_update.push(handle);
 
   return handle;
 }
@@ -1602,8 +1626,10 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
     return false;
   }
 
-  VulkanDescriptorSetLayout *layout =
-      access_descriptor_set_layout(pipeline->set_layouts[set.set_index]);
+  VulkanDescriptorSetLayout *layout = access_descriptor_set_layout(
+      pipeline->set_layouts[set.set_index -
+                            1]); // TODO: Subtracting 1 here because set == 0 is
+                                 // reserved for bindless
 
   VkDescriptorSetLayout vk_layout = layout->vk_handle;
   VkDescriptorSetAllocateInfo alloc_info{};
@@ -1683,7 +1709,7 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 
   VkDescriptorPoolSize pool_size_2{};
   pool_size_2.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  pool_size_2.descriptorCount = 1;
+  pool_size_2.descriptorCount = MAX_TEXTURES;
 
   VkDescriptorPoolSize pool_sizes[] = {pool_size, pool_size_2};
 
@@ -1692,9 +1718,61 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   pool_info.poolSizeCount = ArraySize(pool_sizes);
   pool_info.pPoolSizes = pool_sizes;
   pool_info.maxSets = max_frames_in_flight + 1;
+  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
 
+  // TODO: Create a different descriptor pool that just holds the images
   VK_CHECK(vkCreateDescriptorPool(
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
+
+  // Bindless descriptor set layout
+  VkDescriptorSetLayoutBinding image_sampler_binding;
+  image_sampler_binding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  image_sampler_binding.descriptorCount = MAX_TEXTURES;
+  image_sampler_binding.binding = 0;
+  image_sampler_binding.stageFlags = VK_SHADER_STAGE_ALL;
+  image_sampler_binding.pImmutableSamplers = nullptr;
+
+  VkDescriptorSetLayoutCreateInfo layout_info = {
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layout_info.bindingCount = 1;
+  layout_info.pBindings = &image_sampler_binding;
+  layout_info.flags =
+      VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
+
+  VkDescriptorBindingFlags bindless_flags =
+      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
+      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT; // |
+                                                       // VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
+  VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extended_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
+      nullptr};
+  extended_info.bindingCount = 1;
+  extended_info.pBindingFlags = &bindless_flags;
+
+  layout_info.pNext = &extended_info;
+
+  VK_CHECK(vkCreateDescriptorSetLayout(vk_device, &layout_info,
+                                       vk_allocation_callbacks,
+                                       &vk_bindless_descriptor_layout));
+
+  // Allocate the descriptor set //////////////////////////
+  VkDescriptorSetAllocateInfo alloc_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+  alloc_info.descriptorPool = vk_descriptor_pool;
+  alloc_info.descriptorSetCount = 1;
+  alloc_info.pSetLayouts = &vk_bindless_descriptor_layout;
+
+  u32 variableDesciptorCounts[] = {MAX_TEXTURES};
+  VkDescriptorSetVariableDescriptorCountAllocateInfoEXT count_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT};
+  count_info.descriptorSetCount = ArraySize(variableDesciptorCounts);
+  count_info.pDescriptorCounts = variableDesciptorCounts;
+
+  alloc_info.pNext = &count_info;
+
+  VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info,
+                                    &vk_bindless_descriptor_set));
 }
 
 void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
@@ -1705,6 +1783,54 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 
   record_command_buffer(command_buffer, packet, image_index,
                         packet->current_frame);
+
+  // Update Bindless Textures
+  if (bindless_textures_to_update.size) {
+    // Handle deferred writes to bindless textures.
+    VkWriteDescriptorSet bindless_descriptor_writes[MAX_TEXTURES];
+    VkDescriptorImageInfo bindless_image_info[MAX_TEXTURES];
+
+    // TODO: Maybe have a create default texture function in the backend.
+    // VulkanImageView *default_texture = access_texture(defaul);
+
+    u32 current_write_index = 0;
+    for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
+      TextureHandle texture_to_update = bindless_textures_to_update[it];
+      {
+        VulkanImageView *texture = access_image_view(texture_to_update);
+        VkWriteDescriptorSet &descriptor_write =
+            bindless_descriptor_writes[current_write_index];
+        descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        descriptor_write.descriptorCount = 1;
+        descriptor_write.dstArrayElement = texture_to_update.index;
+        descriptor_write.descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_write.dstSet = vk_bindless_descriptor_set;
+        descriptor_write.dstBinding = 0;
+
+        VulkanSampler *vk_default_sampler = access_sampler(default_sampler);
+        VkDescriptorImageInfo &descriptor_image_info =
+            bindless_image_info[current_write_index];
+
+        // TODO: Texture( Views ) should have samplers
+        descriptor_image_info.sampler = vk_default_sampler->vk_handle;
+
+        descriptor_image_info.imageView = texture->vk_handle;
+        descriptor_image_info.imageLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        descriptor_write.pImageInfo = &descriptor_image_info;
+
+        bindless_textures_to_update.delete_swap(it);
+
+        ++current_write_index;
+      }
+    }
+
+    if (current_write_index) {
+      vkUpdateDescriptorSets(vk_device, current_write_index,
+                             bindless_descriptor_writes, 0, nullptr);
+    }
+  }
 
   // Submit
   VkCommandBufferSubmitInfo command_submit_info{

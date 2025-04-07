@@ -235,6 +235,12 @@ void VulkanCommandBuffer::bind_descriptor_sets(PipelineHandle pipeline_handle,
                           set_index, 1, &dset, 0, nullptr);
 }
 
+void VulkanCommandBuffer::push_constants(VkPipelineLayout layout,
+                                         VkShaderStageFlagBits stage,
+                                         u32 offset, u32 size, void *data) {
+  vkCmdPushConstants(vk_handle, layout, stage, offset, size, data);
+}
+
 void VulkanCommandBuffer::draw_indexed(u32 index_count, u32 instance_count,
                                        u32 first_index, i32 vertex_offset,
                                        u32 first_instance) {

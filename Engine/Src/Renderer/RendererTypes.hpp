@@ -3,6 +3,7 @@
 #include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Defines.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 
 #include <glm/glm.hpp>
@@ -26,8 +27,16 @@ struct RendererConfig {
   u32 max_frames_in_flight;
 };
 
+struct PBRMaterial {
+  TextureHandle albedo_texture_handle{};
+  TextureHandle normal_texture_handle{};
+  TextureHandle roughness_texture_handle{};
+  TextureHandle occlusion_texture_handle{};
+};
+
 struct MeshDraw {
   BufferHandle internal_index_buffer;
+  u32 material_index;
   u32 primitive_count;
 };
 

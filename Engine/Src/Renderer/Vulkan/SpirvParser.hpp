@@ -9,6 +9,8 @@ struct ParseResult {
   VkVertexInputBindingDescription vertex_binding;
   VkVertexInputAttributeDescription *vertex_attributes = nullptr;
   u32 vertex_attribute_count = 0;
+  VkPushConstantRange push_constant{}; // NOTE: only assuming one push constant
+                                       // in whole pipeline
 
   Array<VulkanDescriptorSetLayout> set_layouts;
 };

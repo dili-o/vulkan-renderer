@@ -2,6 +2,7 @@
 #include "Containers/ResourcePool.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Platform/File.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "RendererBackend.hpp"
@@ -59,8 +60,11 @@ void RendererFrontEnd::init(void *_config) {
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
   textures.init(allocator, 10);
+  model_textures.init(allocator, 10);
 
   string_buffer.init(allocator, hkilo(1));
+
+  pbr_materials.init(allocator, 25);
 
   // Create Uniform Buffers
   {
@@ -126,18 +130,18 @@ void RendererFrontEnd::init(void *_config) {
   def_colour[1] = 0;
   // default_texture2 = create_texture(tex_creation);
 
-  TextureResource *default_tex = textures.obtain(default_texture);
-  ShaderUniform texture_uniform{};
-  texture_uniform.binding = 0;
-  texture_uniform.internal_resource_handle = default_tex->internal_handle;
-  texture_uniform.resource_type = ResourceType::Texture;
-  // Not needed yet texture_uniform.texture_info;
+  // TextureResource *default_tex = textures.obtain(default_texture);
+  // ShaderUniform texture_uniform{};
+  // texture_uniform.binding = 0;
+  // texture_uniform.internal_resource_handle = default_tex->internal_handle;
+  // texture_uniform.resource_type = ResourceType::Texture;
+  //// Not needed yet texture_uniform.texture_info;
 
-  ShaderUniformSet set{};
-  set.uniform_count = 1;
-  set.set_index = 0;
-  set.uniforms = &texture_uniform;
-  update_shader_uniform_set(set, pipeline);
+  // ShaderUniformSet set{};
+  // set.uniform_count = 1;
+  // set.set_index = 0;
+  // set.uniforms = &texture_uniform;
+  // update_shader_uniform_set(set, pipeline);
 
   meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
@@ -159,6 +163,9 @@ void RendererFrontEnd::shutdown() {
 
   meshes.shutdown();
 
+  pbr_materials.shutdown();
+  // TODO: Right now we just free the remaining textures (material data)
+  textures.release_all();
   textures.shutdown();
   backend->shutdown();
   buffers.shutdown();
@@ -203,13 +210,6 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::load_model(cstring path, cstring model) {
-  // TODO: Create Vertex buffer
-  // TODO: Create Index buffer
-  // int texWidth, texHeight, texChannels;
-  // stbi_uc *texture_data = stbi_load("textures/texture.jpg", &texWidth,
-  //                                   &texHeight, &texChannels,
-  //                                   STBI_rgb_alpha);
-  // u64 imageSize = texWidth * texHeight * 4;
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
@@ -248,6 +248,47 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
   Array<u32> indices{};
   indices.init(stack_allocator, vertices.capacity / 2);
 
+  FileService *file_service = FileService::instance();
+  Directory dir{};
+  file_service->current_directory(&dir);
+
+  file_service->change_directory(path);
+
+  for (u32 i = 0; i < materials.size(); ++i) {
+    tinyobj::material_t &material = materials[i];
+    int width, height, channels;
+    stbi_uc *texture_data = stbi_load(material.diffuse_texname.c_str(), &width,
+                                      &height, &channels, STBI_rgb_alpha);
+    PBRMaterial &pbr_material = pbr_materials.push_use();
+    if (texture_data) {
+      TextureCreation tex_creation{};
+      tex_creation.name = material.name.c_str();
+      tex_creation.initial_data = texture_data;
+      tex_creation.width = width;
+      tex_creation.height = height;
+      tex_creation.depth = 1;
+      tex_creation.array_layer_count = 1;
+      tex_creation.array_base_level = 0;
+      tex_creation.mip_level_count = 1;
+      tex_creation.mip_base_level = 0;
+      tex_creation.usage = TextureUsage::TransferDest;
+      tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
+      tex_creation.type = TextureType::Texture2D;
+
+      TextureHandle handle = create_texture(tex_creation);
+      model_textures.push(handle);
+      pbr_material.albedo_texture_handle = handle;
+
+      free(texture_data);
+    } else {
+      HWARN("Unable to load, {}", material.diffuse_texname.c_str());
+      pbr_material.albedo_texture_handle = default_texture;
+    }
+  }
+  // Default material
+  PBRMaterial &pbr_material = pbr_materials.push_use();
+  pbr_material.albedo_texture_handle = default_texture;
+
   BufferCreation creation{};
   for (u32 i = 0; i < shapes.size(); ++i) {
     const auto &shape = shapes[i];
@@ -284,6 +325,9 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
     BufferResource *index_buffer =
         buffers.obtain(index_buffers[index_buffers.size - 1]);
     mesh.draws[i].internal_index_buffer = index_buffer->internal_handle;
+    mesh.draws[i].material_index = (shape.mesh.material_ids[0] == -1)
+                                       ? pbr_materials.size - 1
+                                       : shape.mesh.material_ids[0];
 
     indices.clear();
   }
@@ -315,7 +359,12 @@ bool RendererFrontEnd::destroy_model() {
     Mesh &mesh = meshes[i];
     mesh.draws.shutdown();
   }
+  for (u32 i = 0; i < model_textures.size; ++i) {
+    destroy_texture(model_textures[i]);
+  }
+
   destroy_buffer(vertex_buffer);
+  model_textures.shutdown();
   index_buffers.shutdown();
   meshes.shutdown();
   return true;

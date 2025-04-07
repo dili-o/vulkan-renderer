@@ -49,8 +49,10 @@ struct RendererFrontEnd : public Service {
   ResourcePool<BufferResource> buffers{};
   ResourcePool<PipelineResource> pipelines{};
   ResourcePool<TextureResource> textures{};
+  Array<PBRMaterial> pbr_materials{};
   BufferHandle vertex_buffer{};
   Array<BufferHandle> index_buffers{};
+  Array<TextureHandle> model_textures{};
   BufferHandle uniform_buffers[max_frames_in_flight];
   PipelineHandle pipeline{};
 

@@ -24,6 +24,7 @@ template <typename T> struct ResourcePool {
   const T *obtain(ResourceHandle handle) const;
 
   void release(ResourceHandle handle);
+  void release_all();
 
   u8 *memory = nullptr;
   u32 *free_indices = nullptr;
@@ -154,5 +155,14 @@ inline void ResourcePool<T>::release(ResourceHandle handle) {
     return;
   }
   HWARN("Attempting to release invalid index");
+}
+
+template <typename T> inline void ResourcePool<T>::release_all() {
+  free_indices_head = 0;
+  size = 0;
+
+  for (u32 i = 0; i < capacity; ++i) {
+    free_indices[i] = i;
+  }
 }
 } // namespace Helix
