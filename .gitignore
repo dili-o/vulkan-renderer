@@ -1,7 +1,8 @@
 /out
 Bin/
 build/
-Engine/Assets/Shaders/Caches/.cache
+*.cache
+!Engine/Assets/Shader/Caches/
 /.vs
 .idea/
 CMakeSettings.json
