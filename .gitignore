@@ -1,7 +1,7 @@
 /out
 Bin/
 build/
-assets/shaders/cache
+Engine/Assets/Shaders/Caches/.cache
 /.vs
 .idea/
 CMakeSettings.json
@@ -13,4 +13,3 @@ Makefile
 cmake_install.cmake
 compile_commands.json
 .clang-format
-.cache
