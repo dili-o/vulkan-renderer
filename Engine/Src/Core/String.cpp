@@ -49,7 +49,7 @@ void StringBuffer::append(const StringBuffer &other_buffer) {
 void StringBuffer::append_m(void *memory, size_t size) {
 
   if (current_size + size >= buffer_size) {
-    HERROR("Buffer full! Please allocate more size.");
+    HERROR("StringBuffer full! Please allocate more size.");
     return;
   }
 
@@ -59,7 +59,7 @@ void StringBuffer::append_m(void *memory, size_t size) {
 
 void StringBuffer::append_f(cstring format, ...) {
   if (current_size >= buffer_size) {
-    HERROR("Buffer full! Please allocate more size.");
+    HERROR("StringBuffer full! Please allocate more size.");
     return;
   }
 
@@ -92,7 +92,7 @@ char *StringBuffer::append_use_f(cstring format, ...) {
   // TODO: safer version!
   // TODO: do not copy paste!
   if (current_size >= buffer_size) {
-    HERROR("Buffer full! Please allocate more size.");
+    HERROR("StringBuffer full! Please allocate more size.");
     return nullptr;
   }
 
@@ -125,7 +125,7 @@ char *StringBuffer::append_use_substring(cstring string, u32 start_index,
                                          u32 end_index) {
   u32 size = end_index - start_index;
   if (current_size + size >= buffer_size) {
-    HERROR("Buffer full! Please allocate more size. Current size: {}, String "
+    HERROR("StringBuffer full! Please allocate more size. Current size: {}, String "
            "Size: {}",
            current_size, size);
     return nullptr;

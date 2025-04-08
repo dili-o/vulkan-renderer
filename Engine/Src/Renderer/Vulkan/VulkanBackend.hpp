@@ -74,7 +74,7 @@ struct VulkanBackend : public RendererBackend {
   void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);
 
   void draw_frame(RenderPacket *packet, u32 image_index);
-  // TODO: Move this to the RendererFrontend
+
   void update_uniform_buffer(RenderPacket *packet);
 
   void set_resource_name(VkObjectType type, u64 handle, cstring name);
@@ -104,6 +104,7 @@ struct VulkanBackend : public RendererBackend {
   VulkanSwapchain swapchain{};
 
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
+  VkDescriptorPool vk_bindless_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorSetLayout vk_bindless_descriptor_layout{VK_NULL_HANDLE};
   VkDescriptorSet vk_bindless_descriptor_set{VK_NULL_HANDLE};
   Array<TextureHandle> bindless_textures_to_update{};

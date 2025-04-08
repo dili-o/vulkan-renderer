@@ -50,7 +50,7 @@ struct VulkanBuffer {
 
 struct VulkanDescriptorSetLayout {
   VkDescriptorSetLayout vk_handle{VK_NULL_HANDLE};
-  Array<VkDescriptorSetLayoutBinding> vk_bindings; // TODO: Maybe make this a fixed array
+  Array<VkDescriptorSetLayoutBinding> vk_bindings; 
   u32 set_index = 0;
 
   Array<DescriptorSetHandle> allocated_sets{};

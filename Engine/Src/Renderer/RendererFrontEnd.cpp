@@ -62,7 +62,7 @@ void RendererFrontEnd::init(void *_config) {
   textures.init(allocator, 10);
   model_textures.init(allocator, 10);
 
-  string_buffer.init(allocator, hkilo(1));
+  string_buffer.init(allocator, hkilo(10));
 
   pbr_materials.init(allocator, 25);
 
@@ -146,8 +146,8 @@ void RendererFrontEnd::init(void *_config) {
   meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
 
-  load_model(ASSETS_PATH "/Models/Sponza/",
-             ASSETS_PATH "/Models/Sponza/sponza.obj");
+  load_model(ASSETS_PATH "/Models/HaloArmour/",
+             ASSETS_PATH "/Models/HaloArmour/halo_armor.obj");
 
   stack_allocator->free_marker(stack_marker);
 }
@@ -164,8 +164,6 @@ void RendererFrontEnd::shutdown() {
   meshes.shutdown();
 
   pbr_materials.shutdown();
-  // TODO: Right now we just free the remaining textures (material data)
-  textures.release_all();
   textures.shutdown();
   backend->shutdown();
   buffers.shutdown();
@@ -318,7 +316,8 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
     creation.memory_access_flags = MemoryAccess::GPU_ONLY;
     creation.size = sizeof(u32) * indices.size;
     creation.initial_data = indices.data;
-    creation.name = "Index_Buffer";
+    creation.name =
+        string_buffer.append_use_f("Index_buffer_%d", index_buffers.size);
 
     index_buffers.push(create_buffer(creation));
     mesh.draws[i].primitive_count = shape.mesh.indices.size();

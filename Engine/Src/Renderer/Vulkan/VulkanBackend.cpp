@@ -51,13 +51,6 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
 u32 find_memory_type(u32 type_filter, VkMemoryPropertyFlags properties,
                      VkPhysicalDevice physical_device);
 
-// TODO: Should be in a math library
-template <class T>
-constexpr const T &clamp(const T &v, const T &lo, const T &hi) {
-  HASSERT(!(hi < lo));
-  return (v < lo) ? lo : (hi < v) ? hi : v;
-}
-
 cstring to_compiler_stage(ShaderStage::Enum stage);
 
 VkShaderStageFlagBits to_vk_shader_stage(ShaderStage::Enum stage);
@@ -286,7 +279,7 @@ bool VulkanBackend::init(void *_config) {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
   bindless_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
   bindless_features.runtimeDescriptorArray = VK_TRUE;
-  bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+  // bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
   bindless_features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
   bindless_features.descriptorBindingPartiallyBound = VK_TRUE;
   bindless_features.pNext = &timeline_feature;
@@ -400,7 +393,6 @@ bool VulkanBackend::shutdown() {
   free_queued_resources();
   resource_deletion_queue.shutdown();
 
-  // TODO: Create a vulkan resource queue
   for (u32 i = 0; i < 2; ++i) {
     vkDestroySemaphore(vk_device, image_available_semaphores[i],
                        vk_allocation_callbacks);
@@ -415,6 +407,8 @@ bool VulkanBackend::shutdown() {
   render_finished_semaphores.shutdown();
 
   vkDestroyDescriptorPool(vk_device, vk_descriptor_pool,
+                          vk_allocation_callbacks);
+  vkDestroyDescriptorPool(vk_device, vk_bindless_descriptor_pool,
                           vk_allocation_callbacks);
   vkDestroyDescriptorSetLayout(vk_device, vk_bindless_descriptor_layout,
                                vk_allocation_callbacks);
@@ -648,6 +642,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       {swapchain.vk_extents.width, swapchain.vk_extents.height},
       swapchain.image_views[image_index].vk_handle);
 
+  // TODO: Renderpass and Framebuffer struct
   // TODO:
   VulkanPipeline *pipeline = access_pipeline({0, 0});
   command_buffer->bind_pipeline({0, 0});
@@ -677,7 +672,6 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       PBRMaterial &material =
           RendererFrontEnd::instance()->pbr_materials[draw.material_index];
 
-      // TODO: Access functions for RendererFrontEnd
       TextureResource *texture_resource =
           RendererFrontEnd::instance()->textures.obtain(
               material.albedo_texture_handle);
@@ -897,7 +891,6 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
                 VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
           : 0;
 
-  // TODO: Make use of MemoryState::Enum
   VulkanBuffer *buffer = access_buffer(handle);
   VmaAllocationInfo alloc_info{};
 
@@ -1707,45 +1700,52 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_size.descriptorCount = (max_frames_in_flight);
 
-  VkDescriptorPoolSize pool_size_2{};
-  pool_size_2.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  pool_size_2.descriptorCount = MAX_TEXTURES;
+  VkDescriptorPoolSize pool_sizes[] = {pool_size};
 
-  VkDescriptorPoolSize pool_sizes[] = {pool_size, pool_size_2};
-
-  VkDescriptorPoolCreateInfo pool_info{};
-  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   pool_info.poolSizeCount = ArraySize(pool_sizes);
   pool_info.pPoolSizes = pool_sizes;
-  pool_info.maxSets = max_frames_in_flight + 1;
-  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+  pool_info.maxSets = max_frames_in_flight;
 
-  // TODO: Create a different descriptor pool that just holds the images
   VK_CHECK(vkCreateDescriptorPool(
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
 
-  // Bindless descriptor set layout
-  VkDescriptorSetLayoutBinding image_sampler_binding;
-  image_sampler_binding.descriptorType =
+  // Bindless
+  VkDescriptorPoolSize bindless_poolsize{};
+  bindless_poolsize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  bindless_poolsize.descriptorCount = MAX_TEXTURES;
+
+  VkDescriptorPoolCreateInfo bindless_pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  bindless_pool_info.poolSizeCount = 1;
+  bindless_pool_info.pPoolSizes = &bindless_poolsize;
+  bindless_pool_info.maxSets = MAX_TEXTURES;
+  bindless_pool_info.flags =
+      VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+
+  VK_CHECK(vkCreateDescriptorPool(vk_device, &bindless_pool_info,
+                                  vk_allocation_callbacks,
+                                  &vk_bindless_descriptor_pool));
+
+  VkDescriptorSetLayoutBinding combined_sampler_binding;
+  combined_sampler_binding.descriptorType =
       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  image_sampler_binding.descriptorCount = MAX_TEXTURES;
-  image_sampler_binding.binding = 0;
-  image_sampler_binding.stageFlags = VK_SHADER_STAGE_ALL;
-  image_sampler_binding.pImmutableSamplers = nullptr;
+  combined_sampler_binding.descriptorCount = MAX_TEXTURES;
+  combined_sampler_binding.binding = 0;
+  combined_sampler_binding.stageFlags = VK_SHADER_STAGE_ALL;
+  combined_sampler_binding.pImmutableSamplers = nullptr;
 
   VkDescriptorSetLayoutCreateInfo layout_info = {
       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
   layout_info.bindingCount = 1;
-  layout_info.pBindings = &image_sampler_binding;
+  layout_info.pBindings = &combined_sampler_binding;
   layout_info.flags =
       VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
 
   VkDescriptorBindingFlags bindless_flags =
-      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
-      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT; // |
-                                                       // VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
-  VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extended_info{
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
+      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+  VkDescriptorSetLayoutBindingFlagsCreateInfo extended_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
       nullptr};
   extended_info.bindingCount = 1;
   extended_info.pBindingFlags = &bindless_flags;
@@ -1759,17 +1759,9 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   // Allocate the descriptor set //////////////////////////
   VkDescriptorSetAllocateInfo alloc_info{
       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-  alloc_info.descriptorPool = vk_descriptor_pool;
+  alloc_info.descriptorPool = vk_bindless_descriptor_pool;
   alloc_info.descriptorSetCount = 1;
   alloc_info.pSetLayouts = &vk_bindless_descriptor_layout;
-
-  u32 variableDesciptorCounts[] = {MAX_TEXTURES};
-  VkDescriptorSetVariableDescriptorCountAllocateInfoEXT count_info{
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT};
-  count_info.descriptorSetCount = ArraySize(variableDesciptorCounts);
-  count_info.pDescriptorCounts = variableDesciptorCounts;
-
-  alloc_info.pNext = &count_info;
 
   VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info,
                                     &vk_bindless_descriptor_set));
@@ -1901,7 +1893,7 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
 
   UniformBufferObject ubo{};
-  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
+  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(1.01f));
   ubo.view = packet->camera->get_view();
   ubo.proj = glm::perspective(glm::radians(45.0f),
                               swapchain.vk_extents.width /
@@ -2011,7 +2003,6 @@ static bool select_physical_device(VkInstance instance,
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count,
                                          extension_properties.data);
 
-    // TODO: Use a set instead
     bool extensions_supported = false;
     for (u32 idx = 0; idx < extension_properties.size; ++idx) {
       if (!strcmp(extension_properties[idx].extensionName,
@@ -2138,11 +2129,11 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
     VkExtent2D extents = {(u32)platform->width, (u32)platform->height};
 
     swapchain.vk_extents.width =
-        clamp(extents.width, capabilities.minImageExtent.width,
-              capabilities.maxImageExtent.width);
+        glm::clamp(extents.width, capabilities.minImageExtent.width,
+                   capabilities.maxImageExtent.width);
     swapchain.vk_extents.height =
-        clamp(extents.height, capabilities.minImageExtent.height,
-              capabilities.maxImageExtent.height);
+        glm::clamp(extents.height, capabilities.minImageExtent.height,
+                   capabilities.maxImageExtent.height);
   }
 
   u32 image_count = capabilities.minImageCount + 1;

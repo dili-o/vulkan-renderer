@@ -15,8 +15,8 @@ layout(push_constant) uniform constants
 };
 
 void main() {
-  vec3 light_pos = vec3(0, 5 ,0);
+  vec3 light_pos = vec3(0.f, 5.f ,0.f);
 
   vec4 diffuse = texture(global_samplers[nonuniformEXT(albedo_index)], tex_coords); 
-  outColor = diffuse;
+  outColor = diffuse * 1.5f;
 }

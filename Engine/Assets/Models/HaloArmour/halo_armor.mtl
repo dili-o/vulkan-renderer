@@ -1,0 +1,143 @@
+# Blender 4.2.0 MTL File: 'untitled.blend'
+# www.blender.org
+
+newmtl Spartan_Arms_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Arms_Mat_baseColor.png
+map_Pm textures/Spartan_Arms_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Arms_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Arms_Mat_normal.png
+
+newmtl Spartan_Chest_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Chest_Mat_baseColor.png
+map_Pm textures/Spartan_Chest_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Chest_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Chest_Mat_normal.png
+
+newmtl Spartan_Ear_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Ear_Mat_baseColor.png
+map_Pm textures/Spartan_Ear_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Ear_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Ear_Mat_normal.png
+
+newmtl Spartan_Helmet_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Helmet_Mat_baseColor.png
+map_Pm textures/Spartan_Helmet_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Helmet_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Helmet_Mat_normal.png
+
+newmtl Spartan_Legs_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Legs_Mat_baseColor.png
+map_Pm textures/Spartan_Legs_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Legs_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Legs_Mat_normal.png
+
+newmtl Spartan_Shoulders_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Shoulders_Mat_baseColor.png
+map_Pm textures/Spartan_Shoulders_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Shoulders_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Shoulders_Mat_normal.png
+
+newmtl Spartan_Undersuit_Mat
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.500000
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000
+map_Kd textures/Spartan_Undersuit_Mat_baseColor.png
+map_Pm textures/Spartan_Undersuit_Mat_metallicRoughness.png
+map_Pr textures/Spartan_Undersuit_Mat_metallicRoughness.png
+map_Bump -bm 1.000000 textures/Spartan_Undersuit_Mat_normal.png
+
+newmtl lambert1
+Kd 0.075240 0.611687 0.294228
+Ks 0.500000 0.500000 0.500000
+Ke 1.0
+Ni 1.500000
+d 1.000000
+illum 2
+Pr 0.337081
+Pm 0.000000
+Ps 0.000000
+Pc 0.000000
+Pcr 0.030000
+aniso 0.000000
+anisor 0.000000

@@ -7,7 +7,6 @@ namespace Helix {
 using BufferHandle = ResourceHandle;
 using PipelineHandle = ResourceHandle;
 using TextureHandle = ResourceHandle;
-// TODO MAke View and VKimage handles as well
 
 namespace ShaderStage {
 enum Enum { Vertex, Fragment, Compute };
