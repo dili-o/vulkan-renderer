@@ -14,4 +14,15 @@ void Clock::update() {
     elapsed_time = Platform::instance()->get_absolute_time() - start_time;
   }
 }
+
+f64 Clock::get_elapsed_time_s() {
+  update();
+  return elapsed_time;
+}
+
+f64 Clock::get_elapsed_time_ms() {
+  update();
+  return elapsed_time * 1000.0;
+}
+
 } // namespace Helix

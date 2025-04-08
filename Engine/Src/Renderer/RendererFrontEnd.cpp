@@ -1,5 +1,6 @@
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Containers/ResourcePool.hpp"
+#include "Core/Clock.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Platform/File.hpp"
@@ -90,7 +91,14 @@ void RendererFrontEnd::init(void *_config) {
     creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
+
+    Clock clock{};
+    clock.start();
+    f64 start_time = clock.get_elapsed_time_ms();
     pipeline = create_pipeline(creation);
+
+    f64 delta_time = clock.get_elapsed_time_ms() - start_time;
+    HTRACE("Pipeline create time: {:.3f} ms", delta_time);
   }
 
   ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
@@ -126,22 +134,6 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
   tex_creation.type = TextureType::Texture2D;
   default_texture = create_texture(tex_creation);
-
-  def_colour[1] = 0;
-  // default_texture2 = create_texture(tex_creation);
-
-  // TextureResource *default_tex = textures.obtain(default_texture);
-  // ShaderUniform texture_uniform{};
-  // texture_uniform.binding = 0;
-  // texture_uniform.internal_resource_handle = default_tex->internal_handle;
-  // texture_uniform.resource_type = ResourceType::Texture;
-  //// Not needed yet texture_uniform.texture_info;
-
-  // ShaderUniformSet set{};
-  // set.uniform_count = 1;
-  // set.set_index = 0;
-  // set.uniforms = &texture_uniform;
-  // update_shader_uniform_set(set, pipeline);
 
   meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
@@ -283,6 +275,8 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
       pbr_material.albedo_texture_handle = default_texture;
     }
   }
+
+  file_service->change_directory(dir.path);
   // Default material
   PBRMaterial &pbr_material = pbr_materials.push_use();
   pbr_material.albedo_texture_handle = default_texture;

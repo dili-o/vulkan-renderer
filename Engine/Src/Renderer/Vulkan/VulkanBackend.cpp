@@ -20,6 +20,8 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
+#include <filesystem>
+#include <vulkan/vulkan_core.h>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
@@ -39,10 +41,11 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
                void *user_data);
 
-static bool select_physical_device(VkInstance instance,
-                                   VkPhysicalDevice &_physical_device,
-                                   QueueFamilyIndices &indices,
-                                   VkSurfaceKHR surface);
+static bool
+select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
+                       VkPhysicalDeviceProperties *device_properties,
+                       QueueFamilyIndices &queue_family_indices,
+                       VkSurfaceKHR surface);
 
 static void query_swapchain_support(VkPhysicalDevice physical_device,
                                     VkSurfaceKHR surface,
@@ -232,6 +235,7 @@ bool VulkanBackend::init(void *_config) {
   device_extensions[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
   // Create Physical Device
   if (!select_physical_device(vk_instance, vk_physical_device,
+                              &vk_physical_device_properties,
                               queue_family_indices, vk_surface)) {
     HERROR("Failed to create physical device!");
     return false;
@@ -731,9 +735,6 @@ SamplerHandle VulkanBackend::create_sampler(SamplerCreation &creation) {
     return handle;
   }
   VulkanSampler *sampler = access_sampler(handle);
-  VkPhysicalDeviceProperties properties{};
-  // TODO: Maybe not do this everytime you create a sampler
-  vkGetPhysicalDeviceProperties(vk_physical_device, &properties);
 
   VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
   sampler_info.minFilter = creation.min_filter;
@@ -743,7 +744,8 @@ SamplerHandle VulkanBackend::create_sampler(SamplerCreation &creation) {
   sampler_info.addressModeW = creation.address_mode_w;
   sampler_info.mipmapMode = creation.mip_filter;
   sampler_info.anisotropyEnable = VK_FALSE; // TODO: Maybe use this eventually ?
-  sampler_info.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+  sampler_info.maxAnisotropy =
+      vk_physical_device_properties.limits.maxSamplerAnisotropy;
   sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
   sampler_info.unnormalizedCoordinates = VK_FALSE;
   sampler_info.compareEnable = VK_FALSE;
@@ -957,13 +959,15 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
           sizeof(VkPipelineShaderStageCreateInfo) * creation.shader_count,
           stack_allocator);
 
-  Directory dir;
+  Directory dir{};
   file_service->current_directory(&dir);
-
   file_service->change_directory(ASSETS_PATH "/Shaders/");
+
   ParseResult parse_result{};
   parse_result.push_constant.size = 0;
   parse_result.set_layouts.init(stack_allocator, 4);
+
+  // Create shader spv and extract shader data from them
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
     cstring shader_args = temp_string_buffer.append_use_f(
@@ -972,6 +976,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
         compiler_debug);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
     HERROR("{}", process_get_output()); // TODO: Better error display
+
+    // TODO: Maybe create a timestamp system for checking shaders.
 
     cstring binary_name =
         temp_string_buffer.append_use_f("%s.spv", shader.filename);
@@ -1153,7 +1159,9 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
       pipeline->set_layouts[i] = dset_layout_handle;
     }
   }
+
   layouts[0] = vk_bindless_descriptor_layout;
+
   // Pipeline Layout
   VkPipelineLayoutCreateInfo pipeline_layout_info{
       VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -1176,6 +1184,43 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   pipeline_create.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
   pipeline_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
+  // Pipeline Cache
+  VkPipelineCache pipeline_cache{VK_NULL_HANDLE};
+  VkPipelineCacheCreateInfo pipeline_cache_create_info{
+      VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+
+  cstring cache_path =
+      temp_string_buffer.append_use_f("%s\\%s.cache", "Caches", creation.name);
+  bool cache_exists = file_service->file_exists(cache_path);
+  if (cache_exists) {
+    FileReadResult read_result =
+        file_service->read_file_binary(cache_path, allocator);
+
+    VkPipelineCacheHeaderVersionOne *cache_header =
+        (VkPipelineCacheHeaderVersionOne *)read_result.data;
+
+    if (cache_header->deviceID == vk_physical_device_properties.deviceID &&
+        cache_header->vendorID == vk_physical_device_properties.vendorID &&
+        memcmp(cache_header->pipelineCacheUUID,
+               vk_physical_device_properties.pipelineCacheUUID,
+               VK_UUID_SIZE) == 0) {
+      pipeline_cache_create_info.initialDataSize = read_result.size;
+      pipeline_cache_create_info.pInitialData = read_result.data;
+    } else {
+      cache_exists = false;
+    }
+
+    VK_CHECK(vkCreatePipelineCache(vk_device, &pipeline_cache_create_info,
+                                   vk_allocation_callbacks, &pipeline_cache));
+
+    allocator->deallocate(read_result.data);
+
+  } else {
+    HDEBUG("Failed to find pipeline cache for: {}", creation.name);
+    VK_CHECK(vkCreatePipelineCache(vk_device, &pipeline_cache_create_info,
+                                   vk_allocation_callbacks, &pipeline_cache));
+  }
+
   if (creation.pipeline_type == PipelineType::Graphics) {
     pipeline->bind_point = to_vk_bind_point(creation.pipeline_type);
 
@@ -1195,11 +1240,28 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     pipeline_info.renderPass = VK_NULL_HANDLE;
     pipeline_info.pNext = &pipeline_create;
 
-    (vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipeline_info,
+    (vkCreateGraphicsPipelines(vk_device, pipeline_cache, 1, &pipeline_info,
                                vk_allocation_callbacks, &pipeline->vk_handle));
   } else {
     HASSERT_MSG(false, "Unknown pipeline type");
   }
+
+  // Update Pipeline Cache
+  if (!cache_exists) {
+    size_t cache_data_size = 0;
+    VK_CHECK(vkGetPipelineCacheData(vk_device, pipeline_cache, &cache_data_size,
+                                    nullptr));
+
+    void *cache_data = stack_allocator->allocate(cache_data_size, 64);
+    VK_CHECK(vkGetPipelineCacheData(vk_device, pipeline_cache, &cache_data_size,
+                                    cache_data));
+
+    file_service->write_file_binary(cache_path, cache_data, cache_data_size);
+
+    stack_allocator->deallocate(cache_data);
+  }
+
+  vkDestroyPipelineCache(vk_device, pipeline_cache, vk_allocation_callbacks);
 
   for (u32 i = 0; i < creation.shader_count; ++i) {
     vkDestroyShaderModule(vk_device, vk_shader_modules[i],
@@ -1210,6 +1272,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   set_resource_name(VK_OBJECT_TYPE_PIPELINE, (u64)pipeline->vk_handle,
                     creation.name);
 
+  file_service->change_directory(dir.path);
   stack_allocator->free_marker(stack_marker);
   return handle;
 }
@@ -1702,7 +1765,8 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 
   VkDescriptorPoolSize pool_sizes[] = {pool_size};
 
-  VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  VkDescriptorPoolCreateInfo pool_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   pool_info.poolSizeCount = ArraySize(pool_sizes);
   pool_info.pPoolSizes = pool_sizes;
   pool_info.maxSets = max_frames_in_flight;
@@ -1715,7 +1779,8 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   bindless_poolsize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   bindless_poolsize.descriptorCount = MAX_TEXTURES;
 
-  VkDescriptorPoolCreateInfo bindless_pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  VkDescriptorPoolCreateInfo bindless_pool_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   bindless_pool_info.poolSizeCount = 1;
   bindless_pool_info.pPoolSizes = &bindless_poolsize;
   bindless_pool_info.maxSets = MAX_TEXTURES;
@@ -1961,10 +2026,11 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
   return VK_FALSE;
 }
 
-static bool select_physical_device(VkInstance instance,
-                                   VkPhysicalDevice &_physical_device,
-                                   QueueFamilyIndices &queue_family_indices,
-                                   VkSurfaceKHR surface) {
+static bool
+select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
+                       VkPhysicalDeviceProperties *device_properties,
+                       QueueFamilyIndices &queue_family_indices,
+                       VkSurfaceKHR surface) {
   u32 physical_device_count = 0;
   VK_CHECK(
       vkEnumeratePhysicalDevices(instance, &physical_device_count, nullptr));
@@ -1987,8 +2053,7 @@ static bool select_physical_device(VkInstance instance,
   bool found_suitable_device = false;
   for (u32 i = 0; i < physical_device_count; ++i) {
     VkPhysicalDevice device = physical_devices[i];
-    VkPhysicalDeviceProperties device_properties;
-    vkGetPhysicalDeviceProperties(device, &device_properties);
+    vkGetPhysicalDeviceProperties(device, device_properties);
 
     VkPhysicalDeviceFeatures device_features;
     vkGetPhysicalDeviceFeatures(device, &device_features);
@@ -2044,7 +2109,7 @@ static bool select_physical_device(VkInstance instance,
     if (queue_family_indices.is_complete()) {
       found_suitable_device = true;
       _physical_device = device;
-      HTRACE("Suitable device found: {}", device_properties.deviceName);
+      HTRACE("Suitable device found: {}", device_properties->deviceName);
     }
 
     queue_families.shutdown();

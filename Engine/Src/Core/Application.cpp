@@ -44,8 +44,7 @@ void Application::init(void *config) {
 
 void Application::run() {
   clock.start();
-  clock.update();
-  last_time = clock.elapsed_time;
+  last_time = clock.get_elapsed_time_s();
   f64 running_time = 0.0;
   u8 frame_count = 0;
   f64 target_frame_seconds = 1.0 / 60.0;
@@ -58,8 +57,7 @@ void Application::run() {
     platform->handle_os_messages();
 
     if (!platform->is_suspended) {
-      clock.update();
-      f64 current_time = clock.elapsed_time;
+      f64 current_time = clock.get_elapsed_time_s();
       f64 delta_time = current_time - last_time;
       f64 frame_start_time = platform->get_absolute_time();
 
@@ -91,8 +89,9 @@ void Application::run() {
         frame_count++;
       }
       // HDEBUG("Delta: {}", delta_time);
-      cstring update_title = string.append_use_f(
-          "%s - frame time: %.3f ms", Platform::instance()->name, delta_time);
+      cstring update_title =
+          string.append_use_f("%s - frame time: %.3f ms",
+                              Platform::instance()->name, delta_time * 1000.0);
       Platform::instance()->set_title(update_title);
 
       last_time = current_time;

@@ -86,6 +86,7 @@ struct VulkanBackend : public RendererBackend {
   PFN_vkSetDebugUtilsObjectNameEXT pfnSetDebugUtilsObjectNameEXT;
   VkSurfaceKHR vk_surface{VK_NULL_HANDLE};
   VkPhysicalDevice vk_physical_device{VK_NULL_HANDLE};
+  VkPhysicalDeviceProperties vk_physical_device_properties{};
   VkDevice vk_device{VK_NULL_HANDLE};
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};

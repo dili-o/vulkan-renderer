@@ -25,11 +25,13 @@ struct FileService : public Service {
   void current_directory(Directory *directory);
   void change_directory(cstring path);
 
-  void open_file();
-  void close_file();
+  bool file_exists(cstring path);
+
   void delete_file(cstring path);
   FileReadResult read_file_binary(cstring filename, Allocator *allocator);
   FileReadResult read_file_text(cstring filename, Allocator *allocator);
+
+  void write_file_binary(cstring filename, void *memory, size_t size);
 
   void expand_enviroment_variable(cstring variable, char *dst_string, u32 size);
 };

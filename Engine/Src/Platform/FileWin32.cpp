@@ -45,6 +45,11 @@ void FileService::change_directory(cstring path) {
   }
 }
 
+bool FileService::file_exists(cstring path) {
+  WIN32_FILE_ATTRIBUTE_DATA unused;
+  return GetFileAttributesExA(path, GetFileExInfoStandard, &unused);
+}
+
 void FileService::delete_file(cstring path) {
   int result = remove(path);
   if (result)
@@ -71,6 +76,17 @@ FileReadResult FileService::read_file_binary(cstring filename,
   }
 
   return result;
+}
+
+void FileService::write_file_binary(cstring filename, void *memory,
+                                    size_t size) {
+  FILE *file = fopen(filename, "wb");
+  if (!file) {
+      HERROR("Failed to write to file: {}", filename);
+      return;
+  }
+  fwrite(memory, size, 1, file);
+  fclose(file);
 }
 
 void FileService::expand_enviroment_variable(cstring variable, char *dst_string,
