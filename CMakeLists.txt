@@ -7,6 +7,9 @@ add_subdirectory("Sandbox")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Create the shaders cache directory
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Assets/Shaders/Caches")
+
 # Path to assests folder
 target_compile_definitions(Engine PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Engine/Assets")
 target_compile_definitions(Sandbox PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Engine/Assets")

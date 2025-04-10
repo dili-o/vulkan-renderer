@@ -88,7 +88,6 @@ void Application::run() {
 
         frame_count++;
       }
-      // HDEBUG("Delta: {}", delta_time);
       cstring update_title =
           string.append_use_f("%s - frame time: %.3f ms",
                               Platform::instance()->name, delta_time * 1000.0);

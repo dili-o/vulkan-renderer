@@ -47,7 +47,9 @@ enum Enum {
   RenderTarget = 0,
   Compute = 1 << 0,
   TransferSrc = 1 << 1,
-  TransferDest = 1 << 2
+  TransferDest = 1 << 2,
+  Depth = 1 << 3,
+  Sampled = 1 << 4
 };
 }
 
@@ -93,8 +95,6 @@ struct TextureCreation {
 
   TextureFormat::Enum format = TextureFormat::Undefined;
   TextureType::Enum type = TextureType::Texture2D;
-
-  bool sampled = true;
 
   cstring name = nullptr;
 };

@@ -50,7 +50,7 @@ struct VulkanBuffer {
 
 struct VulkanDescriptorSetLayout {
   VkDescriptorSetLayout vk_handle{VK_NULL_HANDLE};
-  Array<VkDescriptorSetLayoutBinding> vk_bindings; 
+  Array<VkDescriptorSetLayoutBinding> vk_bindings;
   u32 set_index = 0;
 
   Array<DescriptorSetHandle> allocated_sets{};
@@ -78,6 +78,7 @@ struct VulkanImage {
   VkImageLayout current_layout{VK_IMAGE_LAYOUT_UNDEFINED};
   VkFormat format;
   VkExtent3D vk_extents;
+  u32 mip_count = 1;
   u32 views_count = 0; // Tracks the number of views that view this image;
   cstring name = nullptr;
 };
@@ -101,5 +102,7 @@ struct VulkanSwapchain {
   VulkanImageView image_views[MAX_SWAPCHAIN_IMAGES];
   VkSwapchainKHR vk_handle{VK_NULL_HANDLE};
 };
+
+struct VulkanRenderPass {};
 
 } // namespace Helix

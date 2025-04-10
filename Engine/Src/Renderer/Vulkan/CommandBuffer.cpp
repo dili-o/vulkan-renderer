@@ -7,54 +7,11 @@
 #include <vulkan/vulkan_core.h>
 
 namespace Helix {
-VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
-  switch (layout) {
-  case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_UNDEFINED:
-    return VK_ACCESS_2_NONE;
-  case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-    return VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-    return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-    return VK_ACCESS_2_NONE;
-  default:
-    HERROR("Unknown layout");
-    return VK_ACCESS_2_NONE;
-  }
-}
-
-VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
-  switch (layout) {
-  case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-    return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-  case VK_IMAGE_LAYOUT_UNDEFINED:
-    return VK_ACCESS_2_NONE;
-  case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-    return VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-    return VK_ACCESS_2_NONE;
-  default:
-    HERROR("Unknown layout");
-    return VK_ACCESS_2_NONE;
-  }
-}
 
 #pragma region VulkanCommandBuffer
 
 void VulkanCommandBuffer::init(VkCommandPool pool, VkCommandBufferLevel level,
-                               VulkanBackend *_backend) {
+                               VulkanBackend *_backend, cstring name) {
   backend = _backend;
 
   VkCommandBufferAllocateInfo alloc_info{};
@@ -65,6 +22,9 @@ void VulkanCommandBuffer::init(VkCommandPool pool, VkCommandBufferLevel level,
 
   VK_CHECK(
       vkAllocateCommandBuffers(backend->vk_device, &alloc_info, &vk_handle));
+  if (name)
+    backend->set_resource_name(VK_OBJECT_TYPE_COMMAND_BUFFER, (u64)vk_handle,
+                               name);
   state = CommandBufferState::Initial;
   vk_pool = pool;
 }
@@ -113,32 +73,27 @@ void VulkanCommandBuffer::transition_image(
     VulkanImage *image, VkImageLayout old_layout, VkImageLayout new_layout,
     VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage,
     u32 src_queue_family_index, u32 dst_queue_family_index) {
-  VkImageMemoryBarrier2 image_barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-  image_barrier.srcStageMask = src_stage;
-  image_barrier.srcAccessMask = to_vk_src_access_flags(old_layout);
-  image_barrier.dstStageMask = dst_stage;
-  image_barrier.dstAccessMask = to_vk_dst_access_flags(new_layout);
-  image_barrier.oldLayout = old_layout;
-  image_barrier.newLayout = new_layout;
-  image_barrier.srcQueueFamilyIndex = src_queue_family_index;
-  image_barrier.dstQueueFamilyIndex = dst_queue_family_index;
-  image_barrier.image = image->vk_handle;
-  image_barrier.subresourceRange.aspectMask =
-      has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                          : VK_IMAGE_ASPECT_COLOR_BIT;
-  image_barrier.subresourceRange.baseMipLevel = 0;
-  image_barrier.subresourceRange.levelCount = 1;
-  image_barrier.subresourceRange.baseArrayLayer = 0;
-  image_barrier.subresourceRange.layerCount = 1;
+
+  VkImageMemoryBarrier2 image_barrier =
+      create_image_barrier(image, old_layout, new_layout, src_stage, dst_stage,
+                           src_queue_family_index, dst_queue_family_index);
+  image_barrier.subresourceRange.levelCount = image->mip_count;
+
+  pipeline_barrier(&image_barrier, 1);
+
+  image->current_layout = image_barrier.newLayout;
+}
+
+void VulkanCommandBuffer::pipeline_barrier(
+    VkImageMemoryBarrier2 *image_memory_barriers,
+    u32 image_memory_barrier_count) {
 
   VkDependencyInfo dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
   dependency_info.dependencyFlags = 0;
-  dependency_info.imageMemoryBarrierCount = 1;
-  dependency_info.pImageMemoryBarriers = &image_barrier;
+  dependency_info.imageMemoryBarrierCount = image_memory_barrier_count;
+  dependency_info.pImageMemoryBarriers = image_memory_barriers;
 
   vkCmdPipelineBarrier2(vk_handle, &dependency_info);
-
-  image->current_layout = image_barrier.newLayout;
 }
 
 void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
@@ -314,7 +269,8 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
 
 #pragma region CommandBufferManager
 void CommandBufferManager::init(VulkanBackend *_backend, u32 queue_family_index,
-                                u32 num_threads, u32 _max_frames_in_flight) {
+                                u32 num_threads, u32 _max_frames_in_flight,
+                                cstring name) {
   backend = _backend;
   max_frames_in_flight = _max_frames_in_flight;
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
@@ -329,9 +285,16 @@ void CommandBufferManager::init(VulkanBackend *_backend, u32 queue_family_index,
     VK_CHECK(vkCreateCommandPool(backend->vk_device, &pool_info,
                                  backend->vk_allocation_callbacks,
                                  &vk_command_pools[i]));
+    if (name) {
+      backend->set_resource_name(
+          VK_OBJECT_TYPE_COMMAND_POOL, (u64)vk_command_pools[i],
+          backend->string_buffer.append_use_f("%s_%d", name, i));
+    }
     for (u32 j = 0; j < max_frames_in_flight; ++j) {
       command_buffers[(i * max_frames_in_flight) + j].init(
-          vk_command_pools[i], VK_COMMAND_BUFFER_LEVEL_PRIMARY, backend);
+          vk_command_pools[i], VK_COMMAND_BUFFER_LEVEL_PRIMARY, backend,
+          backend->string_buffer.append_use_f("%s%d_CommandBuffer_%d", name, i,
+                                              j));
     }
   }
 }

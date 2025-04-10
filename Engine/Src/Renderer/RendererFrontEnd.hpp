@@ -41,6 +41,8 @@ struct RendererFrontEnd : public Service {
   bool update_shader_uniform_set(ShaderUniformSet &set,
                                  PipelineHandle pipeline);
 
+  void print_gpu_stats();
+
   u32 current_frame;
   RendererBackend *backend{nullptr};
 

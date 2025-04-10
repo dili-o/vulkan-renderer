@@ -2,7 +2,6 @@
 Bin/
 build/
 *.cache
-!Engine/Assets/Shader/Caches/
 /.vs
 .idea/
 CMakeSettings.json

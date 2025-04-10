@@ -26,6 +26,8 @@ struct RendererBackend {
   virtual bool update_shader_uniform_set(ShaderUniformSet &set,
                                          PipelineHandle pipeline) = 0;
 
+  virtual void print_gpu_stats() = 0;
+
   Platform *platform{nullptr};
   u64 frame_number{0};
 };

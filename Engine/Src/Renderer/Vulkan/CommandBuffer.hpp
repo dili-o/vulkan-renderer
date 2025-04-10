@@ -14,12 +14,13 @@ enum Enum { Initial, Recording, Executable, Pending, Invalid };
 
 struct VulkanCommandBuffer {
   void init(VkCommandPool pool, VkCommandBufferLevel level,
-            VulkanBackend *backend);
+            VulkanBackend *backend, cstring name = nullptr);
   void begin(VkCommandBufferUsageFlags flags = 0);
   void end();
   void reset();
   void free();
 
+  // TODO: Rename to image pipeline barrier
   void transition_image(VulkanImage *image, VkImageLayout old_layout,
                         VkImageLayout new_layout,
                         VkPipelineStageFlags2 src_stage,
@@ -33,6 +34,10 @@ struct VulkanCommandBuffer {
                         VkPipelineStageFlags2 dst_stage,
                         u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
                         u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
+
+  // TODO: Support buffer and memory barriers
+  void pipeline_barrier(VkImageMemoryBarrier2 *image_memory_barriers,
+                        u32 image_memory_barrier_count);
 
   // TODO: Fully implement this when you've added renderpasses and framebuffers
   void bind_renderpass(VkExtent2D extents, VkImageView view);
@@ -79,7 +84,7 @@ struct VulkanCommandBuffer {
 
 struct CommandBufferManager {
   void init(VulkanBackend *backend, u32 queue_family_index, u32 num_threads,
-            u32 max_frames_in_flight);
+            u32 max_frames_in_flight, cstring name = nullptr);
   void shutdown();
 
   void reset_pool(u32 thread_index);

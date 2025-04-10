@@ -3,6 +3,7 @@
 #include "CommandBuffer.hpp"
 #include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
+#include "Core/String.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "Renderer/RendererTypes.hpp"
@@ -77,7 +78,11 @@ struct VulkanBackend : public RendererBackend {
 
   void update_uniform_buffer(RenderPacket *packet);
 
+  virtual void print_gpu_stats() override;
+
   void set_resource_name(VkObjectType type, u64 handle, cstring name);
+
+  StringBuffer string_buffer{};
 
   VkInstance vk_instance{VK_NULL_HANDLE};
   VkAllocationCallbacks *vk_allocation_callbacks{nullptr};
@@ -99,8 +104,6 @@ struct VulkanBackend : public RendererBackend {
   Array<VkSemaphore> image_available_semaphores;
   Array<VkSemaphore> render_finished_semaphores;
   VkSemaphore vk_timeline_graphics_semaphore{VK_NULL_HANDLE};
-  // Array<VkFence> in_flight_fences;
-  SamplerHandle default_sampler{};
 
   VulkanSwapchain swapchain{};
 
@@ -108,8 +111,12 @@ struct VulkanBackend : public RendererBackend {
   VkDescriptorPool vk_bindless_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorSetLayout vk_bindless_descriptor_layout{VK_NULL_HANDLE};
   VkDescriptorSet vk_bindless_descriptor_set{VK_NULL_HANDLE};
+
   Array<TextureHandle> bindless_textures_to_update{};
+  Array<ResourceQueueObject> resource_deletion_queue{};
+
   TextureHandle depth_handle{};
+  SamplerHandle default_sampler{};
 
   ResourcePool<VulkanBuffer> buffers{};
   ResourcePool<VulkanPipeline> pipelines{};
@@ -118,8 +125,6 @@ struct VulkanBackend : public RendererBackend {
   ResourcePool<VulkanImageView> image_views{};
   ResourcePool<VulkanImage> images{};
   ResourcePool<VulkanSampler> samplers{};
-
-  Array<ResourceQueueObject> resource_deletion_queue{};
 
   bool resize_frame = false;
 };

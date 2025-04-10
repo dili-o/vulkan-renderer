@@ -21,6 +21,17 @@ VkFormat to_vk_format(TextureFormat::Enum format);
 
 VkImageUsageFlags to_vk_image_usage_flags(TextureUsage::Enum usage);
 
+VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout);
+
+VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout);
+
+VkImageMemoryBarrier2
+create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
+                     VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,
+                     VkPipelineStageFlags2 dst_stage,
+                     u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
+                     u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
+
 inline bool has_depth_or_stencil(VkFormat value) {
   return value >= VK_FORMAT_D16_UNORM && value <= VK_FORMAT_D32_SFLOAT_S8_UINT;
 }

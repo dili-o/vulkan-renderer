@@ -130,7 +130,8 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.array_base_level = 0;
   tex_creation.mip_level_count = 1;
   tex_creation.mip_base_level = 0;
-  tex_creation.usage = TextureUsage::TransferDest;
+  tex_creation.usage =
+      TextureUsage::Enum(TextureUsage::TransferDest | TextureUsage::Sampled);
   tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
   tex_creation.type = TextureType::Texture2D;
   default_texture = create_texture(tex_creation);
@@ -138,8 +139,12 @@ void RendererFrontEnd::init(void *_config) {
   meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
 
-  load_model(ASSETS_PATH "/Models/HaloArmour/",
-             ASSETS_PATH "/Models/HaloArmour/halo_armor.obj");
+  // load_model(ASSETS_PATH "/Models/HaloArmour/",
+  //           ASSETS_PATH "/Models/HaloArmour/halo_armor.obj");
+  load_model(ASSETS_PATH "/Models/Sponza/",
+             ASSETS_PATH "/Models/Sponza/sponza.obj");
+
+  print_gpu_stats();
 
   stack_allocator->free_marker(stack_marker);
 }
@@ -259,11 +264,24 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
       tex_creation.depth = 1;
       tex_creation.array_layer_count = 1;
       tex_creation.array_base_level = 0;
-      tex_creation.mip_level_count = 1;
       tex_creation.mip_base_level = 0;
-      tex_creation.usage = TextureUsage::TransferDest;
+      tex_creation.usage =
+          TextureUsage::Enum(TextureUsage::TransferDest |
+                             TextureUsage::Sampled | TextureUsage::TransferSrc);
       tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
       tex_creation.type = TextureType::Texture2D;
+
+      u32 w = width;
+      u32 h = height;
+      u32 mip_levels = 1;
+
+      while (w > 1 && h > 1) {
+        w /= 2;
+        h /= 2;
+
+        ++mip_levels;
+      }
+      tex_creation.mip_level_count = mip_levels;
 
       TextureHandle handle = create_texture(tex_creation);
       model_textures.push(handle);
@@ -271,7 +289,8 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
 
       free(texture_data);
     } else {
-      HWARN("Unable to load, {}", material.diffuse_texname.c_str());
+      if (!material.diffuse_texname.empty())
+        HERROR("Unable to load, {}", material.diffuse_texname.c_str());
       pbr_material.albedo_texture_handle = default_texture;
     }
   }
@@ -465,5 +484,7 @@ bool RendererFrontEnd::update_shader_uniform_set(ShaderUniformSet &set,
                                                  PipelineHandle pipeline) {
   return backend->update_shader_uniform_set(set, pipeline);
 }
+
+void RendererFrontEnd::print_gpu_stats() { backend->print_gpu_stats(); }
 
 } // namespace Helix
