@@ -78,12 +78,35 @@ FileReadResult FileService::read_file_binary(cstring filename,
   return result;
 }
 
+FileReadResult FileService::read_file_text(cstring filename,
+                                           Allocator *allocator) {
+  FileReadResult result{nullptr, 0};
+
+  FILE *file = fopen(filename, "r");
+
+  if (file) {
+
+    size_t filesize = file_get_size(file);
+
+    result.data = (char *)halloca(filesize, allocator);
+    fread(result.data, filesize, 1, file);
+
+    result.size = filesize;
+
+    fclose(file);
+  } else {
+    HERROR("Unable to read file: {}", filename);
+  }
+
+  return result;
+}
+
 void FileService::write_file_binary(cstring filename, void *memory,
                                     size_t size) {
   FILE *file = fopen(filename, "wb");
   if (!file) {
-      HERROR("Failed to write to file: {}", filename);
-      return;
+    HERROR("Failed to write to file: {}", filename);
+    return;
   }
   fwrite(memory, size, 1, file);
   fclose(file);

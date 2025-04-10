@@ -89,6 +89,9 @@ struct VulkanBackend : public RendererBackend {
   VmaAllocator vma_allocator{};
   VkDebugUtilsMessengerEXT vk_debug_utils_messenger{VK_NULL_HANDLE};
   PFN_vkSetDebugUtilsObjectNameEXT pfnSetDebugUtilsObjectNameEXT;
+  PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT;
+  PFN_vkCmdInsertDebugUtilsLabelEXT pfnCmdInsertDebugUtilsLabelEXT;
+  PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT;
   VkSurfaceKHR vk_surface{VK_NULL_HANDLE};
   VkPhysicalDevice vk_physical_device{VK_NULL_HANDLE};
   VkPhysicalDeviceProperties vk_physical_device_properties{};

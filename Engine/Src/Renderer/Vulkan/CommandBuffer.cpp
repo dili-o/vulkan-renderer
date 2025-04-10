@@ -61,9 +61,6 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
                                            u32 src_queue_family_index,
                                            u32 dst_queue_family_index) {
   // TODO: Better way to select src and dst stages
-
-  // TODO: Should there be a check to see if the command buffer has already
-  // begun?
   VulkanImage *image = backend->images.obtain(image_handle);
   transition_image(image, old_layout, new_layout, src_stage, dst_stage,
                    src_queue_family_index, dst_queue_family_index);
@@ -158,7 +155,6 @@ void VulkanCommandBuffer::bind_scissors(VkExtent2D extents) {
   vkCmdSetScissor(vk_handle, 0, 1, &scissor);
 }
 
-// TODO Should pass in a BufferHandle instead
 void VulkanCommandBuffer::bind_vertex_buffer(BufferHandle handle) {
   VulkanBuffer *buffer = backend->access_buffer(handle);
   bind_vertex_buffer(buffer->vk_handle);
@@ -265,6 +261,37 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
 
   vkCmdCopyBufferToImage2(vk_handle, &buffer_image_info);
 }
+
+void VulkanCommandBuffer::push_marker(cstring name) {
+#ifdef _DEBUG
+  VkDebugUtilsLabelEXT label = {VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
+  label.pLabelName = name;
+  label.color[0] = 1.0f;
+  label.color[1] = 1.0f;
+  label.color[2] = 1.0f;
+  label.color[3] = 1.0f;
+  backend->pfnCmdBeginDebugUtilsLabelEXT(vk_handle, &label);
+#endif
+}
+
+void VulkanCommandBuffer::insert_marker(cstring name) {
+#ifdef _DEBUG
+  VkDebugUtilsLabelEXT label = {VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
+  label.pLabelName = name;
+  label.color[0] = 1.0f;
+  label.color[1] = 1.0f;
+  label.color[2] = 1.0f;
+  label.color[3] = 1.0f;
+  backend->pfnCmdInsertDebugUtilsLabelEXT(vk_handle, &label);
+#endif
+}
+
+void VulkanCommandBuffer::pop_marker() {
+#ifdef _DEBUG
+  backend->pfnCmdEndDebugUtilsLabelEXT(vk_handle);
+#endif // _DEBUG
+}
+
 #pragma endregion VulkanCommandBuffer
 
 #pragma region CommandBufferManager
@@ -324,7 +351,6 @@ void CommandBufferManager::reset_pool(u32 thread_index) {
 VulkanCommandBuffer *CommandBufferManager::get_command_buffer(u32 frame,
                                                               u32 thread_index,
                                                               bool begin) {
-  // TODO: Safety checks
   VulkanCommandBuffer *buffer =
       &command_buffers[(max_frames_in_flight * thread_index) + frame];
   if (begin) {

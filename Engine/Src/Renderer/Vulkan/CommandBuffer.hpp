@@ -20,7 +20,6 @@ struct VulkanCommandBuffer {
   void reset();
   void free();
 
-  // TODO: Rename to image pipeline barrier
   void transition_image(VulkanImage *image, VkImageLayout old_layout,
                         VkImageLayout new_layout,
                         VkPipelineStageFlags2 src_stage,
@@ -75,6 +74,10 @@ struct VulkanCommandBuffer {
   // previous state
   void copy_buffer_to_image(TextureHandle dst_image, VkBuffer src_buffer,
                             u32 size, VkQueue vk_queue);
+
+  void push_marker(cstring name);
+  void insert_marker(cstring name);
+  void pop_marker();
 
   VulkanBackend *backend{nullptr};
   VkCommandBuffer vk_handle{VK_NULL_HANDLE};

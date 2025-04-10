@@ -353,6 +353,20 @@ bool VulkanBackend::init(void *_config) {
     pfnSetDebugUtilsObjectNameEXT =
         (PFN_vkSetDebugUtilsObjectNameEXT)vkGetDeviceProcAddr(
             vk_device, "vkSetDebugUtilsObjectNameEXT");
+    pfnCmdBeginDebugUtilsLabelEXT =
+        (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+            vk_device, "vkCmdBeginDebugUtilsLabelEXT");
+    pfnCmdInsertDebugUtilsLabelEXT =
+        (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+            vk_device, "vkCmdInsertDebugUtilsLabelEXT");
+    pfnCmdEndDebugUtilsLabelEXT =
+        (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+            vk_device, "vkCmdEndDebugUtilsLabelEXT");
+
+    HASSERT(pfnSetDebugUtilsObjectNameEXT);
+    HASSERT(pfnCmdBeginDebugUtilsLabelEXT);
+    HASSERT(pfnCmdInsertDebugUtilsLabelEXT);
+    HASSERT(pfnCmdEndDebugUtilsLabelEXT);
   }
 
   vkGetDeviceQueue(vk_device, queue_family_indices.graphics_family_index, 0,
@@ -401,8 +415,6 @@ bool VulkanBackend::shutdown() {
   vkDeviceWaitIdle(vk_device);
 
   destroy_swapchain();
-  // TODO: Right now im manually destroying samplers, maybe link sampler with
-  // image views
   destroy_sampler(default_sampler);
   free_queued_resources();
   resource_deletion_queue.shutdown();
@@ -607,8 +619,7 @@ void VulkanBackend::create_swapchain() {
   tex_creation.mip_level_count = 1;
   tex_creation.mip_base_level = 0;
   tex_creation.usage =
-      TextureUsage::Enum(TextureUsage::Depth |
-                         TextureUsage::Sampled); // TODO: should this be sampled
+      TextureUsage::Enum(TextureUsage::Depth | TextureUsage::Sampled);
   tex_creation.alias_image = {k_invalid_index, 0};
   tex_creation.format = TextureFormat::D32;
   tex_creation.type = TextureType::Texture2D;
@@ -640,6 +651,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                           RenderPacket *packet, u32 image_index,
                                           u32 current_frame) {
   command_buffer->begin();
+  command_buffer->push_marker("Frame");
 
   command_buffer->transition_image(
       &swapchain.images[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
@@ -708,6 +720,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
+  command_buffer->pop_marker();
   command_buffer->end();
 }
 
@@ -990,7 +1003,6 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
         to_compiler_stage(shader.stage), shader.filename, shader.filename,
         compiler_debug);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
-    HERROR("{}", process_get_output()); // TODO: Better error display
 
     // TODO: Maybe create a timestamp system for checking shaders.
 
@@ -998,6 +1010,14 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
         temp_string_buffer.append_use_f("%s.spv", shader.filename);
     FileReadResult shader_binary =
         file_service->read_file_binary(binary_name, stack_allocator);
+    if (shader_binary.data == nullptr) {
+      FileReadResult glsl_code = file_service->read_file_text(
+          temp_string_buffer.append_use_f("%s.glsl", shader.filename),
+          stack_allocator);
+      if (glsl_code.data)
+        HTRACE("\n{}", glsl_code.data);
+      HERROR("\n{}", process_get_output());
+    }
     file_service->delete_file(binary_name);
 
     VkShaderModuleCreateInfo shader_create_info{
