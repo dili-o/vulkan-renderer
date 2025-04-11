@@ -268,6 +268,8 @@ bool VulkanBackend::init(void *_config) {
   VkPhysicalDeviceFeatures device_features{};
   // TODO: Check if this is available
   device_features.samplerAnisotropy = VK_TRUE;
+  device_features.fillModeNonSolid = VK_TRUE;
+  device_features.geometryShader = VK_TRUE;
 
   VkDeviceCreateInfo device_create_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
   device_create_info.pQueueCreateInfos = queue_create_infos.data;
@@ -817,57 +819,6 @@ VulkanSampler *VulkanBackend::access_sampler(SamplerHandle handle) {
   return samplers.obtain(handle);
 }
 
-// void VulkanBackend::create_buffers() {
-//   VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size;
-//
-//   vk_create_buffer(buffer_size,
-//                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-//                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-//                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertex_buffer);
-//
-//   VulkanBuffer staging_buffer{};
-//   vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-//                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-//                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-//                    staging_buffer);
-//
-//   void *data;
-//   vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
-//   memcpy(data, vertices.data, (size_t)buffer_size);
-//   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
-//
-//   VulkanCommandBuffer *command_buffer =
-//       transfer_command_buffer_manager.get_command_buffer(0, 0, false);
-//   command_buffer->copy_buffer_to_buffer(vertex_buffer.vk_handle,
-//                                         staging_buffer.vk_handle,
-//                                         buffer_size, vk_transfer_queue);
-//
-//   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
-//                    staging_buffer.vma_allocation);
-//
-//   buffer_size = sizeof(u32) * indexes.size;
-//   vk_create_buffer(buffer_size,
-//                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-//                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-//                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, index_buffer);
-//
-//   vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-//                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-//                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-//                    staging_buffer);
-//
-//   vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
-//   memcpy(data, indexes.data, (size_t)buffer_size);
-//   vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
-//
-//   command_buffer->copy_buffer_to_buffer(index_buffer.vk_handle,
-//                                         staging_buffer.vk_handle,
-//                                         buffer_size, vk_transfer_queue);
-//
-//   vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
-//                    staging_buffer.vma_allocation);
-// }
-
 void VulkanBackend::vk_create_buffer(VkDeviceSize size,
                                      VkBufferUsageFlags usage,
                                      VkMemoryPropertyFlags properties,
@@ -1098,7 +1049,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   rasterizer.rasterizerDiscardEnable = VK_FALSE;
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0f;
-  rasterizer.cullMode = VK_CULL_MODE_NONE; // VK_CULL_MODE_BACK_BIT;
+  rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE;
   rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -1388,10 +1339,7 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     // Release Ownership to graphics queue
     transfer_command_buffer->transition_image(
         handle, image->current_layout, image->current_layout,
-        VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        /*IGNORED*/ VK_PIPELINE_STAGE_2_TRANSFER_BIT, // TODO MAybe transition
-                                                      // to blit stage if
-                                                      // mipmaps are > 1
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
         queue_family_indices.transfer_family_index,
         queue_family_indices.graphics_family_index);
 
@@ -1405,7 +1353,7 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
       VkSemaphoreSubmitInfo semaphore_submit_info{
           VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
       semaphore_submit_info.semaphore = transfer_finish_semaphore;
-      semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+      semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
 
       VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
       submit_info.commandBufferInfoCount = 1;
@@ -2097,7 +2045,7 @@ void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
 
   UniformBufferObject ubo{};
-  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
+  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(1.01f));
   ubo.view = packet->camera->get_view();
   ubo.proj = glm::perspective(glm::radians(45.0f),
                               swapchain.vk_extents.width /

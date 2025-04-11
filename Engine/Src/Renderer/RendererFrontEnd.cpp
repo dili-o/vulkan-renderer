@@ -139,10 +139,10 @@ void RendererFrontEnd::init(void *_config) {
   meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
 
-  // load_model(ASSETS_PATH "/Models/HaloArmour/",
-  //           ASSETS_PATH "/Models/HaloArmour/halo_armor.obj");
-  load_model(ASSETS_PATH "/Models/Sponza/",
-             ASSETS_PATH "/Models/Sponza/sponza.obj");
+  load_model(ASSETS_PATH "/Models/HaloArmour/",
+             ASSETS_PATH "/Models/HaloArmour/halo_armor.obj");
+  // load_model(ASSETS_PATH "/Models/Sponza/",
+  //           ASSETS_PATH "/Models/Sponza/sponza.obj");
 
   print_gpu_stats();
 
