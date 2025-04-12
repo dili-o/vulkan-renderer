@@ -1,4 +1,5 @@
 #include "Platform.hpp"
+#include "Renderer/ImguiFrontend.hpp"
 
 #if HELIX_PLATFORM_WINDOWS
 #include "Core/Event.hpp"
@@ -54,6 +55,9 @@ void Platform::handle_os_messages() {
   SDL_zero(e);
 
   while (SDL_PollEvent(&e)) {
+
+    ImguiFrontend::instance()->handle_events(&e);
+
     switch (e.type) {
     case SDL_EVENT_QUIT: {
       EventContext context{};

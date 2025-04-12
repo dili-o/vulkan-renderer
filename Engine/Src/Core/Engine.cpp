@@ -25,6 +25,12 @@ void Engine::init(Game *game) {
   renderer_config.platform = &platform_service;
   renderer_frontend_service.init(&renderer_config);
 
+  ImguiLayerConfiguration imgui_config{};
+  imgui_config.type = RENDERER_BACKEND_TYPE_VULKAN;
+  imgui_config.frontend = &renderer_frontend_service;
+  imgui_config.window_handle = platform_service.platform_handle;
+  imgui_frontend_service.init(&imgui_config);
+
   application_service.init(game);
 
   application_service.run();
@@ -33,6 +39,7 @@ void Engine::init(Game *game) {
 void Engine::shutdown() {
   HTRACE("Shutting Down Services...");
   application_service.shutdown();
+  imgui_frontend_service.shutdown();
   renderer_frontend_service.shutdown();
   platform_service.shutdown();
   event_service.shutdown();

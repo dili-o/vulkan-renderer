@@ -39,7 +39,7 @@ enum Enum {
 }
 
 namespace TextureFormat {
-enum Enum { Undefined, D32, B8G8R8A8_UNORM, R8G8B8A8_SRGB };
+enum Enum { Undefined, D32, B8G8R8A8_UNORM, R8G8B8A8_SRGB, R8G8B8A8_UNORM };
 }
 
 namespace TextureUsage {
@@ -51,6 +51,10 @@ enum Enum {
   Depth = 1 << 3,
   Sampled = 1 << 4
 };
+}
+
+namespace CullMode {
+enum Enum { None, Front, Back, FrontAndBack };
 }
 
 #pragma region Creation
@@ -75,6 +79,8 @@ struct PipelineCreation {
   u32 shader_count = 0;
   PipelineType::Enum pipeline_type{};
   cstring name;
+
+  CullMode::Enum cull_mode = CullMode::Back;
 
   PipelineCreation &reset();
 };

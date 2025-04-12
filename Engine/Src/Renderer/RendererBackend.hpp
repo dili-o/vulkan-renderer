@@ -13,6 +13,7 @@ struct RendererBackend {
   virtual bool shutdown() = 0;
   virtual bool on_resize(u16 width, u16 height) = 0;
   virtual bool begin_frame(RenderPacket *packet) = 0;
+  virtual void render_frame(RenderPacket *packet) = 0;
   virtual bool end_frame(RenderPacket *packet) = 0;
 
   virtual BufferHandle create_buffer(BufferCreation &creation) = 0;

@@ -9,7 +9,7 @@ struct Game {
   virtual void init() {};
   virtual void shutdown() {};
   virtual void update(f32 dt) {};
-  virtual void render(f32 dt) {};
+  virtual void render_frame(f32 dt) {};
   virtual void resize(u32 width, u32 height) {};
 
   Camera camera;

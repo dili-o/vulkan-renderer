@@ -7,6 +7,7 @@
 #include "Core/Memory.hpp"
 #include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
+#include "Renderer/ImguiFrontend.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 namespace Helix {
 
@@ -22,5 +23,6 @@ struct Engine {
   Application application_service;
   EventService event_service;
   RendererFrontEnd renderer_frontend_service;
+  ImguiFrontend imgui_frontend_service;
 };
 } // namespace Helix

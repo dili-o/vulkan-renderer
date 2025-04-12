@@ -13,12 +13,22 @@ endif()
 
 file(GLOB_RECURSE SOURCE_LIST "Src/*.cpp" "Src/*.hpp")
 
+file(GLOB IMGUI_SOURCE_LIST 
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/backends/imgui_impl_sdl3.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/backends/imgui_impl_sdl3.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/backends/imgui_impl_vulkan.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/backends/imgui_impl_vulkan.cpp"
+)
+
 # Build as a Static Lib
 add_library(${PROJECT_NAME} STATIC
     ${SOURCE_LIST}
+    ${IMGUI_SOURCE_LIST}
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tlsf/tlsf.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tiny_obj_loader.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/stb_image.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/stb_image.h" 
 )
 
 if(WIN32)
@@ -41,34 +51,37 @@ endif()
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_SDK_PATH="${VULKAN_SDK_PATH}")
 
-#Vendor
+# --------------- Vendors --------------- #
+# SPDLOG
 add_subdirectory(Vendor/spdlog)
 target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)
-
+# SDL3
 set(SDL_STATIC ON)
 add_subdirectory(Vendor/SDL EXCLUDE_FROM_ALL)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3-static)
-
+# TLSF
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tlsf")
-
+# VOLK
 add_subdirectory(Vendor/volk)
 target_link_libraries(${PROJECT_NAME} PUBLIC volk_headers)
-
+# GLM
 set(GLM_BUILD_TESTS OFF CACHE BOOL "Disable GLM tests" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Use static GLM library" FORCE)
 add_subdirectory(Vendor/glm)
 target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/glm)
-
+# SPIRV-REFLECT
 set(SPIRV_REFLECT_STATIC_LIB ON CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/SPIRV-Reflect)
 target_link_libraries(${PROJECT_NAME} PRIVATE spirv-reflect-static)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/SPIRV-Reflect)
-
+# VMA
 add_definitions(-DVMA_STATIC_VULKAN_FUNCTIONS=0 -DVMA_DYNAMIC_VULKAN_FUNCTIONS=0)
 add_subdirectory(Vendor/VMA)
 target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
-
+# Dear Imgui
+target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui")
+# Include the vendor folder
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/")
 
 # Set output directory to Bin/Engine

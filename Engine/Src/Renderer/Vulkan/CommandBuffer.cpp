@@ -101,7 +101,7 @@ void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
   color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  color_attachment_info.clearValue = {{{0.0f, 0.0f, 0.1f, 1.0f}}};
+  color_attachment_info.clearValue = {{{0.f, 0.f, 0.1f, 1.0f}}};
   color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
 
   VkRenderingAttachmentInfo depth_attachment_info{
@@ -148,33 +148,26 @@ void VulkanCommandBuffer::bind_viewport(VkExtent2D extents) {
   vkCmdSetViewport(vk_handle, 0, 1, &viewport);
 }
 
-void VulkanCommandBuffer::bind_scissors(VkExtent2D extents) {
-  VkRect2D scissor{};
-  scissor.offset = {0, 0};
-  scissor.extent = extents;
-  vkCmdSetScissor(vk_handle, 0, 1, &scissor);
+void VulkanCommandBuffer::bind_scissors(VkRect2D rect) {
+  vkCmdSetScissor(vk_handle, 0, 1, &rect);
 }
 
-void VulkanCommandBuffer::bind_vertex_buffer(BufferHandle handle) {
+void VulkanCommandBuffer::bind_vertex_buffer(BufferHandle handle,
+                                             u32 first_binding,
+                                             u32 binding_count) {
+
   VulkanBuffer *buffer = backend->access_buffer(handle);
-  bind_vertex_buffer(buffer->vk_handle);
-}
-
-void VulkanCommandBuffer::bind_vertex_buffer(VkBuffer vertex_buffer) {
-
-  VkBuffer vertex_buffers[] = {vertex_buffer};
+  VkBuffer vertex_buffers[] = {buffer->vk_handle};
   VkDeviceSize offsets[] = {0};
 
-  vkCmdBindVertexBuffers(vk_handle, 0, 1, vertex_buffers, offsets);
+  vkCmdBindVertexBuffers(vk_handle, first_binding, binding_count,
+                         vertex_buffers, offsets);
 }
 
-void VulkanCommandBuffer::bind_index_buffer(BufferHandle handle) {
+void VulkanCommandBuffer::bind_index_buffer(BufferHandle handle, u32 offset,
+                                            VkIndexType index_type) {
   VulkanBuffer *buffer = backend->access_buffer(handle);
-  bind_index_buffer(buffer->vk_handle);
-}
-
-void VulkanCommandBuffer::bind_index_buffer(VkBuffer index_buffer) {
-  vkCmdBindIndexBuffer(vk_handle, index_buffer, 0, VK_INDEX_TYPE_UINT32);
+  vkCmdBindIndexBuffer(vk_handle, buffer->vk_handle, offset, index_type);
 }
 
 void VulkanCommandBuffer::bind_descriptor_sets(PipelineHandle pipeline_handle,

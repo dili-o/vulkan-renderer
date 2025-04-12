@@ -21,7 +21,7 @@ struct RendererFrontEnd : public Service {
 
   void on_resize(u16 width, u16 height);
 
-  bool draw_frame(RenderPacket *packet);
+  bool render_frame(RenderPacket *packet);
 
   bool begin_frame(RenderPacket *packet);
 

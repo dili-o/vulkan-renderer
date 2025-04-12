@@ -1,8 +1,8 @@
 #include "RendererBackend.hpp"
+#include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VulkanBackend.hpp"
-#include <memory>
 
 namespace Helix {
 RendererBackend *RendererBackendCreate(RendererBackendType type) {
@@ -14,6 +14,7 @@ RendererBackend *RendererBackendCreate(RendererBackendType type) {
     return new (memory) VulkanBackend();
   }
 
+  HCRITICAL("Unknown Backend Type");
   return nullptr;
 }
 } // namespace Helix

@@ -46,12 +46,13 @@ struct VulkanCommandBuffer {
 
   // TODO: Maybe bind viewport and scissors in bind_renderpass instead
   void bind_viewport(VkExtent2D extents);
-  void bind_scissors(VkExtent2D extents);
+  void bind_scissors(VkRect2D rect);
 
   // TODO: Make more configurable
-  void bind_vertex_buffer(BufferHandle handle);
-  void bind_vertex_buffer(VkBuffer vertex_buffer);
-  void bind_index_buffer(BufferHandle handle);
+  void bind_vertex_buffer(BufferHandle handle, u32 first_binding,
+                          u32 binding_count);
+  void bind_index_buffer(BufferHandle handle, u32 offset,
+                         VkIndexType index_type);
   void bind_index_buffer(VkBuffer index_buffer);
   void bind_descriptor_sets(PipelineHandle pipeline_handle,
                             VkDescriptorSet dset, u32 set_index);

@@ -1,8 +1,6 @@
 #version 450
 
-#extension GL_EXT_nonuniform_qualifier : enable
-
-layout(set = 0, binding = 0) uniform sampler2D global_samplers[];
+#include "globals.h"
 
 layout(location = 0) in vec2 tex_coords;
 layout(location = 1) in vec3 frag_pos;
@@ -25,13 +23,16 @@ uint hash(uint a)
    return a;
 }
 
+#define RANDOM 1
 
 void main() {
-  vec3 light_pos = vec3(0.f, 5.f ,0.f);
-
+#if RANDOM
+  uint mhash = hash(uint(gl_PrimitiveID));
+  vec3 color = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
+  color *= 1.25f;
+  outColor = vec4(color, 1.0f) ;
+#else
   vec4 diffuse = texture(global_samplers[nonuniformEXT(albedo_index)], tex_coords); 
   outColor = diffuse * 1.5f;
-  // uint mhash = hash(uint(gl_PrimitiveID ));
-  // vec3 color = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
-  // outColor = vec4(color, 1.0f);
+#endif // RANDOM
 }

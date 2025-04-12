@@ -46,6 +46,8 @@ struct Mesh {
   // Transform transform;
 };
 
+struct Game;
+
 struct RenderPacket {
   f32 delta_time;
   u32 current_frame;
@@ -53,6 +55,7 @@ struct RenderPacket {
   ResourceHandle scene_data_buffer;
   Mesh *meshes{nullptr};
   u32 mesh_count{0};
+  Game *game{nullptr};
 };
 
 struct Vertex {

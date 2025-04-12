@@ -75,6 +75,8 @@ VkFormat to_vk_format(TextureFormat::Enum format) {
     return VK_FORMAT_B8G8R8A8_UNORM;
   case TextureFormat::R8G8B8A8_SRGB:
     return VK_FORMAT_R8G8B8A8_SRGB;
+  case TextureFormat::R8G8B8A8_UNORM:
+    return VK_FORMAT_R8G8B8A8_UNORM;
   }
 }
 
@@ -120,6 +122,19 @@ VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
   default:
     HERROR("Unknown layout");
     return VK_ACCESS_2_NONE;
+  }
+}
+
+VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode) {
+  switch (cull_mode) {
+  case CullMode::None:
+    return VK_CULL_MODE_NONE;
+  case CullMode::Front:
+    return VK_CULL_MODE_FRONT_BIT;
+  case CullMode::Back:
+    return VK_CULL_MODE_BACK_BIT;
+  case CullMode::FrontAndBack:
+    return VK_CULL_MODE_FRONT_AND_BACK;
   }
 }
 

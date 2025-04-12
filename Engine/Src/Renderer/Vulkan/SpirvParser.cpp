@@ -9,6 +9,16 @@
 
 namespace Helix {
 
+VkFormat get_unorm_variant(u32 component_count) {
+  switch (component_count) {
+  case 4:
+    return VK_FORMAT_R8G8B8A8_UNORM;
+  default:
+    HERROR("Unknown Unorm Variant!");
+    return VK_FORMAT_UNDEFINED;
+  }
+}
+
 // Returns a new set layout if one does not already exist in the ParseResult
 VulkanDescriptorSetLayout &
 get_set(Array<VulkanDescriptorSetLayout> &set_layouts, u32 set_index) {
@@ -140,8 +150,20 @@ void parse_binary(const u32 *data, size_t data_size,
 
   parse_result.vertex_attribute_count = input_variable_count;
 
+  // Sort input attributes
+  std::sort(input_variables.data, input_variables.data + input_variables.size,
+            [](const SpvReflectInterfaceVariable *a,
+               const SpvReflectInterfaceVariable *b) {
+              return a->location < b->location;
+            });
+
   for (auto input_variable : input_variables) {
     if (!strcmp(input_variable->name, "gl_VertexIndex")) {
+      --parse_result.vertex_attribute_count;
+      continue;
+    }
+    if (!strcmp(input_variable->name, "gl_InstanceIndex")) {
+      --parse_result.vertex_attribute_count;
       continue;
     }
     u32 location = input_variable->location;
@@ -154,9 +176,18 @@ void parse_binary(const u32 *data, size_t data_size,
     attribute.format = (VkFormat)format;
     attribute.offset = binding_description.stride;
 
-    binding_description.stride +=
-        (input_variable->numeric.vector.component_count *
-         (input_variable->numeric.scalar.width / 8));
+    // NOTE: Input attributes are marked with "_UNORM" if they should be
+    // formatted as Unorms
+    if (strstr(input_variable->name, "UNORM")) {
+      attribute.format =
+          get_unorm_variant(input_variable->numeric.vector.component_count);
+      binding_description.stride +=
+          input_variable->numeric.vector.component_count;
+    } else {
+      binding_description.stride +=
+          (input_variable->numeric.vector.component_count *
+           (input_variable->numeric.scalar.width / 8));
+    }
   }
 }
 } // namespace Helix

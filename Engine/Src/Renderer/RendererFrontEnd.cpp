@@ -3,9 +3,11 @@
 #include "Core/Clock.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Game.hpp"
 #include "Platform/File.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
+#include "Renderer/ImguiFrontend.hpp"
 #include "RendererBackend.hpp"
 #include "RendererTypes.hpp"
 
@@ -91,6 +93,7 @@ void RendererFrontEnd::init(void *_config) {
     creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
+    creation.cull_mode = CullMode::Back;
 
     Clock clock{};
     clock.start();
@@ -139,11 +142,6 @@ void RendererFrontEnd::init(void *_config) {
   meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
 
-  load_model(ASSETS_PATH "/Models/HaloArmour/",
-             ASSETS_PATH "/Models/HaloArmour/halo_armor.obj");
-  // load_model(ASSETS_PATH "/Models/Sponza/",
-  //           ASSETS_PATH "/Models/Sponza/sponza.obj");
-
   print_gpu_stats();
 
   stack_allocator->free_marker(stack_marker);
@@ -175,11 +173,18 @@ void RendererFrontEnd::on_resize(u16 width, u16 height) {
   backend->on_resize(width, height);
 }
 
-bool RendererFrontEnd::draw_frame(RenderPacket *packet) {
+bool RendererFrontEnd::render_frame(RenderPacket *packet) {
   packet->meshes = meshes.data;
   packet->mesh_count = meshes.size;
 
   if (begin_frame(packet)) {
+    backend->render_frame(packet);
+
+    ImguiFrontend::instance()->begin_frame();
+
+    packet->game->render_frame(packet->delta_time);
+
+    ImguiFrontend::instance()->render_frame(packet);
 
     bool result = end_frame(packet);
     if (!result) {

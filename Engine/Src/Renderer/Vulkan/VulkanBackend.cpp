@@ -25,7 +25,7 @@
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-#define VULKAN_EXTRA_VALIDATION
+// #define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 #define MIN_BUFFER_SIZE 4
@@ -499,11 +499,10 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
   wait_info.pValues = &wait_value;
   vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
 
-  uint32_t image_index;
   VkResult result =
       vkAcquireNextImageKHR(vk_device, swapchain.vk_handle, UINT64_MAX,
                             image_available_semaphores[packet->current_frame],
-                            VK_NULL_HANDLE, &image_index);
+                            VK_NULL_HANDLE, &swapchain.current_image_index);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     resize_swapchain();
@@ -519,12 +518,136 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
                                                 false);
 
   command_buffer->reset();
+  command_buffer->begin();
 
-  draw_frame(packet, image_index);
   return true;
 }
 
 bool VulkanBackend::end_frame(RenderPacket *packet) {
+
+  VulkanCommandBuffer *command_buffer =
+      command_buffer_manager.get_command_buffer(packet->current_frame, 0,
+                                                false);
+  command_buffer->end_current_renderpass();
+
+  // Transition to Present
+  command_buffer->transition_image(
+      &swapchain.images[swapchain.current_image_index],
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+  command_buffer->end();
+
+  // Update Bindless Textures
+  if (bindless_textures_to_update.size) {
+    // Handle deferred writes to bindless textures.
+    VkWriteDescriptorSet bindless_descriptor_writes[MAX_TEXTURES];
+    VkDescriptorImageInfo bindless_image_info[MAX_TEXTURES];
+
+    u32 current_write_index = 0;
+    for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
+      TextureHandle texture_to_update = bindless_textures_to_update[it];
+      {
+        VulkanImageView *texture = access_image_view(texture_to_update);
+        VkWriteDescriptorSet &descriptor_write =
+            bindless_descriptor_writes[current_write_index];
+        descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        descriptor_write.descriptorCount = 1;
+        descriptor_write.dstArrayElement = texture_to_update.index;
+        descriptor_write.descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_write.dstSet = vk_bindless_descriptor_set;
+        descriptor_write.dstBinding = 0;
+
+        VulkanSampler *vk_default_sampler = access_sampler(default_sampler);
+        VkDescriptorImageInfo &descriptor_image_info =
+            bindless_image_info[current_write_index];
+
+        // TODO: Texture( Views ) should have samplers
+        descriptor_image_info.sampler = vk_default_sampler->vk_handle;
+
+        descriptor_image_info.imageView = texture->vk_handle;
+        descriptor_image_info.imageLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        descriptor_write.pImageInfo = &descriptor_image_info;
+
+        bindless_textures_to_update.delete_swap(it);
+
+        ++current_write_index;
+      }
+    }
+
+    if (current_write_index) {
+      vkUpdateDescriptorSets(vk_device, current_write_index,
+                             bindless_descriptor_writes, 0, nullptr);
+    }
+  }
+
+  // Submit
+  VkCommandBufferSubmitInfo command_submit_info{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  command_submit_info.commandBuffer = command_buffer->vk_handle;
+
+  VkSemaphoreSubmitInfo wait_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  wait_semaphore_submit_info.semaphore =
+      image_available_semaphores[packet->current_frame];
+  wait_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  VkSemaphoreSubmitInfo signal_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_semaphore_submit_info.semaphore =
+      render_finished_semaphores[packet->current_frame];
+  signal_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  VkSemaphoreSubmitInfo signal_timeline_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_timeline_semaphore_submit_info.semaphore =
+      vk_timeline_graphics_semaphore;
+  signal_timeline_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  signal_timeline_semaphore_submit_info.value =
+      frame_number + max_frames_in_flight;
+
+  VkSemaphoreSubmitInfo signal_semaphore_submit_infos[2] = {
+      signal_semaphore_submit_info, signal_timeline_semaphore_submit_info};
+
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &command_submit_info;
+  submit_info.waitSemaphoreInfoCount = 1;
+  submit_info.pWaitSemaphoreInfos = &wait_semaphore_submit_info;
+  submit_info.signalSemaphoreInfoCount =
+      ArraySize(signal_semaphore_submit_infos);
+  submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
+
+  VkSemaphore signal_semaphores[] = {
+      render_finished_semaphores[packet->current_frame]};
+
+  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
+
+  VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+
+  present_info.waitSemaphoreCount = 1;
+  present_info.pWaitSemaphores = signal_semaphores;
+
+  VkSwapchainKHR swapchains[] = {swapchain.vk_handle};
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = swapchains;
+  present_info.pImageIndices = &swapchain.current_image_index;
+  present_info.pResults = nullptr;
+
+  VkResult result = vkQueuePresentKHR(vk_graphics_queue, &present_info);
+
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+      resize_frame) {
+    resize_frame = false;
+    resize_swapchain();
+  } else if (result != VK_SUCCESS) {
+    HERROR("Failed to present swap chain image!");
+  }
 
   free_queued_resources();
   ++frame_number;
@@ -650,14 +773,13 @@ void VulkanBackend::destroy_swapchain() {
 }
 
 void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
-                                          RenderPacket *packet, u32 image_index,
+                                          RenderPacket *packet,
                                           u32 current_frame) {
-  command_buffer->begin();
   command_buffer->push_marker("Frame");
 
   command_buffer->transition_image(
-      &swapchain.images[image_index], VK_IMAGE_LAYOUT_UNDEFINED,
-      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      &swapchain.images[swapchain.current_image_index],
+      VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
@@ -671,7 +793,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   command_buffer->bind_renderpass(
       {swapchain.vk_extents.width, swapchain.vk_extents.height},
-      swapchain.image_views[image_index].vk_handle);
+      swapchain.image_views[swapchain.current_image_index].vk_handle);
 
   // TODO: Renderpass and Framebuffer struct
   // TODO:
@@ -680,7 +802,10 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   command_buffer->bind_viewport(swapchain.vk_extents);
 
-  command_buffer->bind_scissors(swapchain.vk_extents);
+  VkRect2D rect{};
+  rect.offset = {0, 0};
+  rect.extent = swapchain.vk_extents;
+  command_buffer->bind_scissors(rect);
 
   // TODO:
   VulkanDescriptorSetLayout *dset_layout =
@@ -694,11 +819,12 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   for (u32 i = 0; i < packet->mesh_count; ++i) {
 
     Mesh &mesh = packet->meshes[i];
-    command_buffer->bind_vertex_buffer(mesh.internal_vertex_buffer);
+    command_buffer->bind_vertex_buffer(mesh.internal_vertex_buffer, 0, 1);
 
     for (u32 j = 0; j < mesh.draws.size; ++j) {
       MeshDraw &draw = mesh.draws[j];
-      command_buffer->bind_index_buffer(draw.internal_index_buffer);
+      command_buffer->bind_index_buffer(draw.internal_index_buffer, 0,
+                                        VK_INDEX_TYPE_UINT32);
 
       PBRMaterial &material =
           RendererFrontEnd::instance()->pbr_materials[draw.material_index];
@@ -714,16 +840,10 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     }
   }
 
-  command_buffer->end_current_renderpass();
-  // Transition to Present
-  command_buffer->transition_image(
-      &swapchain.images[image_index], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+  // NOTE: Imgui needs to use the renderpass
+  // command_buffer->end_current_renderpass();
 
   command_buffer->pop_marker();
-  command_buffer->end();
 }
 
 void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
@@ -1049,7 +1169,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   rasterizer.rasterizerDiscardEnable = VK_FALSE;
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0f;
-  rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+  rasterizer.cullMode = to_vk_cull_mode_flags(creation.cull_mode);
   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE;
   rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -1079,22 +1199,26 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   depth_stencil.maxDepthBounds = 1.0f;
 
   // Color Blend State
+  // TODO: Make configurable
   VkPipelineColorBlendAttachmentState color_blend_attachment{};
   color_blend_attachment.colorWriteMask =
       VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-  color_blend_attachment.blendEnable = VK_FALSE;
-  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-  color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
-  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-  color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;             // Optional
+  color_blend_attachment.blendEnable = VK_TRUE;
+  color_blend_attachment.srcColorBlendFactor =
+      VK_BLEND_FACTOR_SRC_ALPHA; // Optional
+  color_blend_attachment.dstColorBlendFactor =
+      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;                          // Optional
+  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;            // Optional
+  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
+  color_blend_attachment.dstAlphaBlendFactor =
+      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;               // Optional
+  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
 
   VkPipelineColorBlendStateCreateInfo color_blending{
       VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
   color_blending.logicOpEnable = VK_FALSE;
-  color_blending.logicOp = VK_LOGIC_OP_COPY; // Optional
+  color_blending.logicOp = VK_LOGIC_OP_CLEAR;
   color_blending.attachmentCount = 1;
   color_blending.pAttachments = &color_blend_attachment;
   color_blending.blendConstants[0] = 0.0f; // Optional
@@ -1114,12 +1238,14 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   pipeline->set_layout_count = parse_result.set_layouts.size;
 
   // Sort by set_index in ascending order
-  std::sort(&parse_result.set_layouts[0],
-            &parse_result.set_layouts[0] + parse_result.set_layouts.size,
-            [](const VulkanDescriptorSetLayout &a,
-               const VulkanDescriptorSetLayout &b) {
-              return a.set_index < b.set_index;
-            });
+  if (pipeline->set_layout_count) {
+    std::sort(&parse_result.set_layouts[0],
+              &parse_result.set_layouts[0] + parse_result.set_layouts.size,
+              [](const VulkanDescriptorSetLayout &a,
+                 const VulkanDescriptorSetLayout &b) {
+                return a.set_index < b.set_index;
+              });
+  }
 
   for (u32 i = 0; i < parse_result.set_layouts.size; ++i) {
     DescriptorSetLayoutHandle dset_layout_handle =
@@ -1312,7 +1438,8 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
 
   if (creation.initial_data) {
     VulkanBuffer staging_buffer{};
-    // TODO: Make more configurable for different image formats
+    // TODO: Make more configurable for different image formats right now it
+    // assumes a 4 component format
     VkDeviceSize buffer_size = creation.width * creation.height * 4;
 
     vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -1919,127 +2046,13 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
                                     &vk_bindless_descriptor_set));
 }
 
-void VulkanBackend::draw_frame(RenderPacket *packet, u32 image_index) {
+void VulkanBackend::render_frame(RenderPacket *packet) {
 
   VulkanCommandBuffer *command_buffer =
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,
                                                 false);
 
-  record_command_buffer(command_buffer, packet, image_index,
-                        packet->current_frame);
-
-  // Update Bindless Textures
-  if (bindless_textures_to_update.size) {
-    // Handle deferred writes to bindless textures.
-    VkWriteDescriptorSet bindless_descriptor_writes[MAX_TEXTURES];
-    VkDescriptorImageInfo bindless_image_info[MAX_TEXTURES];
-
-    // TODO: Maybe have a create default texture function in the backend.
-    // VulkanImageView *default_texture = access_texture(defaul);
-
-    u32 current_write_index = 0;
-    for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
-      TextureHandle texture_to_update = bindless_textures_to_update[it];
-      {
-        VulkanImageView *texture = access_image_view(texture_to_update);
-        VkWriteDescriptorSet &descriptor_write =
-            bindless_descriptor_writes[current_write_index];
-        descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        descriptor_write.descriptorCount = 1;
-        descriptor_write.dstArrayElement = texture_to_update.index;
-        descriptor_write.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptor_write.dstSet = vk_bindless_descriptor_set;
-        descriptor_write.dstBinding = 0;
-
-        VulkanSampler *vk_default_sampler = access_sampler(default_sampler);
-        VkDescriptorImageInfo &descriptor_image_info =
-            bindless_image_info[current_write_index];
-
-        // TODO: Texture( Views ) should have samplers
-        descriptor_image_info.sampler = vk_default_sampler->vk_handle;
-
-        descriptor_image_info.imageView = texture->vk_handle;
-        descriptor_image_info.imageLayout =
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        descriptor_write.pImageInfo = &descriptor_image_info;
-
-        bindless_textures_to_update.delete_swap(it);
-
-        ++current_write_index;
-      }
-    }
-
-    if (current_write_index) {
-      vkUpdateDescriptorSets(vk_device, current_write_index,
-                             bindless_descriptor_writes, 0, nullptr);
-    }
-  }
-
-  // Submit
-  VkCommandBufferSubmitInfo command_submit_info{
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-  command_submit_info.commandBuffer = command_buffer->vk_handle;
-
-  VkSemaphoreSubmitInfo wait_semaphore_submit_info{
-      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-  wait_semaphore_submit_info.semaphore =
-      image_available_semaphores[packet->current_frame];
-  wait_semaphore_submit_info.stageMask =
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-  VkSemaphoreSubmitInfo signal_semaphore_submit_info{
-      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-  signal_semaphore_submit_info.semaphore =
-      render_finished_semaphores[packet->current_frame];
-  signal_semaphore_submit_info.stageMask =
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-  VkSemaphoreSubmitInfo signal_timeline_semaphore_submit_info{
-      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-  signal_timeline_semaphore_submit_info.semaphore =
-      vk_timeline_graphics_semaphore;
-  signal_timeline_semaphore_submit_info.stageMask =
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-  signal_timeline_semaphore_submit_info.value =
-      frame_number + max_frames_in_flight;
-
-  VkSemaphoreSubmitInfo signal_semaphore_submit_infos[2] = {
-      signal_semaphore_submit_info, signal_timeline_semaphore_submit_info};
-
-  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-  submit_info.commandBufferInfoCount = 1;
-  submit_info.pCommandBufferInfos = &command_submit_info;
-  submit_info.waitSemaphoreInfoCount = 1;
-  submit_info.pWaitSemaphoreInfos = &wait_semaphore_submit_info;
-  submit_info.signalSemaphoreInfoCount =
-      ArraySize(signal_semaphore_submit_infos);
-  submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
-
-  VkSemaphore signal_semaphores[] = {
-      render_finished_semaphores[packet->current_frame]};
-
-  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
-
-  VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-
-  present_info.waitSemaphoreCount = 1;
-  present_info.pWaitSemaphores = signal_semaphores;
-
-  VkSwapchainKHR swapchains[] = {swapchain.vk_handle};
-  present_info.swapchainCount = 1;
-  present_info.pSwapchains = swapchains;
-  present_info.pImageIndices = &image_index;
-  present_info.pResults = nullptr;
-
-  VkResult result = vkQueuePresentKHR(vk_graphics_queue, &present_info);
-
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-      resize_frame) {
-    resize_frame = false;
-    resize_swapchain();
-  } else if (result != VK_SUCCESS) {
-    HERROR("Failed to present swap chain image!");
-  }
+  record_command_buffer(command_buffer, packet, packet->current_frame);
 }
 
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {

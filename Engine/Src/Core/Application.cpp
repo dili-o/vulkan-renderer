@@ -51,7 +51,7 @@ void Application::run() {
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   StringBuffer string;
-  string.init(allocator, 32);
+  string.init(allocator, 128);
 
   while (!platform->requested_exit) {
     platform->handle_os_messages();
@@ -65,12 +65,13 @@ void Application::run() {
 
       game->update(delta_time);
 
-      game->render(delta_time);
+      // game->render(delta_time);
 
       RenderPacket packet{(f32)delta_time};
       packet.camera = &game->camera;
       packet.camera->update(delta_time);
-      RendererFrontEnd::instance()->draw_frame(&packet);
+      packet.game = game;
+      RendererFrontEnd::instance()->render_frame(&packet);
 
       f64 frame_end_time = platform->get_absolute_time();
       f64 frame_elapsed_time = frame_end_time - frame_start_time;
@@ -93,9 +94,9 @@ void Application::run() {
                               Platform::instance()->name, delta_time * 1000.0);
       Platform::instance()->set_title(update_title);
 
+      string.clear();
       last_time = current_time;
     }
-    string.clear();
   }
   string.shutdown();
 }

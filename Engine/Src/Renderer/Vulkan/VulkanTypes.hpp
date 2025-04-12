@@ -98,6 +98,7 @@ struct VulkanSwapchain {
   VkPresentModeKHR vk_present_mode = VK_PRESENT_MODE_FIFO_KHR;
   VkExtent2D vk_extents{};
   u32 image_count = 0;
+  u32 current_image_index = 0;
   VulkanImage images[MAX_SWAPCHAIN_IMAGES];
   VulkanImageView image_views[MAX_SWAPCHAIN_IMAGES];
   VkSwapchainKHR vk_handle{VK_NULL_HANDLE};

@@ -1,6 +1,8 @@
 #include "Sandbox.hpp"
 #include "Core/Event.hpp"
 #include "Core/Input.hpp"
+#include "Renderer/ImguiFrontend.hpp"
+#include "Renderer/RendererFrontEnd.hpp"
 #include "SDL3/SDL_events.h"
 
 namespace Helix {
@@ -44,6 +46,12 @@ void Sandbox::init() {
   event_service->register_event(SDL_EVENT_MOUSE_WHEEL, &camera,
                                 camera_scroll_event);
 
+  RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/HaloArmour/",
+                                           ASSETS_PATH
+                                           "/Models/HaloArmour/halo_armor.obj");
+  // RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/Sponza/",
+  //           ASSETS_PATH "/Models/Sponza/sponza.obj");
+
   HINFO("Game Initialised");
 }
 void Sandbox::shutdown() { HINFO("Game Shutdown"); }
@@ -53,7 +61,16 @@ void Sandbox::update(f32 dt) {
     HDEBUG("c held");
   }
 }
-void Sandbox::render(f32 dt) {}
+
+void Sandbox::render_frame(f32 dt) {
+  ImGui::Begin("Hello Window");
+  ImGui::Text("This is some useful text.");
+  ImGui::End();
+
+  ImGui::Begin("Hello Window2");
+  ImGui::Text("This is some useful text.");
+  ImGui::End();
+}
 void Sandbox::resize(u32 width, u32 height) {}
 
 } // namespace Helix

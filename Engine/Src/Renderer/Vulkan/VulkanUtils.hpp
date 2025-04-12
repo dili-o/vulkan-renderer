@@ -25,6 +25,8 @@ VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout);
 
 VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout);
 
+VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode);
+
 VkImageMemoryBarrier2
 create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
                      VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,

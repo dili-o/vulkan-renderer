@@ -12,6 +12,14 @@
 #include <glm/gtx/transform.hpp>
 
 namespace Helix {
+
+static u16 s_left_button = SDL_SCANCODE_A;
+static u16 s_right_button = SDL_SCANCODE_D;
+static u16 s_forward_button = SDL_SCANCODE_W;
+static u16 s_backward_button = SDL_SCANCODE_S;
+static u16 s_up_button = SDL_SCANCODE_SPACE;
+static u16 s_down_button = SDL_SCANCODE_LCTRL;
+
 void Camera::init() {
 
   velocity = glm::vec3(0.f);
@@ -51,33 +59,33 @@ bool Camera::on_key_event(u16 event_code, void *sender, void *listener,
   switch (event_code) {
   case SDL_EVENT_KEY_DOWN: {
     u16 key_code = context.data.u16[0];
-    if (key_code == SDL_SCANCODE_A) {
+    if (key_code == s_left_button) {
       velocity.x = -1;
-    } else if (key_code == SDL_SCANCODE_D) {
+    } else if (key_code == s_right_button) {
       velocity.x = 1;
-    } else if (key_code == SDL_SCANCODE_W) {
+    } else if (key_code == s_forward_button) {
       velocity.z = -1;
-    } else if (key_code == SDL_SCANCODE_S) {
+    } else if (key_code == s_backward_button) {
       velocity.z = 1;
-    } else if (key_code == SDL_SCANCODE_SPACE) {
+    } else if (key_code == s_up_button) {
       velocity.y = 1;
-    } else if (key_code == SDL_SCANCODE_LCTRL) {
+    } else if (key_code == s_down_button) {
       velocity.y = -1;
     }
   } break;
   case SDL_EVENT_KEY_UP: {
     u16 key_code = context.data.u16[0];
-    if (key_code == SDL_SCANCODE_A) {
+    if (key_code == s_left_button) {
       velocity.x = 0;
-    } else if (key_code == SDL_SCANCODE_D) {
+    } else if (key_code == s_right_button) {
       velocity.x = 0;
-    } else if (key_code == SDL_SCANCODE_W) {
+    } else if (key_code == s_forward_button) {
       velocity.z = 0;
-    } else if (key_code == SDL_SCANCODE_S) {
+    } else if (key_code == s_backward_button) {
       velocity.z = 0;
-    } else if (key_code == SDL_SCANCODE_SPACE) {
+    } else if (key_code == s_up_button) {
       velocity.y = 0;
-    } else if (key_code == SDL_SCANCODE_LCTRL) {
+    } else if (key_code == s_down_button) {
       velocity.y = 0;
     }
   } break;

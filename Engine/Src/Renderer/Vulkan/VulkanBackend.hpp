@@ -22,6 +22,7 @@ struct VulkanBackend : public RendererBackend {
   virtual bool shutdown() override;
   virtual bool on_resize(u16 width, u16 height) override;
   virtual bool begin_frame(RenderPacket *packet) override;
+  virtual void render_frame(RenderPacket *packet) override;
   virtual bool end_frame(RenderPacket *packet) override;
 
   void create_swapchain();
@@ -29,8 +30,7 @@ struct VulkanBackend : public RendererBackend {
   void resize_swapchain();
 
   void record_command_buffer(VulkanCommandBuffer *command_buffer,
-                             RenderPacket *packet, u32 image_index,
-                             u32 current_frame);
+                             RenderPacket *packet, u32 current_frame);
 
   void vk_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                         VkMemoryPropertyFlags properties, VulkanBuffer &buffer);
@@ -73,8 +73,6 @@ struct VulkanBackend : public RendererBackend {
   void free_queued_resources();
 
   void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);
-
-  void draw_frame(RenderPacket *packet, u32 image_index);
 
   void update_uniform_buffer(RenderPacket *packet);
 
