@@ -1,10 +1,17 @@
 #pragma once
 
 #include "Core/Defines.hpp"
-#include "Core/Event.hpp"
 #include <glm/glm.hpp>
 
 namespace Helix {
+
+struct CameraConfiguration {
+  glm::vec3 position{0.f};
+  f32 near_plane{0.1f};
+  f32 far_plane{100.f};
+  f32 fov{45.f};
+  f32 aspect_ratio{1280.f / 720.f};
+};
 
 struct Camera {
   bool is_active{false};
@@ -16,19 +23,22 @@ struct Camera {
   f32 pitch{0.f};
   f32 yaw{0.f};
 
-  void init();
-  glm::mat4 get_view();
+  f32 near_plane{0.1f};
+  f32 far_plane{100.f};
+  f32 fov{45.f};
+  f32 aspect_ratio{1280.f / 720.f};
+
+  void init(CameraConfiguration &camera_config);
   glm::mat4 get_rotation();
+  glm::mat4 get_view();
+  glm::mat4 get_projection();
 
   void update(f32 delta_time);
-  bool on_key_event(u16 event_code, void *sender, void *listener,
-                    EventContext context);
 
-  bool on_mouse_event(u16 event_code, void *sender, void *listener,
-                      EventContext context);
-  bool on_mouse_button_event(u16 event_code, void *sender, void *listener,
-                             EventContext context);
-  bool on_mouse_scroll_event(u16 event_code, void *sender, void *listener,
-                             EventContext context);
+  void on_key_event(bool key_down, u16 key_code);
+
+  void on_mouse_event(i16 x, i16 y);
+  void on_mouse_button_event(bool key_down, u16 key_code);
+  void on_mouse_scroll_event(i8 direction);
 };
 } // namespace Helix

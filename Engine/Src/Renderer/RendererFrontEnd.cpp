@@ -13,8 +13,6 @@
 
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
 namespace std {
@@ -47,6 +45,8 @@ void RendererFrontEnd::init(void *_config) {
   }
 
   config->max_frames_in_flight = max_frames_in_flight;
+
+  // TODO: Use the vsync configuration
   if (!backend->init(config)) {
     HCRITICAL("Failed to create backend!");
     return;
@@ -64,9 +64,7 @@ void RendererFrontEnd::init(void *_config) {
   pipelines.init(allocator, 10);
   textures.init(allocator, 10);
   model_textures.init(allocator, 10);
-
   string_buffer.init(allocator, hkilo(10));
-
   pbr_materials.init(allocator, 25);
 
   // Create Uniform Buffers
@@ -157,7 +155,6 @@ void RendererFrontEnd::shutdown() {
   destroy_model();
 
   meshes.shutdown();
-
   pbr_materials.shutdown();
   textures.shutdown();
   backend->shutdown();

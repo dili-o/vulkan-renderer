@@ -25,7 +25,7 @@
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-// #define VULKAN_EXTRA_VALIDATION
+#define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 #define MIN_BUFFER_SIZE 4
@@ -1391,7 +1391,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
 TextureHandle VulkanBackend::create_texture(TextureCreation &creation) {
   creation.alias_image = create_image(creation);
-
+  creation.name = string_buffer.append_use_f("%s_View", creation.name);
   return create_image_view(creation);
 }
 
@@ -1542,25 +1542,32 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
         graphics_command_buffer->pipeline_barrier(&image_barrier, 1);
 
         // TODO: Move to VulkanCommandBuffer or make a util function
-        VkImageBlit blit{};
-        blit.srcOffsets[0] = {0, 0, 0};
-        blit.srcOffsets[1] = {mip_width, mip_height, 1};
-        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit.srcSubresource.mipLevel = i - 1;
-        blit.srcSubresource.baseArrayLayer = 0;
-        blit.srcSubresource.layerCount = 1;
-        blit.dstOffsets[0] = {0, 0, 0};
-        blit.dstOffsets[1] = {mip_width > 1 ? mip_width / 2 : 1,
-                              mip_height > 1 ? mip_height / 2 : 1, 1};
-        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit.dstSubresource.mipLevel = i;
-        blit.dstSubresource.baseArrayLayer = 0;
-        blit.dstSubresource.layerCount = 1;
+        VkImageBlit2 blit_region{VK_STRUCTURE_TYPE_IMAGE_BLIT_2};
+        blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit_region.srcSubresource.mipLevel = i - 1;
+        blit_region.srcSubresource.baseArrayLayer = 0;
+        blit_region.srcSubresource.layerCount = 1;
+        blit_region.srcOffsets[0] = {0, 0, 0};
+        blit_region.srcOffsets[1] = {mip_width, mip_height, 1};
 
-        vkCmdBlitImage(graphics_command_buffer->vk_handle, image->vk_handle,
-                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image->vk_handle,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
-                       VK_FILTER_LINEAR);
+        blit_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit_region.dstSubresource.mipLevel = i;
+        blit_region.dstSubresource.baseArrayLayer = 0;
+        blit_region.dstSubresource.layerCount = 1;
+        blit_region.dstOffsets[0] = {0, 0, 0};
+        blit_region.dstOffsets[1] = {mip_width > 1 ? mip_width / 2 : 1,
+                                     mip_height > 1 ? mip_height / 2 : 1, 1};
+
+        VkBlitImageInfo2 blit2{VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2};
+        blit2.srcImage = image->vk_handle;
+        blit2.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        blit2.dstImage = image->vk_handle;
+        blit2.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        blit2.regionCount = 1;
+        blit2.pRegions = &blit_region;
+        blit2.filter = VK_FILTER_LINEAR;
+
+        vkCmdBlitImage2(graphics_command_buffer->vk_handle, &blit2);
 
         // Transition src image mip to shader read layout
         image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -2060,11 +2067,7 @@ void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
   UniformBufferObject ubo{};
   ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(1.01f));
   ubo.view = packet->camera->get_view();
-  ubo.proj = glm::perspective(glm::radians(45.0f),
-                              swapchain.vk_extents.width /
-                                  (float)swapchain.vk_extents.height,
-                              0.1f, 100.0f);
-  ubo.proj[1][1] *= -1;
+  ubo.proj = packet->camera->get_projection();
 
   VulkanBuffer *uniform_buffer = access_buffer(packet->scene_data_buffer);
 

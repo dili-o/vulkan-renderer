@@ -13,6 +13,8 @@ struct Application : Service {
   virtual void init(void *config = nullptr) override;
   virtual void shutdown() override;
 
+  f32 get_delta_time() { return delta_time; }
+
   HELIX_DECLARE_SERVICE(Application)
 
   void run();
@@ -21,5 +23,6 @@ struct Application : Service {
   Game *game;
   Clock clock;
   f64 last_time{0.0};
+  f32 delta_time{0.f};
 };
 } // namespace Helix

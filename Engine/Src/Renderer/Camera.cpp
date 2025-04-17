@@ -1,12 +1,9 @@
 #include "Camera.hpp"
+#include "Core/Event.hpp"
 #include "Core/Input.hpp"
-#include "Core/Log.hpp"
 #include "Platform/Platform.hpp"
-#include "glm/ext/scalar_common.hpp"
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_scancode.h>
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
@@ -20,21 +17,61 @@ static u16 s_backward_button = SDL_SCANCODE_S;
 static u16 s_up_button = SDL_SCANCODE_SPACE;
 static u16 s_down_button = SDL_SCANCODE_LCTRL;
 
-void Camera::init() {
-
-  velocity = glm::vec3(0.f);
-  position = glm::vec3(0.f, 0.f, 2.f);
-
-  pitch = 0.f;
-  yaw = 0.f;
-
-  is_active = false;
+// Move these into Camera.cpp
+static bool camera_move_event(u16 code, void *sender, void *listener,
+                              EventContext context) {
+  Camera *cam = (Camera *)listener;
+  cam->on_key_event(code == SDL_EVENT_KEY_DOWN, context.data.u16[0]);
+  return true;
 }
 
-glm::mat4 Camera::get_view() {
-  glm::mat4 camera_translation = glm::translate(glm::mat4(1.f), position);
-  glm::mat4 camera_rotation = get_rotation();
-  return glm::inverse(camera_translation * camera_rotation);
+static bool camera_mouse_event(u16 code, void *sender, void *listener,
+                               EventContext context) {
+  Camera *cam = (Camera *)listener;
+  cam->on_mouse_event(context.data.i16[0], context.data.i16[1]);
+  return true;
+}
+
+static bool camera_mouse_button_event(u16 code, void *sender, void *listener,
+                                      EventContext context) {
+  Camera *cam = (Camera *)listener;
+  cam->on_mouse_button_event(code == SDL_EVENT_MOUSE_BUTTON_DOWN,
+                             context.data.u16[0]);
+  return true;
+}
+
+static bool camera_scroll_event(u16 code, void *sender, void *listener,
+                                EventContext context) {
+  Camera *cam = (Camera *)listener;
+  cam->on_mouse_scroll_event(context.data.i8[0]);
+  return true;
+}
+
+void Camera::init(CameraConfiguration &config) {
+
+  velocity = glm::vec3(0.f);
+  pitch = 0.f;
+  yaw = 0.f;
+  is_active = false;
+
+  position = config.position;
+  near_plane = config.near_plane;
+  far_plane = config.far_plane;
+  fov = config.fov;
+  aspect_ratio = config.aspect_ratio;
+
+  EventService *event_service = EventService::instance();
+
+  event_service->register_event(SDL_EVENT_KEY_DOWN, this, camera_move_event);
+  event_service->register_event(SDL_EVENT_KEY_UP, this, camera_move_event);
+  event_service->register_event(SDL_EVENT_MOUSE_MOTION, this,
+                                camera_mouse_event);
+  event_service->register_event(SDL_EVENT_MOUSE_BUTTON_DOWN, this,
+                                camera_mouse_button_event);
+  event_service->register_event(SDL_EVENT_MOUSE_BUTTON_UP, this,
+                                camera_mouse_button_event);
+  event_service->register_event(SDL_EVENT_MOUSE_WHEEL, this,
+                                camera_scroll_event);
 }
 
 glm::mat4 Camera::get_rotation() {
@@ -44,6 +81,19 @@ glm::mat4 Camera::get_rotation() {
   return glm::toMat4(yaw_rotation) * glm::toMat4(pitch_rotation);
 }
 
+glm::mat4 Camera::get_view() {
+  glm::mat4 camera_translation = glm::translate(glm::mat4(1.f), position);
+  glm::mat4 camera_rotation = get_rotation();
+  return glm::inverse(camera_translation * camera_rotation);
+}
+
+glm::mat4 Camera::get_projection() {
+  glm::mat4 projection =
+      glm::perspective(glm::radians(fov), aspect_ratio, near_plane, far_plane);
+  projection[1][1] *= -1.f;
+  return projection;
+}
+
 void Camera::update(f32 delta_time) {
   glm::mat4 camera_rotation = get_rotation();
   position +=
@@ -51,14 +101,12 @@ void Camera::update(f32 delta_time) {
       delta_time;
 }
 
-bool Camera::on_key_event(u16 event_code, void *sender, void *listener,
-                          EventContext context) {
+void Camera::on_key_event(bool key_down, u16 key_code) {
   if (!is_active)
-    return false;
+    return;
 
-  switch (event_code) {
-  case SDL_EVENT_KEY_DOWN: {
-    u16 key_code = context.data.u16[0];
+  if (key_down) {
+
     if (key_code == s_left_button) {
       velocity.x = -1;
     } else if (key_code == s_right_button) {
@@ -72,9 +120,7 @@ bool Camera::on_key_event(u16 event_code, void *sender, void *listener,
     } else if (key_code == s_down_button) {
       velocity.y = -1;
     }
-  } break;
-  case SDL_EVENT_KEY_UP: {
-    u16 key_code = context.data.u16[0];
+  } else {
     if (key_code == s_left_button) {
       velocity.x = 0;
     } else if (key_code == s_right_button) {
@@ -88,38 +134,29 @@ bool Camera::on_key_event(u16 event_code, void *sender, void *listener,
     } else if (key_code == s_down_button) {
       velocity.y = 0;
     }
-  } break;
   }
-  return false;
 }
 
-bool Camera::on_mouse_event(u16 event_code, void *sender, void *listener,
-                            EventContext context) {
+void Camera::on_mouse_event(i16 x, i16 y) {
   if (!is_active)
-    return false;
+    return;
 
-  if (event_code == SDL_EVENT_MOUSE_MOTION) {
-    i16 x = context.data.u16[0];
-    i16 y = context.data.u16[1];
-    yaw += (f32)x / 300.f;
-    pitch -= (f32)y / 300.f;
-    pitch = glm::clamp(pitch, -89.0f, 89.0f);
-  }
-  return false;
+  yaw += (f32)x / 300.f;
+  pitch -= (f32)y / 300.f;
+  pitch = glm::clamp(pitch, -89.0f, 89.0f);
 }
 
-bool Camera::on_mouse_button_event(u16 event_code, void *sender, void *listener,
-                                   EventContext context) {
+void Camera::on_mouse_button_event(bool key_down, u16 key_code) {
   Platform *platform = Platform::instance();
-  if (event_code == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-    if (context.data.u16[0] == BUTTON_RIGHT) {
+  if (key_down) {
+    if (key_code == BUTTON_RIGHT) {
 
       SDL_SetWindowRelativeMouseMode((SDL_Window *)platform->platform_handle,
                                      true);
       is_active = true;
     }
-  } else if (event_code == SDL_EVENT_MOUSE_BUTTON_UP) {
-    if (context.data.u16[0] == BUTTON_RIGHT) {
+  } else {
+    if (key_code == BUTTON_RIGHT) {
 
       SDL_SetWindowRelativeMouseMode((SDL_Window *)platform->platform_handle,
                                      false);
@@ -127,20 +164,16 @@ bool Camera::on_mouse_button_event(u16 event_code, void *sender, void *listener,
       velocity = glm::vec3(0.f);
     }
   }
-  return false;
 }
 
-bool Camera::on_mouse_scroll_event(u16 event_code, void *sender, void *listener,
-                                   EventContext context) {
-  if (event_code == SDL_EVENT_MOUSE_WHEEL) {
-    if (InputService::instance()->is_key_down(SDL_SCANCODE_LSHIFT)) {
+void Camera::on_mouse_scroll_event(i8 direction) {
+  if (InputService::instance()->is_key_down(SDL_SCANCODE_LSHIFT)) {
+    move_speed = direction > 0 ? (move_speed + 0.5f) : (move_speed - 0.5f);
 
-      move_speed =
-          context.data.i8[0] > 0 ? (move_speed + 0.5f) : (move_speed - 0.5f);
-
-      move_speed = glm::clamp(move_speed, 0.5f, 10.f);
-    }
+    move_speed = glm::clamp(move_speed, 0.5f, 10.f);
+  } else {
+    fov += (direction * -1.f);
+    fov = glm::clamp(fov, 1.f, 45.f);
   }
-  return false;
 }
 } // namespace Helix

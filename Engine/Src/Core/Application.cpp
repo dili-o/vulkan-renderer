@@ -40,6 +40,8 @@ void Application::init(void *config) {
   game = (Game *)config;
   game->init();
   game->resize(platform->width, platform->height);
+
+  s_application_service = this;
 }
 
 void Application::run() {
@@ -58,7 +60,7 @@ void Application::run() {
 
     if (!platform->is_suspended) {
       f64 current_time = clock.get_elapsed_time_s();
-      f64 delta_time = current_time - last_time;
+      delta_time = current_time - last_time;
       f64 frame_start_time = platform->get_absolute_time();
 
       InputService::instance()->update(delta_time);

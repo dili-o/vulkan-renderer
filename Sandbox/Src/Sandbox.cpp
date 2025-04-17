@@ -1,56 +1,20 @@
 #include "Sandbox.hpp"
-#include "Core/Event.hpp"
-#include "Core/Input.hpp"
-#include "Renderer/ImguiFrontend.hpp"
-#include "Renderer/RendererFrontEnd.hpp"
-#include "SDL3/SDL_events.h"
+#include "Core/Engine.hpp"
 
 namespace Helix {
 
-static bool camera_move_event(u16 code, void *sender, void *listener,
-                              EventContext context) {
-  Camera *cam = (Camera *)listener;
-  return cam->on_key_event(code, sender, listener, context);
-}
-
-static bool camera_mouse_event(u16 code, void *sender, void *listener,
-                               EventContext context) {
-  Camera *cam = (Camera *)listener;
-  return cam->on_mouse_event(code, sender, listener, context);
-}
-
-static bool camera_mouse_button_event(u16 code, void *sender, void *listener,
-                                      EventContext context) {
-  Camera *cam = (Camera *)listener;
-  return cam->on_mouse_button_event(code, sender, listener, context);
-}
-
-static bool camera_scroll_event(u16 code, void *sender, void *listener,
-                                EventContext context) {
-  Camera *cam = (Camera *)listener;
-  return cam->on_mouse_scroll_event(code, sender, listener, context);
-}
 void Sandbox::init() {
 
-  camera.init();
-  EventService *event_service = EventService::instance();
-
-  event_service->register_event(SDL_EVENT_KEY_DOWN, &camera, camera_move_event);
-  event_service->register_event(SDL_EVENT_KEY_UP, &camera, camera_move_event);
-  event_service->register_event(SDL_EVENT_MOUSE_MOTION, &camera,
-                                camera_mouse_event);
-  event_service->register_event(SDL_EVENT_MOUSE_BUTTON_DOWN, &camera,
-                                camera_mouse_button_event);
-  event_service->register_event(SDL_EVENT_MOUSE_BUTTON_UP, &camera,
-                                camera_mouse_button_event);
-  event_service->register_event(SDL_EVENT_MOUSE_WHEEL, &camera,
-                                camera_scroll_event);
+  CameraConfiguration config{};
+  config.position = {0.f, 0.f, 2.f};
+  camera.init(config);
 
   RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/HaloArmour/",
                                            ASSETS_PATH
                                            "/Models/HaloArmour/halo_armor.obj");
-  // RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/Sponza/",
-  //           ASSETS_PATH "/Models/Sponza/sponza.obj");
+  // RendererFrontEnd::instance()->load_model(
+  //     ASSETS_PATH "/Models/Sponza/", ASSETS_PATH
+  //     "/Models/Sponza/sponza.obj");
 
   HINFO("Game Initialised");
 }
@@ -63,13 +27,23 @@ void Sandbox::update(f32 dt) {
 }
 
 void Sandbox::render_frame(f32 dt) {
-  ImGui::Begin("Hello Window");
-  ImGui::Text("This is some useful text.");
-  ImGui::End();
+  bool show_demo = true;
+  ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
+                           ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+  ImGui::SetNextWindowBgAlpha(0.25f);
+  ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(256, 96), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Frame time", &show_demo, flags)) {
+    ImGui::Text("Frame time: %.3f ms",
+                Application::instance()->get_delta_time() * 1000.f);
+    ImGui::Text("Camera Position: %.2f, %.2f, %.2f", camera.position.x,
+                camera.position.y, camera.position.z);
+    ImGui::Text("Camera Pitch: %.3f", camera.pitch);
+    ImGui::Text("Camera Yaw: %.3f", camera.yaw);
+    ImGui::End();
+  }
 
-  ImGui::Begin("Hello Window2");
-  ImGui::Text("This is some useful text.");
-  ImGui::End();
+  // ImGui::ShowDemoWindow(&show_demo);
 }
 void Sandbox::resize(u32 width, u32 height) {}
 

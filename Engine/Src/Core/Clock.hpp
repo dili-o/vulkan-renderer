@@ -1,3 +1,4 @@
+#pragma once
 #include "Core/Defines.hpp"
 
 namespace Helix {
