@@ -1,5 +1,7 @@
 #include "Sandbox.hpp"
 #include "Core/Engine.hpp"
+#include "glm/trigonometric.hpp"
+#include <cmath>
 
 namespace Helix {
 
@@ -20,11 +22,7 @@ void Sandbox::init() {
 }
 void Sandbox::shutdown() { HINFO("Game Shutdown"); }
 
-void Sandbox::update(f32 dt) {
-  if (InputService::instance()->is_key_down(SDL_SCANCODE_C)) {
-    HDEBUG("c held");
-  }
-}
+void Sandbox::update(f32 dt) {}
 
 void Sandbox::render_frame(f32 dt) {
   bool show_demo = true;
@@ -38,8 +36,8 @@ void Sandbox::render_frame(f32 dt) {
                 Application::instance()->get_delta_time() * 1000.f);
     ImGui::Text("Camera Position: %.2f, %.2f, %.2f", camera.position.x,
                 camera.position.y, camera.position.z);
-    ImGui::Text("Camera Pitch: %.3f", camera.pitch);
-    ImGui::Text("Camera Yaw: %.3f", camera.yaw);
+    ImGui::Text("Camera Pitch: %.3f", fmod(glm::degrees(camera.pitch), 360.f));
+    ImGui::Text("Camera Yaw: %.3f", fmod(glm::degrees(camera.yaw), 360.f));
     ImGui::End();
   }
 

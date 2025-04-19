@@ -7,6 +7,7 @@
 #include "Core/Log.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 #include <SDL3/SDL.h>
+#include <windows.h>
 
 namespace Helix {
 
@@ -99,9 +100,21 @@ f64 Platform::get_absolute_time() {
   return (f64)SDL_GetPerformanceCounter() / (f64)SDL_GetPerformanceFrequency();
 }
 
+u64 Platform::get_current_processor_id() {
+  return (u64)GetCurrentProcessorNumber();
+}
+
+u64 Platform::get_current_thread_id() { return (u64)GetCurrentThreadId(); }
+
 void Platform::sleep(u64 ms) { SDL_Delay(ms); }
 
 void Platform::set_title(cstring title) { SDL_SetWindowTitle(window, title); }
+
+i32 Platform::get_logical_processor_count() {
+  SYSTEM_INFO sysinfo;
+  GetSystemInfo(&sysinfo);
+  return sysinfo.dwNumberOfProcessors;
+}
 
 void Platform::shutdown() {
   SDL_DestroyWindow(window);

@@ -3,6 +3,7 @@
 #include "Renderer/RendererTypes.hpp"
 
 namespace Helix {
+
 void Engine::init(Game *game) {
   // Initialize services
   log_service.init();
