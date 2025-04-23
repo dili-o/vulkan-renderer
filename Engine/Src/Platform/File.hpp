@@ -4,6 +4,7 @@
 #include "Core/Service.hpp"
 namespace Helix {
 struct Allocator;
+struct HMutex;
 
 static const u32 k_max_path = 512;
 
@@ -12,8 +13,9 @@ struct Directory {
 }; // struct Directory
 
 struct FileReadResult {
-  char *data;
-  size_t size;
+  char *data{nullptr};
+  size_t size{0};
+  void *internal_handle{nullptr};
 };
 
 struct FileService : public Service {
@@ -28,7 +30,17 @@ struct FileService : public Service {
   bool file_exists(cstring path);
 
   void delete_file(cstring path);
-  FileReadResult read_file_binary(cstring filename, Allocator *allocator);
+  // TODO: Add enum for different open types like read or write
+  bool open_file_binary(cstring filename, FileReadResult *read_result);
+  bool open_file_text(cstring filename, FileReadResult *read_result);
+
+  bool read_file_binary(cstring filename, FileReadResult *read_result);
+
+  bool open_read_file_binary(cstring filename, FileReadResult *read_result,
+                             Allocator *allocator);
+
+  void close_file(FileReadResult *read_result);
+
   FileReadResult read_file_text(cstring filename, Allocator *allocator);
 
   void write_file_binary(cstring filename, void *memory, size_t size);

@@ -5,5 +5,5 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
 #include <stb_image.h>
-

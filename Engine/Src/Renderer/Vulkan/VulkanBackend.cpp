@@ -80,7 +80,7 @@ bool VulkanBackend::init(void *_config) {
   samplers.init(allocator, 10);
 
   bindless_textures_to_update.init(allocator, 10);
-  string_buffer.init(allocator, hkilo(2));
+  string_buffer.init(allocator, hkilo(15));
 
 #pragma region Instance_Creation
   VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -386,11 +386,12 @@ bool VulkanBackend::init(void *_config) {
   queue_create_infos.shutdown();
 
   command_buffer_manager.init(this, queue_family_indices.graphics_family_index,
-                              1, config->max_frames_in_flight,
+                              Platform::get_logical_processor_count(),
+                              config->max_frames_in_flight,
                               "Graphics_CommandPool");
   transfer_command_buffer_manager.init(
-      this, queue_family_indices.transfer_family_index, 1, 1,
-      "Transfer_CommandPool");
+      this, queue_family_indices.transfer_family_index,
+      Platform::get_logical_processor_count(), 1, "Transfer_CommandPool");
 
   // Create swapchain
   create_swapchain();
@@ -1077,12 +1078,15 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
     cstring binary_name =
         temp_string_buffer.append_use_f("%s.spv", shader.filename);
-    FileReadResult shader_binary =
-        file_service->read_file_binary(binary_name, stack_allocator);
+    FileReadResult shader_binary{};
+    file_service->open_read_file_binary(binary_name, &shader_binary,
+                                        stack_allocator);
+
     if (shader_binary.data == nullptr) {
-      FileReadResult glsl_code = file_service->read_file_text(
+      FileReadResult glsl_code{};
+      file_service->open_read_file_binary(
           temp_string_buffer.append_use_f("%s.glsl", shader.filename),
-          stack_allocator);
+          &glsl_code, stack_allocator);
       if (glsl_code.data)
         HTRACE("\n{}", glsl_code.data);
       HERROR("\n{}", process_get_output());
@@ -1303,9 +1307,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
       temp_string_buffer.append_use_f("%s\\%s.cache", "Caches", creation.name);
   bool cache_exists = file_service->file_exists(cache_path);
   if (cache_exists) {
-    FileReadResult read_result =
-        file_service->read_file_binary(cache_path, allocator);
-
+    FileReadResult read_result{};
+    file_service->open_read_file_binary(cache_path, &read_result, allocator);
     VkPipelineCacheHeaderVersionOne *cache_header =
         (VkPipelineCacheHeaderVersionOne *)read_result.data;
 
@@ -1451,7 +1454,8 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
     VulkanCommandBuffer *transfer_command_buffer =
-        transfer_command_buffer_manager.get_command_buffer(0, 0, true);
+        transfer_command_buffer_manager.get_command_buffer(
+            0, Platform::get_current_processor_id(), true);
     transfer_command_buffer->copy_buffer_to_image(
         handle, staging_buffer.vk_handle, buffer_size, vk_transfer_queue);
 
@@ -1488,8 +1492,17 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
       vkQueueSubmit2(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
     }
 
+    u64 wait_value = frame_number < max_frames_in_flight ? 0 : frame_number;
+    VkSemaphoreWaitInfo wait_info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+    wait_info.semaphoreCount = 1;
+    wait_info.pSemaphores = &vk_timeline_graphics_semaphore;
+    wait_info.pValues = &wait_value;
+    vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
+
     VulkanCommandBuffer *graphics_command_buffer =
-        command_buffer_manager.get_command_buffer(0, 0, true);
+        command_buffer_manager.get_command_buffer(
+            frame_number % max_frames_in_flight,
+            Platform::get_current_processor_id(), true);
 
     // Generate mipmaps
     if (creation.mip_level_count > 1) {
@@ -2063,7 +2076,7 @@ void VulkanBackend::render_frame(RenderPacket *packet) {
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
 
   UniformBufferObject ubo{};
-  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(1.01f));
+  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
   ubo.view = packet->camera->get_view();
   ubo.proj = packet->camera->get_projection();
 

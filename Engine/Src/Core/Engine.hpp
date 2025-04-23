@@ -3,6 +3,7 @@
 #include "Core/Application.hpp"
 #include "Core/Event.hpp"
 #include "Core/Input.hpp"
+#include "Core/Job.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Platform/File.hpp"
@@ -20,6 +21,7 @@ struct Engine {
   InputService input_service;
   MemoryService memory_service;
   Platform platform_service;
+  JobService job_service;
   Application application_service;
   EventService event_service;
   RendererFrontEnd renderer_frontend_service;

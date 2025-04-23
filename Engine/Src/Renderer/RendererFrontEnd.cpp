@@ -1,19 +1,22 @@
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Clock.hpp"
+#include "Core/Job.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Game.hpp"
 #include "Platform/File.hpp"
+#include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/ImguiFrontend.hpp"
 #include "RendererBackend.hpp"
 #include "RendererTypes.hpp"
 
+#include <cstring>
+#include <glm/gtx/hash.hpp>
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
-#include <glm/gtx/hash.hpp>
 
 namespace std {
 template <> struct hash<Helix::Vertex> {
@@ -26,6 +29,91 @@ template <> struct hash<Helix::Vertex> {
 
 } // namespace std
 namespace Helix {
+
+struct TextureLoadRequest {
+  char *file_name;
+  FileReadResult read_result;
+  u32 pbr_material_index;
+  RendererFrontEnd *renderer_frontend;
+};
+
+struct TextureLoadSuccess {
+  TextureCreation tex_creation{};
+  void *file_data{nullptr};
+  void *texture_data{nullptr};
+  u32 pbr_material_index;
+  RendererFrontEnd *renderer_frontend;
+};
+
+bool load_texture_data(void *entry_data, void *result_data) {
+  TextureLoadRequest *request = (TextureLoadRequest *)entry_data;
+  TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
+  res->renderer_frontend = request->renderer_frontend;
+
+  if (!FileService::instance()->open_read_file_binary(
+          request->file_name, &request->read_result,
+          &MemoryService::instance()->system_allocator)) {
+    HERROR("Failed to open file: {}", request->file_name);
+    return false;
+  }
+
+  i32 width;
+  i32 height;
+  i32 channel_count;
+  u8 *texture_data = stbi_load_from_memory(
+      (const stbi_uc *)request->read_result.data, request->read_result.size,
+      &width, &height, &channel_count, 4);
+
+  MemoryService::instance()->system_allocator.deallocate(
+      request->read_result.data);
+  MemoryService::instance()->system_allocator.deallocate(request->file_name);
+  if (!texture_data) {
+    HERROR("Unable to load texture data: {}", request->file_name);
+    return false;
+  }
+
+  res->tex_creation.initial_data = texture_data;
+  res->tex_creation.width = width;
+  res->tex_creation.height = height;
+  res->pbr_material_index = request->pbr_material_index;
+
+  return true;
+}
+
+bool load_texture_success(void *result_data) {
+  TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
+
+  res->tex_creation.depth = 1;
+  res->tex_creation.array_layer_count = 1;
+  res->tex_creation.array_base_level = 0;
+  res->tex_creation.mip_base_level = 0;
+  res->tex_creation.usage =
+      TextureUsage::Enum(TextureUsage::TransferDest | TextureUsage::Sampled |
+                         TextureUsage::TransferSrc);
+  res->tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
+  res->tex_creation.type = TextureType::Texture2D;
+
+  u32 w = res->tex_creation.width;
+  u32 h = res->tex_creation.height;
+  u32 mip_levels = 1;
+
+  while (w > 1 && h > 1) {
+    w /= 2;
+    h /= 2;
+
+    ++mip_levels;
+  }
+  res->tex_creation.mip_level_count = mip_levels;
+
+  TextureHandle handle =
+      res->renderer_frontend->create_texture(res->tex_creation);
+  res->renderer_frontend->model_textures.push(handle);
+  res->renderer_frontend->pbr_materials[res->pbr_material_index]
+      .albedo_texture_handle = handle;
+
+  free(res->tex_creation.initial_data);
+  return true;
+}
 
 static RendererFrontEnd *s_renderer_frontend{nullptr};
 RendererFrontEnd *RendererFrontEnd::instance() { return s_renderer_frontend; }
@@ -119,8 +207,8 @@ void RendererFrontEnd::init(void *_config) {
     update_shader_uniform_set(set, pipeline);
   }
 
-  // White
-  u8 def_colour[4] = {255, 255, 255, 255};
+  // Magenta
+  u8 def_colour[4] = {255, 0, 255, 255};
   TextureCreation tex_creation{};
   tex_creation.name = "default_texture";
   tex_creation.initial_data = def_colour;
@@ -254,53 +342,39 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
   for (u32 i = 0; i < materials.size(); ++i) {
     tinyobj::material_t &material = materials[i];
     int width, height, channels;
-    stbi_uc *texture_data = stbi_load(material.diffuse_texname.c_str(), &width,
-                                      &height, &channels, STBI_rgb_alpha);
     PBRMaterial &pbr_material = pbr_materials.push_use();
-    if (texture_data) {
-      TextureCreation tex_creation{};
-      tex_creation.name = material.name.c_str();
-      tex_creation.initial_data = texture_data;
-      tex_creation.width = width;
-      tex_creation.height = height;
-      tex_creation.depth = 1;
-      tex_creation.array_layer_count = 1;
-      tex_creation.array_base_level = 0;
-      tex_creation.mip_base_level = 0;
-      tex_creation.usage =
-          TextureUsage::Enum(TextureUsage::TransferDest |
-                             TextureUsage::Sampled | TextureUsage::TransferSrc);
-      tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
-      tex_creation.type = TextureType::Texture2D;
+    // TODO: Make a function for getting a file's full path
+    // +2 for the backslash and null terminator
+    if (!material.diffuse_texname.empty()) {
 
-      u32 w = width;
-      u32 h = height;
-      u32 mip_levels = 1;
+      pbr_material.albedo_texture_handle = default_texture;
+      u32 file_full_path_size =
+          strlen(path) + material.diffuse_texname.length() + 1;
+      char *file_full_path = (char *)halloca(file_full_path_size, allocator);
+      memset(file_full_path, 0, file_full_path_size);
+      strncat(file_full_path, path, strlen(path));
+      strncat(file_full_path, material.diffuse_texname.c_str(),
+              material.diffuse_texname.length());
 
-      while (w > 1 && h > 1) {
-        w /= 2;
-        h /= 2;
+      TextureLoadRequest load_request{};
+      load_request.file_name = file_full_path;
+      load_request.pbr_material_index = pbr_materials.size - 1;
+      load_request.renderer_frontend = this;
 
-        ++mip_levels;
-      }
-      tex_creation.mip_level_count = mip_levels;
+      JobInfo info = create_job_info(
+          load_texture_data, load_texture_success, nullptr, &load_request,
+          sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
+          JobType::ResourceLoad, JobPriority::Medium);
+      TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
+      res_data->tex_creation.name = material.diffuse_texname.c_str();
+      JobService::instance()->submit(info);
 
-      TextureHandle handle = create_texture(tex_creation);
-      model_textures.push(handle);
-      pbr_material.albedo_texture_handle = handle;
-
-      free(texture_data);
     } else {
-      if (!material.diffuse_texname.empty())
-        HERROR("Unable to load, {}", material.diffuse_texname.c_str());
       pbr_material.albedo_texture_handle = default_texture;
     }
   }
 
   file_service->change_directory(dir.path);
-  // Default material
-  PBRMaterial &pbr_material = pbr_materials.push_use();
-  pbr_material.albedo_texture_handle = default_texture;
 
   BufferCreation creation{};
   for (u32 i = 0; i < shapes.size(); ++i) {

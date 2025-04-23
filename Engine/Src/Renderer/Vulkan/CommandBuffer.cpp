@@ -44,6 +44,10 @@ void VulkanCommandBuffer::begin(VkCommandBufferUsageFlags flags) {
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   begin_info.flags = flags;
 
+  if (state == CommandBufferState::Recording) {
+    HWARN("Command buffer is already in CommandBufferState::Recording");
+    return;
+  }
   VK_CHECK(vkBeginCommandBuffer(vk_handle, &begin_info));
   state = CommandBufferState::Recording;
 }

@@ -1,6 +1,7 @@
 #include "Application.hpp"
 #include "Core/Event.hpp"
 #include "Core/Input.hpp"
+#include "Core/Job.hpp"
 #include "Core/Log.hpp"
 #include "Core/String.hpp"
 #include "Game.hpp"
@@ -64,6 +65,8 @@ void Application::run() {
       f64 frame_start_time = platform->get_absolute_time();
 
       InputService::instance()->update(delta_time);
+
+      JobService::instance()->update();
 
       game->update(delta_time);
 

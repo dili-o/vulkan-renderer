@@ -24,8 +24,8 @@ struct Platform : public Service {
 
   void set_title(cstring title);
 
-  i32 get_logical_processor_count();
-  u64 get_current_processor_id();
+  static i32 get_logical_processor_count();
+  static u64 get_current_processor_id();
   u64 get_current_thread_id();
 
   void *platform_handle = nullptr;

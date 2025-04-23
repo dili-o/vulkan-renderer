@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Defines.hpp"
+#include "Platform/HMutex.hpp"
 #include "Service.hpp"
 #include <string.h>
 
@@ -46,6 +47,8 @@ struct Allocator {
                          i32 line) = 0;
 
   virtual void deallocate(void *pointer) = 0;
+
+  HMutex allocation_mutex{};
 }; // struct Allocator
 
 //

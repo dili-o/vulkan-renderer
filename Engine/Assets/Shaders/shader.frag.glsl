@@ -23,7 +23,7 @@ uint hash(uint a)
    return a;
 }
 
-#define RANDOM 1
+#define RANDOM 0
 
 void main() {
 #if RANDOM

@@ -1,8 +1,10 @@
+#include "Core/Assert.hpp"
 #include "File.hpp"
 
 #if HELIX_PLATFORM_WINDOWS
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Platform/HMutex.hpp"
 #include <windows.h>
 namespace Helix {
 
@@ -55,27 +57,60 @@ void FileService::delete_file(cstring path) {
   if (result)
     HERROR("Failed to delete file: {}", path);
 }
-FileReadResult FileService::read_file_binary(cstring filename,
-                                             Allocator *allocator) {
-  FileReadResult result{nullptr, 0};
 
+bool FileService::open_file_binary(cstring filename,
+                                   FileReadResult *read_result) {
   FILE *file = fopen(filename, "rb");
-
-  if (file) {
-
-    size_t filesize = file_get_size(file);
-
-    result.data = (char *)halloca(filesize, allocator);
-    fread(result.data, filesize, 1, file);
-
-    result.size = filesize;
-
-    fclose(file);
-  } else {
-    HERROR("Unable to read file: {}", filename);
+  if (!file) {
+    HERROR("Failed to open file: {}", filename);
+    return false;
   }
 
-  return result;
+  read_result->internal_handle = file;
+  read_result->size = file_get_size(file);
+
+  return true;
+}
+
+bool FileService::open_read_file_binary(cstring filename,
+                                        FileReadResult *read_result,
+                                        Allocator *allocator) {
+  if (!open_file_binary(filename, read_result)) {
+    return false;
+  }
+
+  read_result->data = (char *)halloca(read_result->size, allocator);
+  fread(read_result->data, read_result->size, 1,
+        (FILE *)read_result->internal_handle);
+
+  fclose((FILE *)read_result->internal_handle);
+
+  return true;
+}
+
+void FileService::close_file(FileReadResult *read_result) {
+  if (read_result->internal_handle) {
+    fclose((FILE *)read_result->internal_handle);
+    read_result->internal_handle = nullptr;
+  }
+}
+
+bool FileService::read_file_binary(cstring filename,
+                                   FileReadResult *read_result) {
+  if (read_result->internal_handle) {
+    if (read_result->size > 0) {
+      fread(read_result->data, read_result->size, 1,
+            (FILE *)read_result->internal_handle);
+      fclose((FILE *)read_result->internal_handle);
+    } else {
+      HWARN("File: {} has a file size of 0 bytes", filename);
+    }
+  } else {
+    HERROR("Unable to read file: {}", filename);
+    return false;
+  }
+
+  return true;
 }
 
 FileReadResult FileService::read_file_text(cstring filename,

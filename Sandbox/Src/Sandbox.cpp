@@ -11,12 +11,11 @@ void Sandbox::init() {
   config.position = {0.f, 0.f, 2.f};
   camera.init(config);
 
-  RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/HaloArmour/",
-                                           ASSETS_PATH
-                                           "/Models/HaloArmour/halo_armor.obj");
-  // RendererFrontEnd::instance()->load_model(
-  //     ASSETS_PATH "/Models/Sponza/", ASSETS_PATH
-  //     "/Models/Sponza/sponza.obj");
+  // RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/HaloArmour/",
+  //                                          ASSETS_PATH
+  //                                          "/Models/HaloArmour/halo_armor.obj");
+  RendererFrontEnd::instance()->load_model(
+      ASSETS_PATH "/Models/Sponza/", ASSETS_PATH "/Models/Sponza/sponza.obj");
 
   HINFO("Game Initialised");
 }

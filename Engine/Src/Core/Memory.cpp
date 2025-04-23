@@ -12,7 +12,7 @@
 
 #define HEAP_ALLOCATOR_STATS
 
-//#define DEBUG_ALLOCATIONS
+// #define DEBUG_ALLOCATIONS
 
 namespace Helix {
 #pragma region Memory_Methods ////////////////////////////////////////
@@ -58,6 +58,8 @@ void HeapAllocator::init(size_t size) {
   max_size = size;
   allocated_size = 0;
 
+  allocation_mutex.create();
+
   tlsf_handle = tlsf_create_with_pool(memory, size);
 
   char str[20];
@@ -87,9 +89,12 @@ void HeapAllocator::shutdown() {
   tlsf_destroy(tlsf_handle);
 
   free(memory);
+
+  allocation_mutex.destroy();
 }
 
 void *HeapAllocator::allocate(size_t size, size_t alignment) {
+  HASSERT(allocation_mutex.lock());
   if ((size + allocated_size) > max_size) {
     HCRITICAL("Allocator has ran out of memory!");
   }
@@ -100,9 +105,11 @@ void *HeapAllocator::allocate(size_t size, size_t alignment) {
   size_t actual_size = tlsf_block_size(allocated_memory);
   allocated_size += actual_size;
 
+  HASSERT(allocation_mutex.unlock());
   return allocated_memory;
 #else
   return tlsf_malloc(tlsf_handle, size);
+  HASSERT(allocation_mutex.unlock());
 #endif // HEAP_ALLOCATOR_STATS
 }
 
@@ -117,13 +124,16 @@ void *HeapAllocator::allocate(size_t size, size_t alignment, cstring file,
 }
 
 void HeapAllocator::deallocate(void *pointer) {
+  HASSERT(allocation_mutex.lock());
 #if defined(HEAP_ALLOCATOR_STATS)
   size_t actual_size = tlsf_block_size(pointer);
   allocated_size -= actual_size;
 
   tlsf_free(tlsf_handle, pointer);
+  HASSERT(allocation_mutex.unlock());
 #else
   tlsf_free(tlsf_handle, pointer);
+  HASSERT(allocation_mutex.unlock());
 #endif
 }
 #pragma endregion HeapAllocator //////////////////////////////////////
@@ -136,14 +146,17 @@ void StackAllocator::init(size_t size) {
 
   char str[20];
   HINFO("StackAllocator of size {} created", get_memory_usage_str(size, str));
+  allocation_mutex.create();
 }
 
 void StackAllocator::shutdown() {
   free(memory);
+  allocation_mutex.destroy();
   HINFO("StackAllocator Shutdown");
 }
 
 void *StackAllocator::allocate(size_t size, size_t alignment) {
+  HASSERT(allocation_mutex.lock());
   HASSERT_MSG(size > 0, "Attempting to allocate 0 bytes!");
 
   const size_t new_start = memory_align(allocated_size, alignment);
@@ -153,7 +166,9 @@ void *StackAllocator::allocate(size_t size, size_t alignment) {
               "New allocation exceeds the total size");
 
   allocated_size = new_allocated_size;
-  return memory + new_start;
+  void *new_memory = memory + new_start;
+  HASSERT(allocation_mutex.unlock());
+  return new_memory;
 }
 
 void *StackAllocator::allocate(size_t size, size_t alignment, cstring file,

@@ -2,7 +2,6 @@
 
 #include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
-#include <cstring>
 
 namespace Helix {
 

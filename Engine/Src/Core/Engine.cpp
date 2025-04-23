@@ -12,13 +12,39 @@ void Engine::init(Game *game) {
 
   input_service.init();
 
-  MemoryServiceConfiguration mem_config{hmega(15), hmega(15)};
+  MemoryServiceConfiguration mem_config{hmega(300), hmega(15)};
   memory_service.init(&mem_config);
 
   event_service.init();
 
   PlatformConfiguration platform_config{1280, 720, "Sandbox"};
   platform_service.init((void *)&platform_config);
+
+  JobServiceConfiguration job_config{};
+  job_config.allocator = &memory_service.system_allocator;
+  job_config.thread_count = Platform::get_logical_processor_count();
+  JobType::Enum job_thread_types[15];
+  for (u32 i = 0; i < job_config.thread_count; ++i) {
+    job_thread_types[i] = JobType::General;
+  }
+
+  if (job_config.thread_count == 1) {
+    job_thread_types[0] = (JobType::Enum)(
+        job_thread_types[0] | JobType::ResourceLoad | JobType::GpuResource);
+  } else if (job_config.thread_count == 2) {
+
+    job_thread_types[0] =
+        (JobType::Enum)(job_thread_types[0] | JobType::GpuResource);
+    job_thread_types[1] =
+        (JobType::Enum)(job_thread_types[1] | JobType::ResourceLoad);
+  } else {
+
+    job_thread_types[0] = JobType::GpuResource;
+    job_thread_types[1] = JobType::ResourceLoad;
+  }
+
+  job_config.type_masks = job_thread_types;
+  job_service.init(&job_config);
 
   RendererConfig renderer_config{};
   renderer_config.backend_type = RENDERER_BACKEND_TYPE_VULKAN;
@@ -42,6 +68,7 @@ void Engine::shutdown() {
   application_service.shutdown();
   imgui_frontend_service.shutdown();
   renderer_frontend_service.shutdown();
+  job_service.shutdown();
   platform_service.shutdown();
   event_service.shutdown();
   memory_service.shutdown();
