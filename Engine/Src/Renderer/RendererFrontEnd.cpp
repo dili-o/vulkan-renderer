@@ -50,6 +50,8 @@ bool load_texture_data(void *entry_data, void *result_data) {
   TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
   res->renderer_frontend = request->renderer_frontend;
 
+  Platform::instance()->sleep(3000);
+
   if (!FileService::instance()->open_read_file_binary(
           request->file_name, &request->read_result,
           &MemoryService::instance()->system_allocator)) {
@@ -207,13 +209,34 @@ void RendererFrontEnd::init(void *_config) {
     update_shader_uniform_set(set, pipeline);
   }
 
+  TextureCreation tex_creation{};
   // Magenta
   u8 def_colour[4] = {255, 0, 255, 255};
-  TextureCreation tex_creation{};
+
+  FileReadResult read_result{};
+  if (FileService::instance()->open_read_file_binary(
+          ASSETS_PATH "/Textures/default.jpg", &read_result, allocator)) {
+    i32 tex_width, tex_height, tex_channels;
+    u8 *texture_data = stbi_load_from_memory((const stbi_uc *)read_result.data,
+                                             read_result.size, &tex_width,
+                                             &tex_height, &tex_channels, 4);
+    allocator->deallocate(read_result.data);
+    if (!texture_data) {
+      tex_creation.initial_data = def_colour;
+      tex_creation.width = 1;
+      tex_creation.height = 1;
+    } else {
+      tex_creation.initial_data = texture_data;
+      tex_creation.width = tex_width;
+      tex_creation.height = tex_height;
+    }
+  } else {
+    tex_creation.initial_data = def_colour;
+    tex_creation.width = 1;
+    tex_creation.height = 1;
+  }
+
   tex_creation.name = "default_texture";
-  tex_creation.initial_data = def_colour;
-  tex_creation.width = 1;
-  tex_creation.height = 1;
   tex_creation.depth = 1;
   tex_creation.array_layer_count = 1;
   tex_creation.array_base_level = 0;
@@ -373,6 +396,9 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
       pbr_material.albedo_texture_handle = default_texture;
     }
   }
+  // Default material
+  PBRMaterial &pbr_material = pbr_materials.push_use();
+  pbr_material.albedo_texture_handle = default_texture;
 
   file_service->change_directory(dir.path);
 

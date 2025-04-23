@@ -1511,7 +1511,7 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
       vkGetPhysicalDeviceFormatProperties(vk_physical_device,
                                           to_vk_format(creation.format),
                                           &format_properties);
-      // TODO: Print out the vulkan format
+
       HASSERT_MSG((format_properties.optimalTilingFeatures &
                    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT),
                   "Image format does not support linear filtering");
@@ -1928,7 +1928,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
 
   VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info, &d_set->vk_handle));
 
-  // TODO: Assuming a max number of bindings for a descriptor set
+  // Assuming a max number of bindings for a descriptor set
   VkWriteDescriptorSet descriptor_writes[10];
   VkDescriptorBufferInfo buffer_infos[10];
   VkDescriptorImageInfo image_infos[10];

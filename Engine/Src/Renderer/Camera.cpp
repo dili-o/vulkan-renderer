@@ -47,6 +47,13 @@ static bool camera_scroll_event(u16 code, void *sender, void *listener,
   return true;
 }
 
+static bool camera_resize_event(u16 code, void *sender, void *listener,
+                                EventContext context) {
+  Camera *cam = (Camera *)listener;
+  cam->on_window_resize(context.data.i32[0], context.data.i32[1]);
+  return true;
+}
+
 void Camera::init(CameraConfiguration &config) {
 
   velocity = glm::vec3(0.f);
@@ -72,6 +79,8 @@ void Camera::init(CameraConfiguration &config) {
                                 camera_mouse_button_event);
   event_service->register_event(SDL_EVENT_MOUSE_WHEEL, this,
                                 camera_scroll_event);
+  event_service->register_event(SDL_EVENT_WINDOW_RESIZED, this,
+                                camera_resize_event);
 }
 
 glm::mat4 Camera::get_rotation() {
@@ -175,5 +184,9 @@ void Camera::on_mouse_scroll_event(i8 direction) {
     fov += (direction * -1.f);
     fov = glm::clamp(fov, 1.f, 45.f);
   }
+}
+
+void Camera::on_window_resize(i32 width, i32 height) {
+  aspect_ratio = (f32)width / height;
 }
 } // namespace Helix

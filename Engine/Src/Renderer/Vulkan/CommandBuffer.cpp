@@ -219,12 +219,15 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
 
   end();
 
-  VkSubmitInfo submit_info{};
-  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &vk_handle;
+  VkCommandBufferSubmitInfo command_submit_info{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  command_submit_info.commandBuffer = vk_handle;
 
-  vkQueueSubmit(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &command_submit_info;
+
+  vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
   vkQueueWaitIdle(vk_queue);
 }
 

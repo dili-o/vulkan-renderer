@@ -1,10 +1,8 @@
-#include "Core/Assert.hpp"
 #include "File.hpp"
 
 #if HELIX_PLATFORM_WINDOWS
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
-#include "Platform/HMutex.hpp"
 #include <windows.h>
 namespace Helix {
 

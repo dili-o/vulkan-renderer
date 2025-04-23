@@ -66,6 +66,12 @@ void Platform::handle_os_messages() {
     } break;
     case SDL_EVENT_WINDOW_RESIZED: {
       SDL_GetWindowSize(window, &width, &height);
+      EventContext context{};
+      context.data.i32[0] = width;
+      context.data.i32[1] = height;
+      EventService::instance()->fire_event(SDL_EVENT_WINDOW_RESIZED, 0,
+                                           context);
+
       RendererFrontEnd::instance()->on_resize(width, height);
     } break;
     case SDL_EVENT_KEY_UP:

@@ -40,5 +40,6 @@ struct Camera {
   void on_mouse_event(i16 x, i16 y);
   void on_mouse_button_event(bool key_down, u16 key_code);
   void on_mouse_scroll_event(i8 direction);
+  void on_window_resize(i32 width, i32 height);
 };
 } // namespace Helix
