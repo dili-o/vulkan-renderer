@@ -29,6 +29,7 @@ add_library(${PROJECT_NAME} STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tlsf/tlsf.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tiny_obj_loader.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/stb_image.h" 
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/public/TracyClient.cpp" 
 )
 
 if(WIN32)
@@ -81,6 +82,11 @@ add_subdirectory(Vendor/VMA)
 target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
 # Dear Imgui
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui")
+#Tracy
+option(TRACY_ENABLE "" ON)
+option ( TRACY_ON_DEMAND "" ON )
+add_subdirectory(Vendor/tracy)
+target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
 # Include the vendor folder
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/")
 

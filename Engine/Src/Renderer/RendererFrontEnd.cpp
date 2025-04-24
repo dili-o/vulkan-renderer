@@ -6,7 +6,6 @@
 #include "Core/Memory.hpp"
 #include "Game.hpp"
 #include "Platform/File.hpp"
-#include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/ImguiFrontend.hpp"
@@ -17,6 +16,7 @@
 #include <glm/gtx/hash.hpp>
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
+#include <tracy/Tracy.hpp>
 
 namespace std {
 template <> struct hash<Helix::Vertex> {
@@ -46,11 +46,10 @@ struct TextureLoadSuccess {
 };
 
 bool load_texture_data(void *entry_data, void *result_data) {
+  ZoneScopedC(0xFF00FF);
   TextureLoadRequest *request = (TextureLoadRequest *)entry_data;
   TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
   res->renderer_frontend = request->renderer_frontend;
-
-  Platform::instance()->sleep(3000);
 
   if (!FileService::instance()->open_read_file_binary(
           request->file_name, &request->read_result,
@@ -282,6 +281,7 @@ void RendererFrontEnd::on_resize(u16 width, u16 height) {
 }
 
 bool RendererFrontEnd::render_frame(RenderPacket *packet) {
+  ZoneScopedC(tracy::Color::Orange);
   packet->meshes = meshes.data;
   packet->mesh_count = meshes.size;
 
@@ -364,7 +364,6 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
 
   for (u32 i = 0; i < materials.size(); ++i) {
     tinyobj::material_t &material = materials[i];
-    int width, height, channels;
     PBRMaterial &pbr_material = pbr_materials.push_use();
     // TODO: Make a function for getting a file's full path
     // +2 for the backslash and null terminator
@@ -387,7 +386,7 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
       JobInfo info = create_job_info(
           load_texture_data, load_texture_success, nullptr, &load_request,
           sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
-          JobType::ResourceLoad, JobPriority::Medium);
+          JobType::General, JobPriority::Medium);
       TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
       res_data->tex_creation.name = material.diffuse_texname.c_str();
       JobService::instance()->submit(info);
@@ -403,6 +402,9 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
   file_service->change_directory(dir.path);
 
   BufferCreation creation{};
+  // Used for mesh sorting
+  u32 opaque_index = 0;
+  u32 transparent_index = mesh.draws.size - 1;
   for (u32 i = 0; i < shapes.size(); ++i) {
     const auto &shape = shapes[i];
     for (const auto &index : shape.mesh.indices) {
@@ -435,14 +437,28 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
         string_buffer.append_use_f("Index_buffer_%d", index_buffers.size);
 
     index_buffers.push(create_buffer(creation));
-    mesh.draws[i].primitive_count = shape.mesh.indices.size();
+    u32 material_index = pbr_materials.size - 1; // Default material
+    u32 mesh_index;
+
+    // Check if shape has a material
+    if ((shape.mesh.material_ids[0] != -1)) {
+      material_index = shape.mesh.material_ids[0];
+      // Transparent material
+      if (materials[material_index].dissolve > 0.f) {
+        mesh_index = transparent_index--;
+      } else {
+        mesh_index = opaque_index++;
+      }
+    } else {
+      mesh_index = opaque_index++;
+    }
+
+    mesh.draws[mesh_index].primitive_count = shape.mesh.indices.size();
     BufferResource *index_buffer =
         buffers.obtain(index_buffers[index_buffers.size - 1]);
-    mesh.draws[i].internal_index_buffer = index_buffer->internal_handle;
-    mesh.draws[i].material_index = (shape.mesh.material_ids[0] == -1)
-                                       ? pbr_materials.size - 1
-                                       : shape.mesh.material_ids[0];
-
+    mesh.draws[mesh_index].internal_index_buffer =
+        index_buffer->internal_handle;
+    mesh.draws[mesh_index].material_index = material_index;
     indices.clear();
   }
 
@@ -527,6 +543,8 @@ PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
 }
 
 TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
+  ZoneScoped;
+  ZoneText(creation.name, strlen(creation.name));
   TextureHandle handle = textures.obtain_new();
   if (handle.index == k_invalid_index) {
     HERROR("Failed to obtain new TextureResource");

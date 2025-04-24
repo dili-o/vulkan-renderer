@@ -20,6 +20,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
+#include <tracy/Tracy.hpp>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
@@ -1391,6 +1392,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 }
 
 TextureHandle VulkanBackend::create_texture(TextureCreation &creation) {
+  ZoneScoped;
+  ZoneText(creation.name, strlen(creation.name));
   creation.alias_image = create_image(creation);
   creation.name = string_buffer.append_use_f("%s_View", creation.name);
   return create_image_view(creation);
@@ -2066,6 +2069,7 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 
 void VulkanBackend::render_frame(RenderPacket *packet) {
 
+  ZoneScoped;
   VulkanCommandBuffer *command_buffer =
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,
                                                 false);

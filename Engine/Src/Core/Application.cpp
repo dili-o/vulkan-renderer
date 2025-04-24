@@ -7,7 +7,7 @@
 #include "Game.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
-#include "SDL3/SDL_mouse.h"
+#include <tracy/Tracy.hpp>
 
 namespace Helix {
 
@@ -56,6 +56,7 @@ void Application::run() {
   StringBuffer string;
   string.init(allocator, 128);
 
+  Platform::instance()->sleep(7000);
   while (!platform->requested_exit) {
     platform->handle_os_messages();
 
@@ -102,6 +103,7 @@ void Application::run() {
       string.clear();
       last_time = current_time;
     }
+    FrameMark;
   }
   string.shutdown();
 }
