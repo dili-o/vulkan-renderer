@@ -26,6 +26,46 @@ void win32_get_error(char *buffer, u32 size) {
   LocalFree(error_string);
 }
 
+bool launch_tracy_profiler() {
+  // Construct command line
+  char command[512];
+  snprintf(command, sizeof(command), "%s -a %s", TRACY_PROFILER_DIR,
+           TRACY_CLIENT_ADDRESS);
+
+  // Create process info and startup info
+  STARTUPINFOA startup_info = {};
+  startup_info.cb = sizeof(startup_info);
+  startup_info.dwFlags = STARTF_USESHOWWINDOW;
+  startup_info.wShowWindow = SW_SHOW;
+
+  PROCESS_INFORMATION process_info = {};
+
+  // Launch Tracy as detached process without redirecting I/O
+  if (!CreateProcessA(NULL,               // No module name (use command line)
+                      command,            // Command line
+                      NULL,               // Process security attributes
+                      NULL,               // Thread security attributes
+                      FALSE,              // Don't inherit handles
+                      CREATE_NEW_CONSOLE, // Creation flags
+                      NULL,               // Use parent's environment
+                      ".",                // Use current directory
+                      &startup_info,      // Startup info
+                      &process_info       // Process info
+                      )) {
+    HERROR("Failed to launch Tracy Profiler: {}", GetLastError());
+    return false;
+  }
+
+  // Close handles but keep the process running
+  CloseHandle(process_info.hThread);
+  CloseHandle(process_info.hProcess);
+
+  // Give Tracy a moment to initialize
+  Sleep(500);
+
+  return true;
+}
+
 bool process_execute(cstring working_directory, cstring process_fullpath,
                      cstring arguments, cstring search_error_string) {
   // From the post in

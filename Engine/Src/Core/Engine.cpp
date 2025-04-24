@@ -1,8 +1,12 @@
 #include "Engine.hpp"
 #include "Platform/Platform.hpp"
+#include "Platform/Process.hpp"
 #include "Renderer/RendererTypes.hpp"
+#include <tracy/Tracy.hpp>
 
 namespace Helix {
+
+#define LAUNCH_TRACY_PROFILER
 
 void Engine::init(Game *game) {
   // Initialize services
@@ -59,6 +63,14 @@ void Engine::init(Game *game) {
   imgui_frontend_service.init(&imgui_config);
 
   application_service.init(game);
+
+#ifdef LAUNCH_TRACY_PROFILER
+  FrameMark;
+  // Begin Tracy Profiler
+  if (!launch_tracy_profiler()) {
+    HERROR("Unable to start Tracy Profiler");
+  }
+#endif // LAUNCH_TRACY_PROFILER
 
   application_service.run();
 }

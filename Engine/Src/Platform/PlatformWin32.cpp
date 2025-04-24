@@ -7,6 +7,7 @@
 #include "Core/Log.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 #include <SDL3/SDL.h>
+#include <tracy/Tracy.hpp>
 #include <windows.h>
 
 namespace Helix {
@@ -52,6 +53,7 @@ void Platform::init(void *configuration_) {
 }
 
 void Platform::handle_os_messages() {
+  ZoneScoped;
   SDL_Event e;
   SDL_zero(e);
 

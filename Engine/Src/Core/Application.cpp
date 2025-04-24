@@ -56,7 +56,6 @@ void Application::run() {
   StringBuffer string;
   string.init(allocator, 128);
 
-  Platform::instance()->sleep(7000);
   while (!platform->requested_exit) {
     platform->handle_os_messages();
 

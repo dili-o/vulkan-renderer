@@ -85,7 +85,20 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 #Tracy
 option(TRACY_ENABLE "" ON)
 option ( TRACY_ON_DEMAND "" ON )
+
+set(TRACY_CLIENT_ADDRESS "127.0.0.1" CACHE STRING "Tracy client address")
+set(TRACY_PROFILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/profiler/build/Release/tracy-profiler.exe" CACHE STRING "Tracy profiler executable path")
+
+
 add_subdirectory(Vendor/tracy)
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+    TRACY_ENABLE
+    TRACY_ON_DEMAND
+    "TRACY_CLIENT_ADDRESS=\"${TRACY_CLIENT_ADDRESS}\""
+    "TRACY_PROFILER_DIR=\"${TRACY_PROFILER_DIR}\""
+)
+
 target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
 # Include the vendor folder
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/")
