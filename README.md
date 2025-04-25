@@ -12,3 +12,4 @@ A renderer for viewing 3d models
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 - [stb_image](https://github.com/nothings/stb/blob/master/stb_image.h)
 - [dear imgui](https://github.com/ocornut/imgui)
+- [Tracy](https://github.com/wolfpld/tracy)
