@@ -3,7 +3,6 @@
 #include "Core/Input.hpp"
 #include "Core/Job.hpp"
 #include "Core/Log.hpp"
-#include "Core/String.hpp"
 #include "Game.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
@@ -52,10 +51,6 @@ void Application::run() {
   u8 frame_count = 0;
   f64 target_frame_seconds = 1.0 / 60.0;
 
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StringBuffer string;
-  string.init(allocator, 128);
-
   while (!platform->requested_exit) {
     platform->handle_os_messages();
 
@@ -78,37 +73,32 @@ void Application::run() {
       packet.game = game;
       RendererFrontEnd::instance()->render_frame(&packet);
 
-      f64 frame_end_time = platform->get_absolute_time();
-      f64 frame_elapsed_time = frame_end_time - frame_start_time;
-      running_time += frame_elapsed_time;
-      f64 remaining_seconds = target_frame_seconds - frame_elapsed_time;
+      {
+        ZoneScopedN("Calculate remaining time and update frame count");
+        f64 frame_end_time = platform->get_absolute_time();
+        f64 frame_elapsed_time = frame_end_time - frame_start_time;
+        running_time += frame_elapsed_time;
+        f64 remaining_seconds = target_frame_seconds - frame_elapsed_time;
 
-      if (remaining_seconds > 0) {
-        u64 remaining_ms = (remaining_seconds * 1000);
+        if (remaining_seconds > 0) {
+          u64 remaining_ms = (remaining_seconds * 1000);
 
-        // If there is time left, give it back to the OS.
-        bool limit_frames = true;
-        if (remaining_ms > 0 && limit_frames) {
-          platform->sleep(remaining_ms - 1);
+          // If there is time left, give it back to the OS.
+          bool limit_frames = true;
+          if (remaining_ms > 0 && limit_frames) {
+            platform->sleep(remaining_ms - 1);
+          }
+
+          frame_count++;
         }
-
-        frame_count++;
+        last_time = current_time;
       }
-      cstring update_title =
-          string.append_use_f("%s - frame time: %.3f ms",
-                              Platform::instance()->name, delta_time * 1000.0);
-      Platform::instance()->set_title(update_title);
-
-      string.clear();
-      last_time = current_time;
     }
     FrameMark;
   }
-  string.shutdown();
 }
 
 void Application::shutdown() {
-
   EventService *event_service = EventService::instance();
   event_service->unregister_event(SDL_EVENT_QUIT, 0, application_on_event);
   event_service->unregister_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);

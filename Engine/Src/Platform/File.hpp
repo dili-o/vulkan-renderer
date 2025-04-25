@@ -27,6 +27,8 @@ struct FileService : public Service {
   void current_directory(Directory *directory);
   void change_directory(cstring path);
 
+  static cstring get_file_from_path(cstring path);
+
   bool file_exists(cstring path);
 
   void delete_file(cstring path);

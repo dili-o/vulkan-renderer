@@ -5,6 +5,8 @@
 namespace Helix {
 struct Allocator;
 
+char *string_concat(cstring a, cstring b, Allocator *allocator);
+
 struct StringBuffer {
 
   // Includes a null terminator

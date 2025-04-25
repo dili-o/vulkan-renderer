@@ -45,6 +45,24 @@ void FileService::change_directory(cstring path) {
   }
 }
 
+cstring FileService::get_file_from_path(cstring path) {
+  cstring last_forward_separator = strrchr(path, '/');
+  cstring last_backward_separator = strrchr(path, '\\');
+
+  if (last_backward_separator != nullptr && last_forward_separator != nullptr) {
+    HWARN("Path contains both forward and backward slashes");
+    return (last_backward_separator > last_forward_separator)
+               ? last_backward_separator + 1
+               : last_forward_separator + 1;
+  } else if (last_forward_separator != nullptr) {
+    return last_forward_separator + 1;
+  } else if (last_backward_separator != nullptr) {
+    return last_backward_separator + 1;
+  }
+
+  return path;
+}
+
 bool FileService::file_exists(cstring path) {
   WIN32_FILE_ATTRIBUTE_DATA unused;
   return GetFileAttributesExA(path, GetFileExInfoStandard, &unused);

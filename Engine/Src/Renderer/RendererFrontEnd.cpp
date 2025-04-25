@@ -31,7 +31,7 @@ template <> struct hash<Helix::Vertex> {
 namespace Helix {
 
 struct TextureLoadRequest {
-  char *file_name;
+  char *file_path;
   FileReadResult read_result;
   u32 pbr_material_index;
   RendererFrontEnd *renderer_frontend;
@@ -52,9 +52,9 @@ bool load_texture_data(void *entry_data, void *result_data) {
   res->renderer_frontend = request->renderer_frontend;
 
   if (!FileService::instance()->open_read_file_binary(
-          request->file_name, &request->read_result,
+          request->file_path, &request->read_result,
           &MemoryService::instance()->system_allocator)) {
-    HERROR("Failed to open file: {}", request->file_name);
+    HERROR("Failed to open file: {}", request->file_path);
     return false;
   }
 
@@ -67,9 +67,9 @@ bool load_texture_data(void *entry_data, void *result_data) {
 
   MemoryService::instance()->system_allocator.deallocate(
       request->read_result.data);
-  MemoryService::instance()->system_allocator.deallocate(request->file_name);
+  MemoryService::instance()->system_allocator.deallocate(request->file_path);
   if (!texture_data) {
-    HERROR("Unable to load texture data: {}", request->file_name);
+    HERROR("Unable to load texture data: {}", request->file_path);
     return false;
   }
 
@@ -305,6 +305,7 @@ bool RendererFrontEnd::render_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
+  ZoneScoped;
   packet->current_frame = current_frame;
   BufferResource *uniform_buffer =
       buffers.obtain(uniform_buffers[current_frame]);
@@ -313,6 +314,7 @@ bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::end_frame(RenderPacket *packet) {
+  ZoneScoped;
   current_frame = (current_frame + 1) % max_frames_in_flight;
   return backend->end_frame(packet);
 }
@@ -366,20 +368,13 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
     tinyobj::material_t &material = materials[i];
     PBRMaterial &pbr_material = pbr_materials.push_use();
     // TODO: Make a function for getting a file's full path
-    // +2 for the backslash and null terminator
     if (!material.diffuse_texname.empty()) {
 
       pbr_material.albedo_texture_handle = default_texture;
-      u32 file_full_path_size =
-          strlen(path) + material.diffuse_texname.length() + 1;
-      char *file_full_path = (char *)halloca(file_full_path_size, allocator);
-      memset(file_full_path, 0, file_full_path_size);
-      strncat(file_full_path, path, strlen(path));
-      strncat(file_full_path, material.diffuse_texname.c_str(),
-              material.diffuse_texname.length());
-
+      char *file_full_path =
+          string_concat(path, material.diffuse_texname.c_str(), allocator);
       TextureLoadRequest load_request{};
-      load_request.file_name = file_full_path;
+      load_request.file_path = file_full_path;
       load_request.pbr_material_index = pbr_materials.size - 1;
       load_request.renderer_frontend = this;
 
@@ -387,8 +382,10 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
           load_texture_data, load_texture_success, nullptr, &load_request,
           sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
           JobType::General, JobPriority::Medium);
+
       TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
-      res_data->tex_creation.name = material.diffuse_texname.c_str();
+      res_data->tex_creation.name = string_buffer.append_use(
+          FileService::get_file_from_path(file_full_path));
       JobService::instance()->submit(info);
 
     } else {

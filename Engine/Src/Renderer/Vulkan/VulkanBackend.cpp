@@ -492,6 +492,7 @@ void VulkanBackend::resize_swapchain() {
 }
 
 bool VulkanBackend::begin_frame(RenderPacket *packet) {
+  ZoneScoped;
   u64 wait_value = frame_number < max_frames_in_flight ? 0 : frame_number;
   VkSemaphoreWaitInfo wait_info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
   wait_info.semaphoreCount = 1;
@@ -524,7 +525,7 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
 }
 
 bool VulkanBackend::end_frame(RenderPacket *packet) {
-
+  ZoneScoped;
   VulkanCommandBuffer *command_buffer =
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,
                                                 false);
@@ -2068,7 +2069,6 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 }
 
 void VulkanBackend::render_frame(RenderPacket *packet) {
-
   ZoneScoped;
   VulkanCommandBuffer *command_buffer =
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,

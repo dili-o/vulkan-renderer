@@ -6,7 +6,7 @@
 
 namespace Helix {
 
-#define LAUNCH_TRACY_PROFILER
+// #define LAUNCH_TRACY_PROFILER
 
 void Engine::init(Game *game) {
   // Initialize services

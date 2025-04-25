@@ -2,6 +2,7 @@
 #include "Core/Engine.hpp"
 #include "glm/trigonometric.hpp"
 #include <cmath>
+#include <tracy/Tracy.hpp>
 
 namespace Helix {
 
@@ -21,9 +22,10 @@ void Sandbox::init() {
 }
 void Sandbox::shutdown() { HINFO("Game Shutdown"); }
 
-void Sandbox::update(f32 dt) {}
+void Sandbox::update(f32 dt) { ZoneScopedN("Game::update"); }
 
 void Sandbox::render_frame(f32 dt) {
+  ZoneScoped;
   bool show_demo = true;
   ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
                            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;

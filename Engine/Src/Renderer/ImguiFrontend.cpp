@@ -3,6 +3,7 @@
 #include "Renderer/Vulkan/VulkanImguiBackend.hpp"
 #include <SDL3/SDL_events.h>
 #include <imgui/backends/imgui_impl_sdl3.h>
+#include <tracy/Tracy.hpp>
 
 namespace Helix {
 ImguiBackend *ImguiCreateBackend(RendererBackendType type) {
@@ -53,6 +54,16 @@ void ImguiFrontend::shutdown() {
 
   s_imgui_service = nullptr;
   HELIX_SERVICE_SHUTDOWN_MSG(ImguiFrontend);
+}
+
+void ImguiFrontend::begin_frame() {
+  ZoneScoped;
+  backend->begin_frame();
+}
+
+void ImguiFrontend::render_frame(RenderPacket *packet) {
+  ZoneScoped;
+  backend->render_frame(packet);
 }
 
 } // namespace Helix

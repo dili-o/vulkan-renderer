@@ -6,6 +6,17 @@
 #include <stdarg.h>
 
 namespace Helix {
+
+char *string_concat(cstring a, cstring b, Allocator *allocator) {
+  u32 size = strlen(a) + strlen(b) + 1;
+  char *result = (char *)halloca(size, allocator);
+
+  strcpy(result, a);
+  strcat(result, b);
+
+  return result;
+}
+
 void StringBuffer::init(Allocator *allocator_, size_t size) {
   if (data) {
     allocator->deallocate(data);
@@ -125,7 +136,8 @@ char *StringBuffer::append_use_substring(cstring string, u32 start_index,
                                          u32 end_index) {
   u32 size = end_index - start_index;
   if (current_size + size >= buffer_size) {
-    HERROR("StringBuffer full! Please allocate more size. Current size: {}, String "
+    HERROR("StringBuffer full! Please allocate more size. Current size: {}, "
+           "String "
            "Size: {}",
            current_size, size);
     return nullptr;

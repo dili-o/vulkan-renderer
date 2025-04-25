@@ -3,7 +3,7 @@
 #include "Renderer/RendererTypes.hpp"
 
 #include <../../Vendor/imgui/imgui.h>
-//#include <imgui.h>
+// #include <imgui.h>
 
 namespace Helix {
 
@@ -32,9 +32,9 @@ struct ImguiFrontend : public Service {
 
   void handle_events(void *event);
 
-  void begin_frame() { backend->begin_frame(); }
+  void begin_frame();
 
-  void render_frame(RenderPacket *packet) { backend->render_frame(packet); }
+  void render_frame(RenderPacket *packet);
 
   HELIX_DECLARE_SERVICE(ImguiFrontend);
 

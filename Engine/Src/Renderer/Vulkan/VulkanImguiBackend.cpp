@@ -11,6 +11,8 @@
 #include <imgui/backends/imgui_impl_sdl3.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
+#include <tracy/Tracy.hpp>
+
 namespace Helix {
 static uint32_t s_vb_size = 665536, s_ib_size = 665536;
 
@@ -108,11 +110,13 @@ void VulkanImguiBackend::shutdown() {
 }
 
 void VulkanImguiBackend::begin_frame() {
+  ZoneScoped;
   ImGui_ImplSDL3_NewFrame();
   ImGui::NewFrame();
 }
 
 void VulkanImguiBackend::render_frame(RenderPacket *packet) {
+  ZoneScoped;
   ImGui::Render();
   ImDrawData *draw_data = ImGui::GetDrawData();
 
