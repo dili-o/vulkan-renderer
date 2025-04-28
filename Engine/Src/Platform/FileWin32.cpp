@@ -1,8 +1,12 @@
 #include "File.hpp"
+#include <cstring>
 
 #if HELIX_PLATFORM_WINDOWS
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include <shlwapi.h>
+#include <shobjidl.h>
+#pragma comment(lib, "Shlwapi.lib")
 #include <windows.h>
 namespace Helix {
 
@@ -72,6 +76,69 @@ void FileService::delete_file(cstring path) {
   int result = remove(path);
   if (result)
     HERROR("Failed to delete file: {}", path);
+}
+
+bool FileService::open_file_dialog(char **file_name, char **path,
+                                   Allocator *allocator) {
+  HRESULT hr =
+      CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+  if (SUCCEEDED(hr)) {
+    IFileOpenDialog *pFileOpen;
+
+    // Create the FileOpenDialog object.
+    hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL,
+                          IID_IFileOpenDialog,
+                          reinterpret_cast<void **>(&pFileOpen));
+    if (SUCCEEDED(hr)) {
+      // Show the Open dialog box.
+      hr = pFileOpen->Show(NULL);
+
+      // Get the file name from the dialog box.
+      if (SUCCEEDED(hr)) {
+        IShellItem *pItem;
+        hr = pFileOpen->GetResult(&pItem);
+        if (SUCCEEDED(hr)) {
+          PWSTR pszFilePath;
+          hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+
+          // Display the file name to the user.
+          if (SUCCEEDED(hr)) {
+            PWSTR pszDirPath = _wcsdup(pszFilePath);
+            PathRemoveFileSpecW(pszDirPath);
+
+            PWSTR pszFileName = PathFindFileNameW(pszFilePath);
+
+            char dir_buffer[512] = {0};
+            char file_buffer[512] = {0};
+            WideCharToMultiByte(CP_UTF8, 0, pszDirPath, -1, dir_buffer, 512,
+                                NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, pszFileName, -1, file_buffer, 512,
+                                NULL, NULL);
+
+            *file_name = (char *)halloca(strlen(file_buffer) + 1, allocator);
+            strcpy(*file_name, file_buffer);
+
+            size_t dir_len = strlen(dir_buffer);
+            *path = (char *)halloca(dir_len + 2, allocator);
+            strcpy(*path, dir_buffer);
+            (*path)[dir_len] = '\\';
+            (*path)[dir_len + 1] = '\0';
+
+            CoTaskMemFree(pszFilePath);
+            free(pszDirPath);
+          }
+          pItem->Release();
+        }
+      }
+      pFileOpen->Release();
+      CoUninitialize();
+    }
+  } else {
+    HERROR("Failed to open file");
+    return false;
+  }
+
+  return true;
 }
 
 bool FileService::open_file_binary(cstring filename,

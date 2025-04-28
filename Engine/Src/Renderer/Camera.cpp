@@ -181,8 +181,9 @@ void Camera::on_mouse_scroll_event(i8 direction) {
 
     move_speed = glm::clamp(move_speed, 0.5f, 10.f);
   } else {
-    fov += (direction * -1.f);
-    fov = glm::clamp(fov, 1.f, 45.f);
+    f32 scroll_factor = 2.f;
+    fov += (direction * -scroll_factor);
+    fov = glm::clamp(fov, scroll_factor, 45.f);
   }
 }
 

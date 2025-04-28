@@ -33,6 +33,7 @@ void main() {
   outColor = vec4(color, 1.0f) ;
 #else
   vec4 diffuse = texture(global_samplers[nonuniformEXT(albedo_index)], tex_coords); 
+
   outColor = diffuse * 1.5f;
 #endif // RANDOM
 }

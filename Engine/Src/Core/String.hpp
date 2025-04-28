@@ -6,6 +6,7 @@ namespace Helix {
 struct Allocator;
 
 char *string_concat(cstring a, cstring b, Allocator *allocator);
+void string_replace(char *str, char find, char replace);
 
 struct StringBuffer {
 

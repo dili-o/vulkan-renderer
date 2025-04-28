@@ -51,7 +51,7 @@ bool load_texture_data(void *entry_data, void *result_data) {
   TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
   res->renderer_frontend = request->renderer_frontend;
 
-  if (!FileService::instance()->open_read_file_binary(
+  if (!FileService::open_read_file_binary(
           request->file_path, &request->read_result,
           &MemoryService::instance()->system_allocator)) {
     HERROR("Failed to open file: {}", request->file_path);
@@ -213,8 +213,8 @@ void RendererFrontEnd::init(void *_config) {
   u8 def_colour[4] = {255, 0, 255, 255};
 
   FileReadResult read_result{};
-  if (FileService::instance()->open_read_file_binary(
-          ASSETS_PATH "/Textures/default.jpg", &read_result, allocator)) {
+  if (FileService::open_read_file_binary(ASSETS_PATH "/Textures/default.jpg",
+                                         &read_result, allocator)) {
     i32 tex_width, tex_height, tex_channels;
     u8 *texture_data = stbi_load_from_memory((const stbi_uc *)read_result.data,
                                              read_result.size, &tex_width,
@@ -320,6 +320,10 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::load_model(cstring path, cstring model) {
+  Directory dir{};
+  FileService::current_directory(&dir);
+  FileService::change_directory(path);
+
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
@@ -358,12 +362,6 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
   Array<u32> indices{};
   indices.init(stack_allocator, vertices.capacity / 2);
 
-  FileService *file_service = FileService::instance();
-  Directory dir{};
-  file_service->current_directory(&dir);
-
-  file_service->change_directory(path);
-
   for (u32 i = 0; i < materials.size(); ++i) {
     tinyobj::material_t &material = materials[i];
     PBRMaterial &pbr_material = pbr_materials.push_use();
@@ -396,7 +394,7 @@ bool RendererFrontEnd::load_model(cstring path, cstring model) {
   PBRMaterial &pbr_material = pbr_materials.push_use();
   pbr_material.albedo_texture_handle = default_texture;
 
-  file_service->change_directory(dir.path);
+  FileService::change_directory(dir.path);
 
   BufferCreation creation{};
   // Used for mesh sorting

@@ -86,6 +86,7 @@ void Application::run() {
           // If there is time left, give it back to the OS.
           bool limit_frames = true;
           if (remaining_ms > 0 && limit_frames) {
+            ZoneScopedN("Application sleep");
             platform->sleep(remaining_ms - 1);
           }
 

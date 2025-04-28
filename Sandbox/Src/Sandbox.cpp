@@ -1,5 +1,6 @@
 #include "Sandbox.hpp"
 #include "Core/Engine.hpp"
+#include "Platform/File.hpp"
 #include "glm/trigonometric.hpp"
 #include <cmath>
 #include <tracy/Tracy.hpp>
@@ -15,8 +16,8 @@ void Sandbox::init() {
   // RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/HaloArmour/",
   //                                          ASSETS_PATH
   //                                          "/Models/HaloArmour/halo_armor.obj");
-  RendererFrontEnd::instance()->load_model(
-      ASSETS_PATH "/Models/Sponza/", ASSETS_PATH "/Models/Sponza/sponza.obj");
+  // RendererFrontEnd::instance()->load_model(
+  //    ASSETS_PATH "/Models/Sponza/", ASSETS_PATH "/Models/Sponza/sponza.obj");
 
   HINFO("Game Initialised");
 }
@@ -40,6 +41,29 @@ void Sandbox::render_frame(f32 dt) {
     ImGui::Text("Camera Pitch: %.3f", fmod(glm::degrees(camera.pitch), 360.f));
     ImGui::Text("Camera Yaw: %.3f", fmod(glm::degrees(camera.yaw), 360.f));
     ImGui::End();
+  }
+
+  static bool model_loaded = false;
+  if (!model_loaded) {
+    ImGui::SetNextWindowPos(ImVec2(0, 96), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(94, 40), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Load Model", NULL, flags)) {
+      if (ImGui::Button("Load Model")) {
+        char *file_path = nullptr;
+        char *file_name = nullptr;
+        if (FileService::open_file_dialog(
+                &file_name, &file_path,
+                &MemoryService::instance()->system_allocator)) {
+          string_replace(file_path, '\\', '/');
+          RendererFrontEnd::instance()->load_model(file_path, file_name);
+
+          MemoryService::instance()->system_allocator.deallocate(file_name);
+          MemoryService::instance()->system_allocator.deallocate(file_path);
+          model_loaded = true;
+        }
+      }
+      ImGui::End();
+    }
   }
 
   // ImGui::ShowDemoWindow(&show_demo);

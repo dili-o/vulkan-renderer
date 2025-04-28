@@ -1035,15 +1035,13 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
-  FileService *file_service = FileService::instance();
 
   // Parse shaders
   StringBuffer temp_string_buffer{};
   temp_string_buffer.init(stack_allocator, hkilo(1));
 
   char *vulkan_sdk_path = temp_string_buffer.reserve(512);
-  file_service->expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path,
-                                           512);
+  FileService::expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path, 512);
   cstring glsl_compiler_path =
       temp_string_buffer.append_use_f("%s\\Bin\\glslc.exe", vulkan_sdk_path);
 #ifdef VULKAN_DEBUG_REPORT
@@ -1060,8 +1058,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
           stack_allocator);
 
   Directory dir{};
-  file_service->current_directory(&dir);
-  file_service->change_directory(ASSETS_PATH "/Shaders/");
+  FileService::current_directory(&dir);
+  FileService::change_directory(ASSETS_PATH "/Shaders/");
 
   ParseResult parse_result{};
   parse_result.push_constant.size = 0;
@@ -1081,19 +1079,19 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     cstring binary_name =
         temp_string_buffer.append_use_f("%s.spv", shader.filename);
     FileReadResult shader_binary{};
-    file_service->open_read_file_binary(binary_name, &shader_binary,
-                                        stack_allocator);
+    FileService::open_read_file_binary(binary_name, &shader_binary,
+                                       stack_allocator);
 
     if (shader_binary.data == nullptr) {
       FileReadResult glsl_code{};
-      file_service->open_read_file_binary(
+      FileService::open_read_file_binary(
           temp_string_buffer.append_use_f("%s.glsl", shader.filename),
           &glsl_code, stack_allocator);
       if (glsl_code.data)
         HTRACE("\n{}", glsl_code.data);
       HERROR("\n{}", process_get_output());
     }
-    file_service->delete_file(binary_name);
+    FileService::delete_file(binary_name);
 
     VkShaderModuleCreateInfo shader_create_info{
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -1307,10 +1305,10 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
   cstring cache_path =
       temp_string_buffer.append_use_f("%s\\%s.cache", "Caches", creation.name);
-  bool cache_exists = file_service->file_exists(cache_path);
+  bool cache_exists = FileService::file_exists(cache_path);
   if (cache_exists) {
     FileReadResult read_result{};
-    file_service->open_read_file_binary(cache_path, &read_result, allocator);
+    FileService::open_read_file_binary(cache_path, &read_result, allocator);
     VkPipelineCacheHeaderVersionOne *cache_header =
         (VkPipelineCacheHeaderVersionOne *)read_result.data;
 
@@ -1371,7 +1369,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     VK_CHECK(vkGetPipelineCacheData(vk_device, pipeline_cache, &cache_data_size,
                                     cache_data));
 
-    file_service->write_file_binary(cache_path, cache_data, cache_data_size);
+    FileService::write_file_binary(cache_path, cache_data, cache_data_size);
 
     stack_allocator->deallocate(cache_data);
   }
@@ -1387,7 +1385,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   set_resource_name(VK_OBJECT_TYPE_PIPELINE, (u64)pipeline->vk_handle,
                     creation.name);
 
-  file_service->change_directory(dir.path);
+  FileService::change_directory(dir.path);
   stack_allocator->free_marker(stack_marker);
   return handle;
 }
