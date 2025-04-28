@@ -25,3 +25,6 @@
 [submodule "Engine/Vendor/tracy"]
 	path = Engine/Vendor/tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "Engine/Assets/Models/Sponza"]
+	path = Engine/Assets/Models/Sponza
+	url = https://github.com/jimmiebergmann/Sponza.git
