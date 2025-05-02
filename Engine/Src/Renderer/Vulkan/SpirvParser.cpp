@@ -112,13 +112,15 @@ void parse_binary(const u32 *data, size_t data_size,
 
   std::vector<SpvReflectBlockVariable *> push_constants(push_count);
   if (push_count) {
+    // TODO: Right now you can only have the same push constant in all stages
     result = spvReflectEnumeratePushConstantBlocks(&module, &push_count,
                                                    push_constants.data());
     HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
     parse_result.push_constant.size = push_constants[0]->size;
     parse_result.push_constant.offset = push_constants[0]->offset;
-    parse_result.push_constant.stageFlags = module.shader_stage;
+    parse_result.push_constant.stageFlags =
+        VK_SHADER_STAGE_ALL; // TODO: Make stage specific
   }
 
   // VERTEX ONLY (Vertex bindings and attributes)

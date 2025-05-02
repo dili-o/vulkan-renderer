@@ -3,8 +3,8 @@
 #include "Containers/ResourcePool.hpp"
 #include "Core/Service.hpp"
 #include "Core/String.hpp"
-#include "GPUResources.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
+#include "Renderer/GPUResources.hpp"
 #include "RendererTypes.hpp"
 
 namespace Helix {
@@ -26,9 +26,6 @@ struct RendererFrontEnd : public Service {
   bool begin_frame(RenderPacket *packet);
 
   bool end_frame(RenderPacket *packet);
-
-  bool load_model(cstring path, cstring model);
-  bool destroy_model();
 
   BufferHandle create_buffer(BufferCreation &creation);
   PipelineHandle create_pipeline(PipelineCreation &creation);
@@ -59,8 +56,6 @@ struct RendererFrontEnd : public Service {
   PipelineHandle pipeline{};
 
   TextureHandle default_texture;
-  TextureHandle default_texture2;
-
-  Array<Mesh> meshes;
 };
+
 } // namespace Helix

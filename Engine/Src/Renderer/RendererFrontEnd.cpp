@@ -1,7 +1,6 @@
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Clock.hpp"
-#include "Core/Job.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Game.hpp"
@@ -18,103 +17,7 @@
 #include <tiny_obj_loader.h>
 #include <tracy/Tracy.hpp>
 
-namespace std {
-template <> struct hash<Helix::Vertex> {
-  size_t operator()(Helix::Vertex const &vertex) const {
-    size_t h1 = hash<glm::vec3>()(vertex.pos);
-    size_t h2 = hash<glm::vec2>()(vertex.tex_coord);
-    return h1 ^ (h2 << 1); // Combine hashes safely
-  }
-};
-
-} // namespace std
 namespace Helix {
-
-struct TextureLoadRequest {
-  char *file_path;
-  FileReadResult read_result;
-  u32 pbr_material_index;
-  RendererFrontEnd *renderer_frontend;
-};
-
-struct TextureLoadSuccess {
-  TextureCreation tex_creation{};
-  void *file_data{nullptr};
-  void *texture_data{nullptr};
-  u32 pbr_material_index;
-  RendererFrontEnd *renderer_frontend;
-};
-
-bool load_texture_data(void *entry_data, void *result_data) {
-  ZoneScopedC(0xFF00FF);
-  TextureLoadRequest *request = (TextureLoadRequest *)entry_data;
-  TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
-  res->renderer_frontend = request->renderer_frontend;
-
-  if (!FileService::open_read_file_binary(
-          request->file_path, &request->read_result,
-          &MemoryService::instance()->system_allocator)) {
-    HERROR("Failed to open file: {}", request->file_path);
-    return false;
-  }
-
-  i32 width;
-  i32 height;
-  i32 channel_count;
-  u8 *texture_data = stbi_load_from_memory(
-      (const stbi_uc *)request->read_result.data, request->read_result.size,
-      &width, &height, &channel_count, 4);
-
-  MemoryService::instance()->system_allocator.deallocate(
-      request->read_result.data);
-  MemoryService::instance()->system_allocator.deallocate(request->file_path);
-  if (!texture_data) {
-    HERROR("Unable to load texture data: {}", request->file_path);
-    return false;
-  }
-
-  res->tex_creation.initial_data = texture_data;
-  res->tex_creation.width = width;
-  res->tex_creation.height = height;
-  res->pbr_material_index = request->pbr_material_index;
-
-  return true;
-}
-
-bool load_texture_success(void *result_data) {
-  TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
-
-  res->tex_creation.depth = 1;
-  res->tex_creation.array_layer_count = 1;
-  res->tex_creation.array_base_level = 0;
-  res->tex_creation.mip_base_level = 0;
-  res->tex_creation.usage =
-      TextureUsage::Enum(TextureUsage::TransferDest | TextureUsage::Sampled |
-                         TextureUsage::TransferSrc);
-  res->tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
-  res->tex_creation.type = TextureType::Texture2D;
-
-  u32 w = res->tex_creation.width;
-  u32 h = res->tex_creation.height;
-  u32 mip_levels = 1;
-
-  while (w > 1 && h > 1) {
-    w /= 2;
-    h /= 2;
-
-    ++mip_levels;
-  }
-  res->tex_creation.mip_level_count = mip_levels;
-
-  TextureHandle handle =
-      res->renderer_frontend->create_texture(res->tex_creation);
-  res->renderer_frontend->model_textures.push(handle);
-  res->renderer_frontend->pbr_materials[res->pbr_material_index]
-      .albedo_texture_handle = handle;
-
-  free(res->tex_creation.initial_data);
-  return true;
-}
 
 static RendererFrontEnd *s_renderer_frontend{nullptr};
 RendererFrontEnd *RendererFrontEnd::instance() { return s_renderer_frontend; }
@@ -153,7 +56,7 @@ void RendererFrontEnd::init(void *_config) {
   pipelines.init(allocator, 10);
   textures.init(allocator, 10);
   model_textures.init(allocator, 10);
-  string_buffer.init(allocator, hkilo(10));
+  string_buffer.init(allocator, hmega(6));
   pbr_materials.init(allocator, 25);
 
   // Create Uniform Buffers
@@ -180,7 +83,7 @@ void RendererFrontEnd::init(void *_config) {
     creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::Back;
+    creation.cull_mode = CullMode::None;
 
     Clock clock{};
     clock.start();
@@ -247,7 +150,6 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.type = TextureType::Texture2D;
   default_texture = create_texture(tex_creation);
 
-  meshes.init(allocator, 10);
   index_buffers.init(allocator, 10);
 
   print_gpu_stats();
@@ -262,9 +164,7 @@ void RendererFrontEnd::shutdown() {
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
   }
-  destroy_model();
 
-  meshes.shutdown();
   pbr_materials.shutdown();
   textures.shutdown();
   backend->shutdown();
@@ -282,8 +182,6 @@ void RendererFrontEnd::on_resize(u16 width, u16 height) {
 
 bool RendererFrontEnd::render_frame(RenderPacket *packet) {
   ZoneScopedC(tracy::Color::Orange);
-  packet->meshes = meshes.data;
-  packet->mesh_count = meshes.size;
 
   if (begin_frame(packet)) {
     backend->render_frame(packet);
@@ -317,182 +215,6 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   ZoneScoped;
   current_frame = (current_frame + 1) % max_frames_in_flight;
   return backend->end_frame(packet);
-}
-
-bool RendererFrontEnd::load_model(cstring path, cstring model) {
-  Directory dir{};
-  FileService::current_directory(&dir);
-  FileService::change_directory(path);
-
-  tinyobj::attrib_t attrib;
-  std::vector<tinyobj::shape_t> shapes;
-  std::vector<tinyobj::material_t> materials;
-  std::string warn, err;
-
-  bool res =
-      tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model, path);
-  if (!warn.empty()) {
-    HWARN("TINYOBJLOADER: {}", warn);
-  }
-  if (!err.empty()) {
-    HERROR("TINYOBJLOADER: {}", err);
-  }
-  if (!res) {
-    HERROR("TINYOBJLOADER: Failed to load .obj");
-  }
-
-  HDEBUG("# of vertices = {}", attrib.vertices.size() / 3);
-  HDEBUG("# of normals = {}", attrib.normals.size() / 3);
-  HDEBUG("# of texcoords = {}", attrib.texcoords.size() / 2);
-  HDEBUG("# of materials = {}", materials.size());
-  HDEBUG("# of shapes = {}", shapes.size());
-  HDEBUG("# of indices in shape[0]: {}", shapes[0].mesh.indices.size());
-  HDEBUG("# of materials in shape[0]: {}", shapes[0].mesh.material_ids.size());
-  HDEBUG("# of faces in shape[0]: {}", shapes[0].mesh.num_face_vertices.size());
-
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  std::unordered_map<Vertex, uint32_t> unique_vertices{};
-  Mesh &mesh = meshes.push_use();
-  mesh.draws.init(allocator, shapes.size(), shapes.size());
-
-  Array<Vertex> vertices{};
-  vertices.init(stack_allocator, attrib.vertices.size() / 3);
-
-  Array<u32> indices{};
-  indices.init(stack_allocator, vertices.capacity / 2);
-
-  for (u32 i = 0; i < materials.size(); ++i) {
-    tinyobj::material_t &material = materials[i];
-    PBRMaterial &pbr_material = pbr_materials.push_use();
-    // TODO: Make a function for getting a file's full path
-    if (!material.diffuse_texname.empty()) {
-
-      pbr_material.albedo_texture_handle = default_texture;
-      char *file_full_path =
-          string_concat(path, material.diffuse_texname.c_str(), allocator);
-      TextureLoadRequest load_request{};
-      load_request.file_path = file_full_path;
-      load_request.pbr_material_index = pbr_materials.size - 1;
-      load_request.renderer_frontend = this;
-
-      JobInfo info = create_job_info(
-          load_texture_data, load_texture_success, nullptr, &load_request,
-          sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
-          JobType::General, JobPriority::Medium);
-
-      TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
-      res_data->tex_creation.name = string_buffer.append_use(
-          FileService::get_file_from_path(file_full_path));
-      JobService::instance()->submit(info);
-
-    } else {
-      pbr_material.albedo_texture_handle = default_texture;
-    }
-  }
-  // Default material
-  PBRMaterial &pbr_material = pbr_materials.push_use();
-  pbr_material.albedo_texture_handle = default_texture;
-
-  FileService::change_directory(dir.path);
-
-  BufferCreation creation{};
-  // Used for mesh sorting
-  u32 opaque_index = 0;
-  u32 transparent_index = mesh.draws.size - 1;
-  for (u32 i = 0; i < shapes.size(); ++i) {
-    const auto &shape = shapes[i];
-    for (const auto &index : shape.mesh.indices) {
-      Vertex vertex{};
-
-      vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]};
-
-      if (index.texcoord_index != -1) {
-        vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index + 0],
-                            1.0f -
-                                attrib.texcoords[2 * index.texcoord_index + 1]};
-      }
-      if (unique_vertices.count(vertex) == 0) {
-        unique_vertices[vertex] = static_cast<u32>(vertices.size);
-        vertices.push(vertex);
-      }
-      indices.push(unique_vertices[vertex]);
-    }
-
-    creation.reset();
-    creation.usage_flags =
-        (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
-    creation.memory_state_flags = MemoryState::Static;
-    creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-    creation.size = sizeof(u32) * indices.size;
-    creation.initial_data = indices.data;
-    creation.name =
-        string_buffer.append_use_f("Index_buffer_%d", index_buffers.size);
-
-    index_buffers.push(create_buffer(creation));
-    u32 material_index = pbr_materials.size - 1; // Default material
-    u32 mesh_index;
-
-    // Check if shape has a material
-    if ((shape.mesh.material_ids[0] != -1)) {
-      material_index = shape.mesh.material_ids[0];
-      // Transparent material
-      if (materials[material_index].dissolve > 0.f) {
-        mesh_index = transparent_index--;
-      } else {
-        mesh_index = opaque_index++;
-      }
-    } else {
-      mesh_index = opaque_index++;
-    }
-
-    mesh.draws[mesh_index].primitive_count = shape.mesh.indices.size();
-    BufferResource *index_buffer =
-        buffers.obtain(index_buffers[index_buffers.size - 1]);
-    mesh.draws[mesh_index].internal_index_buffer =
-        index_buffer->internal_handle;
-    mesh.draws[mesh_index].material_index = material_index;
-    indices.clear();
-  }
-
-  creation.reset();
-  creation.usage_flags =
-      (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest);
-  creation.memory_state_flags = MemoryState::Static;
-  creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-  creation.size = sizeof(Vertex) * vertices.size;
-  creation.initial_data = vertices.data;
-  creation.name = "Model_Vertex_Buffer";
-
-  vertex_buffer = create_buffer(creation);
-  BufferResource *buffer_resource = buffers.obtain(vertex_buffer);
-
-  mesh.internal_vertex_buffer = buffer_resource->internal_handle;
-
-  // HDEBUG("Vertex size = {}", vertices.size);
-
-  return true;
-}
-
-bool RendererFrontEnd::destroy_model() {
-  for (u32 i = 0; i < index_buffers.size; ++i) {
-    destroy_buffer(index_buffers[i]);
-  }
-  for (u32 i = 0; i < meshes.size; ++i) {
-    Mesh &mesh = meshes[i];
-    mesh.draws.shutdown();
-  }
-  for (u32 i = 0; i < model_textures.size; ++i) {
-    destroy_texture(model_textures[i]);
-  }
-
-  destroy_buffer(vertex_buffer);
-  model_textures.shutdown();
-  index_buffers.shutdown();
-  meshes.shutdown();
-  return true;
 }
 
 BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {

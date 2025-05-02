@@ -8,6 +8,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 namespace Helix {
 struct Camera;
@@ -45,10 +46,35 @@ struct MeshDraw {
   u32 primitive_count;
 };
 
+struct Transform {
+  glm::vec3 position{0.f};
+  glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+  glm::vec3 scale{1.f};
+
+  glm::mat4 get_mat4() {
+    return glm::translate(glm::mat4(1.f), position) * glm::toMat4(rotation) *
+           glm::scale(glm::mat4(1.f), scale);
+  }
+
+  void set_transform(glm::mat4 &matrix) {
+    position = glm::vec3(matrix[3]);
+
+    scale.x = glm::length(glm::vec3(matrix[0]));
+    scale.y = glm::length(glm::vec3(matrix[1]));
+    scale.z = glm::length(glm::vec3(matrix[2]));
+
+    glm::mat3 rotation_matrix;
+    rotation_matrix[0] = glm::vec3(matrix[0]) / scale.x;
+    rotation_matrix[1] = glm::vec3(matrix[1]) / scale.y;
+    rotation_matrix[2] = glm::vec3(matrix[2]) / scale.z;
+    rotation = glm::quat_cast(rotation_matrix);
+  }
+};
+
 struct Mesh {
   Array<MeshDraw> draws;
   BufferHandle internal_vertex_buffer;
-  // Transform transform;
+  Transform transform;
 };
 
 struct Game;
@@ -73,7 +99,6 @@ struct Vertex {
 };
 
 struct UniformBufferObject {
-  glm::mat4 model;
   glm::mat4 view;
   glm::mat4 proj;
 };

@@ -1,0 +1,87 @@
+#pragma once
+
+#include "Containers/Array.hpp"
+#include "Core/String.hpp"
+#include "Renderer/RendererTypes.hpp"
+
+namespace Helix {
+
+#define INVALID_NODE_ID UINT32_MAX
+
+struct RenderPacket;
+
+struct Node {
+  cstring name{nullptr};
+  u32 parent_index{INVALID_NODE_ID};
+  u32 children_count{0};
+  u32 first_child_index{INVALID_NODE_ID};
+};
+
+struct PointLightNode {
+  cstring name;
+  u32 info_index;
+};
+
+struct PointLightInfo {
+  glm::vec3 position;
+  f32 radius;
+  f32 range;
+  f32 intensity;
+};
+
+struct NodeDrawProperty {
+  void *node_property{nullptr};
+  u32 node_index{INVALID_NODE_ID};
+};
+
+typedef bool (*PFN_draw_node_property)(NodeDrawProperty *);
+
+struct NodeHierarchy {
+public:
+  Array<Node> nodes;
+  Array<Transform> local_transforms;
+  Array<Transform> world_transforms;
+
+  void init();
+  void shutdown();
+
+  void add_node(cstring name, u32 parent_index);
+  void add_point_light_node();
+
+  void imgui_draw_node_hierarchy();
+  void imgui_draw_node_property();
+
+  void update(u32 node_index);
+
+private:
+  void draw_node(u32 node_index);
+  void draw_point_light_nodes();
+
+private:
+  u32 current_node{INVALID_NODE_ID};
+  u32 current_point_light{INVALID_NODE_ID};
+
+  NodeDrawProperty current_node_property{};
+
+  Array<PointLightInfo> point_light_info;
+  Array<PointLightNode> point_light_nodes;
+
+  StringBuffer string_buffer{};
+
+  PFN_draw_node_property draw_node_property{nullptr};
+};
+
+struct Scene {
+  void init();
+  void shutdown();
+
+  bool load_model(cstring path, cstring model);
+  void destroy_model();
+
+  void update(RenderPacket *packet);
+
+  NodeHierarchy node_hierarchy;
+  Array<Mesh> meshes;
+};
+
+} // namespace Helix

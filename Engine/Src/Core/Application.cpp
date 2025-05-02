@@ -63,14 +63,10 @@ void Application::run() {
 
       JobService::instance()->update();
 
-      game->update(delta_time);
-
-      // game->render(delta_time);
-
       RenderPacket packet{(f32)delta_time};
-      packet.camera = &game->camera;
-      packet.camera->update(delta_time);
-      packet.game = game;
+
+      game->update(&packet);
+
       RendererFrontEnd::instance()->render_frame(&packet);
 
       {

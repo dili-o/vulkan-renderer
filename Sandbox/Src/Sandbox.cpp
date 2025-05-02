@@ -1,11 +1,16 @@
 #include "Sandbox.hpp"
 #include "Core/Engine.hpp"
+#include "Core/String.hpp"
 #include "Platform/File.hpp"
 #include "glm/trigonometric.hpp"
 #include <cmath>
 #include <tracy/Tracy.hpp>
 
+#include "Renderer/Scene.hpp"
+
 namespace Helix {
+
+// static NodeHierarchy node_hierarchy{};
 
 void Sandbox::init() {
 
@@ -13,17 +18,28 @@ void Sandbox::init() {
   config.position = {0.f, 0.f, 2.f};
   camera.init(config);
 
-  // RendererFrontEnd::instance()->load_model(ASSETS_PATH "/Models/HaloArmour/",
-  //                                          ASSETS_PATH
-  //                                          "/Models/HaloArmour/halo_armor.obj");
-  // RendererFrontEnd::instance()->load_model(
-  //    ASSETS_PATH "/Models/Sponza/", ASSETS_PATH "/Models/Sponza/sponza.obj");
+  scene.init();
 
   HINFO("Game Initialised");
 }
-void Sandbox::shutdown() { HINFO("Game Shutdown"); }
 
-void Sandbox::update(f32 dt) { ZoneScopedN("Game::update"); }
+void Sandbox::shutdown() {
+  scene.shutdown();
+  HINFO("Game Shutdown");
+}
+
+void Sandbox::update(RenderPacket *packet) {
+  ZoneScopedN("Game::update");
+
+  packet->meshes = scene.meshes.data;
+  packet->mesh_count = scene.meshes.size;
+
+  packet->camera = &camera;
+  packet->game = this;
+
+  camera.update(packet->delta_time);
+  scene.update(packet);
+}
 
 void Sandbox::render_frame(f32 dt) {
   ZoneScoped;
@@ -54,17 +70,22 @@ void Sandbox::render_frame(f32 dt) {
         if (FileService::open_file_dialog(
                 &file_name, &file_path,
                 &MemoryService::instance()->system_allocator)) {
-          string_replace(file_path, '\\', '/');
-          RendererFrontEnd::instance()->load_model(file_path, file_name);
+          if (file_path && file_name) {
+            string_replace(file_path, '\\', '/');
+            scene.load_model(file_path, file_name);
 
-          MemoryService::instance()->system_allocator.deallocate(file_name);
-          MemoryService::instance()->system_allocator.deallocate(file_path);
-          model_loaded = true;
+            MemoryService::instance()->system_allocator.deallocate(file_name);
+            MemoryService::instance()->system_allocator.deallocate(file_path);
+            model_loaded = true;
+          }
         }
       }
       ImGui::End();
     }
   }
+
+  scene.node_hierarchy.imgui_draw_node_hierarchy();
+  scene.node_hierarchy.imgui_draw_node_property();
 
   // ImGui::ShowDemoWindow(&show_demo);
 }

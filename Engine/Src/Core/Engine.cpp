@@ -16,7 +16,7 @@ void Engine::init(Game *game) {
 
   input_service.init();
 
-  MemoryServiceConfiguration mem_config{hmega(300), hmega(15)};
+  MemoryServiceConfiguration mem_config{hmega(500), hmega(300)};
   memory_service.init(&mem_config);
 
   event_service.init();

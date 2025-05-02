@@ -21,6 +21,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
 #include <tracy/Tracy.hpp>
+#include <vulkan/vulkan_core.h>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
@@ -28,7 +29,7 @@
 #endif // _DEBUG
 
 #define MIN_BUFFER_SIZE 4
-#define MAX_TEXTURES 128
+#define MAX_TEXTURES 1000
 
 namespace Helix {
 
@@ -833,9 +834,19 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       TextureResource *texture_resource =
           RendererFrontEnd::instance()->textures.obtain(
               material.albedo_texture_handle);
-      command_buffer->push_constants(
-          pipeline->vk_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(u32),
-          &texture_resource->internal_handle.index);
+
+      struct PushConstant {
+        glm::mat4 model;
+        u32 albedo_texture_index;
+      };
+
+      PushConstant push_constant{mesh.transform.get_mat4(),
+                                 texture_resource->internal_handle.index};
+
+      VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+
+      command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                     sizeof(PushConstant), &push_constant);
 
       command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
     }
@@ -2078,7 +2089,6 @@ void VulkanBackend::render_frame(RenderPacket *packet) {
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
 
   UniformBufferObject ubo{};
-  ubo.model = glm::scale(glm::mat4(1.f), glm::vec3(0.01f));
   ubo.view = packet->camera->get_view();
   ubo.proj = packet->camera->get_projection();
 

@@ -145,7 +145,8 @@ template <typename T> inline void Array<T>::pop() {
 }
 
 template <typename T> inline void Array<T>::pop_at(u32 index) {
-  HASSERT_MSG(index < size, "Attempting to pop outside of index");
+  HASSERT_MSG(index < size || index >= size,
+              "Attempting to pop outside of index");
 
   u32 new_size = size - 1;
   T *new_data = (T *)hallocaa(new_size * sizeof(T), allocator, alignof(T));

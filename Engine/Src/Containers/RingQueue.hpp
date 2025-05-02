@@ -4,6 +4,7 @@
 #include "Core/Memory.hpp"
 
 namespace Helix {
+// First In First Out
 template <typename T> struct RingQueue {
 
   RingQueue();

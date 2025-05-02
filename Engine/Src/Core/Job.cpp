@@ -135,7 +135,7 @@ void JobService::init(void *config_) {
   allocator = config->allocator;
 
   low_priority_queue.init(config->allocator, 128);
-  medium_priority_queue.init(config->allocator, 128);
+  medium_priority_queue.init(config->allocator, 512);
   high_priority_queue.init(config->allocator, 128);
 
   thread_count = config->thread_count;

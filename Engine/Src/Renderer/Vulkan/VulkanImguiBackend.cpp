@@ -205,7 +205,7 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   uniform[3] = translate[1];
 
   command_buffer->push_constants(vulkan_pipeline->vk_layout,
-                                 VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(f32) * 4,
+                                 VK_SHADER_STAGE_ALL, 0, sizeof(f32) * 4, // TODO: Fix All shader stage flag
                                  (void *)uniform);
 
   // Will project scissor/clipping rectangles into framebuffer space
