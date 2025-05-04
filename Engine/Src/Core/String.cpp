@@ -25,6 +25,8 @@ void string_replace(char *str, char find, char replace) {
   }
 }
 
+bool string_equals(cstring a, cstring b) { return !strcmp(a, b); }
+
 void StringBuffer::init(Allocator *allocator_, size_t size) {
   if (data) {
     allocator->deallocate(data);

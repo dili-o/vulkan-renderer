@@ -123,7 +123,7 @@ template <typename T> inline T *ResourcePool<T>::obtain(ResourceHandle handle) {
     if (handle.generation == generations[handle.index]) {
       return (T *)&memory[handle.index * sizeof(T)];
     } else {
-      HERROR("Generation mismatch in Handle");
+      HWARN("Generation mismatch in Handle");
       return nullptr;
     }
   }
@@ -137,7 +137,7 @@ inline const T *ResourcePool<T>::obtain(ResourceHandle handle) const {
     if (handle.generation == generations[handle.index]) {
       return &memory[handle.index * sizeof(T)];
     } else {
-      HERROR("Generation mismatch in Handle");
+      HWARN("Generation mismatch in Handle");
       return nullptr;
     }
   }

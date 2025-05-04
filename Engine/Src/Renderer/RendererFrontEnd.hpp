@@ -31,6 +31,8 @@ struct RendererFrontEnd : public Service {
   PipelineHandle create_pipeline(PipelineCreation &creation);
   TextureHandle create_texture(TextureCreation &creation);
 
+  BufferResource *access_buffer(BufferHandle handle);
+
   void destroy_buffer(BufferHandle handle);
   void destroy_pipeline(PipelineHandle handle);
   void destroy_texture(TextureHandle handle);
@@ -48,10 +50,10 @@ struct RendererFrontEnd : public Service {
   ResourcePool<BufferResource> buffers{};
   ResourcePool<PipelineResource> pipelines{};
   ResourcePool<TextureResource> textures{};
-  Array<PBRMaterial> pbr_materials{};
-  BufferHandle vertex_buffer{};
-  Array<BufferHandle> index_buffers{};
-  Array<TextureHandle> model_textures{};
+  // Array<PBRMaterial> pbr_materials{};
+  // BufferHandle vertex_buffer{};
+  // Array<BufferHandle> index_buffers{};
+  // Array<TextureHandle> model_textures{};
   BufferHandle uniform_buffers[max_frames_in_flight];
   PipelineHandle pipeline{};
 

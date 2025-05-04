@@ -7,6 +7,7 @@ struct Allocator;
 
 char *string_concat(cstring a, cstring b, Allocator *allocator);
 void string_replace(char *str, char find, char replace);
+bool string_equals(cstring a, cstring b);
 
 struct StringBuffer {
 

@@ -179,7 +179,7 @@ void Camera::on_mouse_scroll_event(i8 direction) {
   if (InputService::instance()->is_key_down(SDL_SCANCODE_LSHIFT)) {
     move_speed = direction > 0 ? (move_speed + 0.5f) : (move_speed - 0.5f);
 
-    move_speed = glm::clamp(move_speed, 0.5f, 10.f);
+    move_speed = glm::clamp(move_speed, 0.5f, 100.f);
   } else {
     f32 scroll_factor = 2.f;
     fov += (direction * -scroll_factor);

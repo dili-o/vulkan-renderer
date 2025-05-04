@@ -55,9 +55,9 @@ void RendererFrontEnd::init(void *_config) {
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
   textures.init(allocator, 10);
-  model_textures.init(allocator, 10);
+  // model_textures.init(allocator, 10);
   string_buffer.init(allocator, hmega(6));
-  pbr_materials.init(allocator, 25);
+  // pbr_materials.init(allocator, 25);
 
   // Create Uniform Buffers
   {
@@ -150,7 +150,7 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.type = TextureType::Texture2D;
   default_texture = create_texture(tex_creation);
 
-  index_buffers.init(allocator, 10);
+  // index_buffers.init(allocator, 10);
 
   print_gpu_stats();
 
@@ -165,7 +165,6 @@ void RendererFrontEnd::shutdown() {
     destroy_buffer(uniform_buffers[i]);
   }
 
-  pbr_materials.shutdown();
   textures.shutdown();
   backend->shutdown();
   buffers.shutdown();
@@ -282,6 +281,10 @@ TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
   return handle;
 }
 
+BufferResource *RendererFrontEnd::access_buffer(BufferHandle handle) {
+  return buffers.obtain(handle);
+}
+
 void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
   if (handle.index == k_invalid_index) {
     HERROR("Attempting to destroy an invalid buffer");
@@ -312,9 +315,11 @@ void RendererFrontEnd::destroy_texture(TextureHandle handle) {
     return;
   }
   TextureResource *texture = textures.obtain(handle);
-  backend->destroy_texture(texture->internal_handle);
+  if (texture) {
+    backend->destroy_texture(texture->internal_handle);
 
-  textures.release(handle);
+    textures.release(handle);
+  }
 }
 
 bool RendererFrontEnd::update_shader_uniform_set(ShaderUniformSet &set,

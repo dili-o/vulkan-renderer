@@ -39,13 +39,14 @@ typedef bool (*PFN_draw_node_property)(NodeDrawProperty *);
 struct NodeHierarchy {
 public:
   Array<Node> nodes;
+  Array<u32> root_node_indices;
   Array<Transform> local_transforms;
   Array<Transform> world_transforms;
 
   void init();
   void shutdown();
 
-  void add_node(cstring name, u32 parent_index);
+  u32 add_node(cstring name, u32 parent_index);
   void add_point_light_node();
 
   void imgui_draw_node_hierarchy();
@@ -75,13 +76,15 @@ struct Scene {
   void init();
   void shutdown();
 
-  bool load_model(cstring path, cstring model);
-  void destroy_model();
+  bool load_mesh(cstring path, cstring model);
+  void unload_mesh(u32 mesh_index);
 
   void update(RenderPacket *packet);
 
   NodeHierarchy node_hierarchy;
+  Array<PBRMaterial> pbr_materials{};
   Array<Mesh> meshes;
+  StringBuffer string_buffer{};
 };
 
 } // namespace Helix

@@ -10,12 +10,11 @@
 
 namespace Helix {
 
-// static NodeHierarchy node_hierarchy{};
-
 void Sandbox::init() {
 
   CameraConfiguration config{};
   config.position = {0.f, 0.f, 2.f};
+  config.far_plane = 1'000.f;
   camera.init(config);
 
   scene.init();
@@ -30,9 +29,6 @@ void Sandbox::shutdown() {
 
 void Sandbox::update(RenderPacket *packet) {
   ZoneScopedN("Game::update");
-
-  packet->meshes = scene.meshes.data;
-  packet->mesh_count = scene.meshes.size;
 
   packet->camera = &camera;
   packet->game = this;
@@ -72,11 +68,11 @@ void Sandbox::render_frame(f32 dt) {
                 &MemoryService::instance()->system_allocator)) {
           if (file_path && file_name) {
             string_replace(file_path, '\\', '/');
-            scene.load_model(file_path, file_name);
+            scene.load_mesh(file_path, file_name);
 
             MemoryService::instance()->system_allocator.deallocate(file_name);
             MemoryService::instance()->system_allocator.deallocate(file_path);
-            model_loaded = true;
+            // model_loaded = true;
           }
         }
       }

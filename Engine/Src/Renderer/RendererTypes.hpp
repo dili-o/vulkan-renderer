@@ -33,17 +33,12 @@ struct RendererConfig {
   u32 max_frames_in_flight;
 };
 
+// TODO: Add name for debugging
 struct PBRMaterial {
   TextureHandle albedo_texture_handle{};
   TextureHandle normal_texture_handle{};
   TextureHandle roughness_texture_handle{};
   TextureHandle occlusion_texture_handle{};
-};
-
-struct MeshDraw {
-  BufferHandle internal_index_buffer;
-  u32 material_index;
-  u32 primitive_count;
 };
 
 struct Transform {
@@ -71,10 +66,16 @@ struct Transform {
   }
 };
 
+struct MeshDraw {
+  BufferHandle index_buffer;
+  u32 material_index;
+  u32 primitive_count;
+  Transform transform;
+};
+
 struct Mesh {
   Array<MeshDraw> draws;
-  BufferHandle internal_vertex_buffer;
-  Transform transform;
+  BufferHandle vertex_buffer;
 };
 
 struct Game;

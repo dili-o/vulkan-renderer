@@ -5,6 +5,7 @@
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Core/String.hpp"
+#include "Game.hpp"
 #include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
 #include "Platform/Process.hpp"
@@ -821,15 +822,20 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   for (u32 i = 0; i < packet->mesh_count; ++i) {
 
     Mesh &mesh = packet->meshes[i];
-    command_buffer->bind_vertex_buffer(mesh.internal_vertex_buffer, 0, 1);
+    BufferResource *vertex_buffer =
+        RendererFrontEnd::instance()->access_buffer(mesh.vertex_buffer);
+    command_buffer->bind_vertex_buffer(vertex_buffer->internal_handle, 0, 1);
 
     for (u32 j = 0; j < mesh.draws.size; ++j) {
       MeshDraw &draw = mesh.draws[j];
-      command_buffer->bind_index_buffer(draw.internal_index_buffer, 0,
+      BufferResource *index_buffer =
+          RendererFrontEnd::instance()->access_buffer(draw.index_buffer);
+      command_buffer->bind_index_buffer(index_buffer->internal_handle, 0,
                                         VK_INDEX_TYPE_UINT32);
 
+      // TODO: Maybe add a pointer to pbr_materials in RenderPacket
       PBRMaterial &material =
-          RendererFrontEnd::instance()->pbr_materials[draw.material_index];
+          packet->game->scene.pbr_materials[draw.material_index];
 
       TextureResource *texture_resource =
           RendererFrontEnd::instance()->textures.obtain(
@@ -840,7 +846,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
         u32 albedo_texture_index;
       };
 
-      PushConstant push_constant{mesh.transform.get_mat4(),
+      PushConstant push_constant{draw.transform.get_mat4(),
                                  texture_resource->internal_handle.index};
 
       VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
@@ -1665,6 +1671,8 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
                      staging_buffer.vma_allocation);
   }
 
+  image->name = creation.name;
+
   return handle;
 }
 
@@ -1699,6 +1707,8 @@ TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
   ++vk_image->views_count;
 
   bindless_textures_to_update.push(handle);
+
+  view->name = creation.name;
 
   return handle;
 }
