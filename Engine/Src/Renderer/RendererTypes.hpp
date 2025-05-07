@@ -92,10 +92,12 @@ struct RenderPacket {
 
 struct Vertex {
   glm::vec3 pos;
+  glm::vec3 normal;
   glm::vec2 tex_coord;
 
   bool operator==(const Vertex &other) const {
-    return pos == other.pos && tex_coord == other.tex_coord;
+    return pos == other.pos && normal == other.normal &&
+           tex_coord == other.tex_coord;
   }
 };
 

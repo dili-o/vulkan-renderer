@@ -96,7 +96,7 @@ void HeapAllocator::shutdown() {
 void *HeapAllocator::allocate(size_t size, size_t alignment) {
   HASSERT(allocation_mutex.lock());
   if ((size + allocated_size) > max_size) {
-    HCRITICAL("Allocator has ran out of memory!");
+    HCRITICAL("HeapAllocator has ran out of memory!");
   }
 #if defined(HEAP_ALLOCATOR_STATS)
   void *allocated_memory = alignment == 1
@@ -163,7 +163,7 @@ void *StackAllocator::allocate(size_t size, size_t alignment) {
   HASSERT_MSG(new_start < total_size, "New allocation exceeds the total size");
   const size_t new_allocated_size = new_start + size;
   HASSERT_MSG(new_allocated_size < total_size,
-              "New allocation exceeds the total size");
+              "StackAllocator: New allocation exceeds the total size");
 
   allocated_size = new_allocated_size;
   void *new_memory = memory + new_start;

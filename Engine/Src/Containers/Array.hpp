@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Assert.hpp"
+#include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 
 namespace Helix {
@@ -29,7 +30,7 @@ template <typename T> struct Array {
   void clear();
   void set_size(u32 new_size);
   void set_capacity(u32 new_capacity);
-  void grow(u32 new_capacity);
+  void resize(u32 new_capacity);
 
   T &back();
   const T &back() const;
@@ -95,7 +96,7 @@ inline void Array<T>::init(Allocator *allocator_, u32 initial_capacity,
   allocator = allocator_;
 
   if (initial_capacity > 0) {
-    grow(initial_capacity);
+    resize(initial_capacity);
   }
 }
 
@@ -109,7 +110,7 @@ template <typename T> inline void Array<T>::shutdown() {
 
 template <typename T> inline void Array<T>::push(const T &element) {
   if (size >= capacity) {
-    grow(capacity + 1);
+    resize(capacity * 2);
   }
 
   data[size++] = element;
@@ -117,7 +118,7 @@ template <typename T> inline void Array<T>::push(const T &element) {
 
 template <typename T> inline T &Array<T>::push_use() {
   if (size >= capacity) {
-    grow(capacity + 1);
+    resize(capacity * 2);
   }
   ++size;
 
@@ -131,7 +132,7 @@ inline void Array<T>::push_array(Array<U> &array) {
   HASSERT_MSG(type_match, "Attempting to push an array with a different type");
 
   if ((size + array.size) >= capacity) {
-    grow(size + array.size);
+    resize(size + array.size);
   }
 
   memcpy(&data[size], array.data, array.size * sizeof(T));
@@ -182,24 +183,22 @@ template <typename T> inline void Array<T>::clear() { size = 0; }
 
 template <typename T> inline void Array<T>::set_size(u32 new_size) {
   if (new_size > capacity) {
-    grow(new_size);
+    resize(new_size);
   }
   size = new_size;
 }
 
 template <typename T> inline void Array<T>::set_capacity(u32 new_capacity) {
   if (new_capacity > capacity) {
-    grow(new_capacity);
+    resize(new_capacity);
   }
 }
 
-template <typename T> inline void Array<T>::grow(u32 new_capacity) {
-  if (new_capacity < capacity * 2) {
-    new_capacity = capacity * 2;
-  } else if (new_capacity < 4) {
-    new_capacity = 4;
+template <typename T> inline void Array<T>::resize(u32 new_capacity) {
+  if (new_capacity < capacity) {
+    HWARN("Cannot resize array: new_capacity < capacity");
+    return;
   }
-
   // T* new_data = (T*)allocator->allocate(new_capacity * sizeof(T),
   // alignof(T));
   T *new_data = (T *)hallocaa(new_capacity * sizeof(T), allocator, alignof(T));

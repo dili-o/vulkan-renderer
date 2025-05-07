@@ -28,3 +28,6 @@
 [submodule "Engine/Assets/Models/Sponza"]
 	path = Engine/Assets/Models/Sponza
 	url = https://github.com/jimmiebergmann/Sponza.git
+[submodule "Engine/Vendor/fastgltf"]
+	path = Engine/Vendor/fastgltf
+	url = https://github.com/spnda/fastgltf.git

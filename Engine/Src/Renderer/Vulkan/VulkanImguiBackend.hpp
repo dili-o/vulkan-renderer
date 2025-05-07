@@ -6,6 +6,8 @@
 
 namespace Helix {
 
+#define FRAMES_IN_FLIGHT 2
+
 struct VulkanBackend;
 
 struct VulkanImguiBackend : public ImguiBackend {
@@ -13,8 +15,8 @@ struct VulkanImguiBackend : public ImguiBackend {
   virtual void shutdown() override;
 
   TextureHandle font_texture{};
-  BufferHandle vertex_buffer{};
-  BufferHandle index_buffer{};
+  BufferHandle vertex_buffers[FRAMES_IN_FLIGHT];
+  BufferHandle index_buffers[FRAMES_IN_FLIGHT];
   PipelineHandle pipeline{};
 
   virtual void begin_frame() override;

@@ -830,6 +830,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       MeshDraw &draw = mesh.draws[j];
       BufferResource *index_buffer =
           RendererFrontEnd::instance()->access_buffer(draw.index_buffer);
+      // TODO: Maybe only bind 1 index buffer per mesh
       command_buffer->bind_index_buffer(index_buffer->internal_handle, 0,
                                         VK_INDEX_TYPE_UINT32);
 

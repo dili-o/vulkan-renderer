@@ -13,13 +13,17 @@ layout(push_constant) uniform constants
 
 
 layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec2 inTexCoord;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec2 tex_coords;
-layout(location = 1) out vec3 frag_pos;
+layout(location = 1) out vec3 normal;
+layout(location = 2) out vec3 frag_pos;
 
 void main() {
   gl_Position = ubo.proj * ubo.view * model * vec4(inPosition, 1.0);
+
   tex_coords = inTexCoord;
+  normal = mat3(transpose(inverse(model))) * inNormal;
   frag_pos = vec3(model * vec4(inPosition, 1.0f));
 }

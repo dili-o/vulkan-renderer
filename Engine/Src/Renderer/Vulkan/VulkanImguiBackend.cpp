@@ -63,24 +63,28 @@ void VulkanImguiBackend::init(void *configuration) {
 
   // Create vertex and index buffers //////////////////////////////////////////
   // u32 buffer_size = 665536;
-  BufferCreation creation{};
-  creation.reset();
-  creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Vertex);
-  creation.memory_state_flags = MemoryState::Persistent;
-  creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
-  creation.size = s_vb_size;
-  creation.name = "ImGui_Vertex_Buffer";
 
-  vertex_buffer = backend->create_buffer(creation);
+  for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
 
-  creation.reset();
-  creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Index);
-  creation.memory_state_flags = MemoryState::Persistent;
-  creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
-  creation.size = s_ib_size;
-  creation.name = "ImGui_Index_Buffer";
+    BufferCreation creation{};
+    creation.reset();
+    creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Vertex);
+    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
+    creation.size = s_vb_size;
+    creation.name = "ImGui_Vertex_Buffer";
 
-  index_buffer = backend->create_buffer(creation);
+    vertex_buffers[i] = backend->create_buffer(creation);
+
+    creation.reset();
+    creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Index);
+    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
+    creation.size = s_ib_size;
+    creation.name = "ImGui_Index_Buffer";
+
+    index_buffers[i] = backend->create_buffer(creation);
+  }
 
   // Create Pipeline /////////////////////////////////////////////////////////
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
@@ -100,8 +104,10 @@ void VulkanImguiBackend::init(void *configuration) {
 }
 
 void VulkanImguiBackend::shutdown() {
-  backend->destroy_buffer(vertex_buffer);
-  backend->destroy_buffer(index_buffer);
+  for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+    backend->destroy_buffer(vertex_buffers[i]);
+    backend->destroy_buffer(index_buffers[i]);
+  }
   backend->destroy_pipeline(pipeline);
   backend->destroy_texture(font_texture);
 
@@ -151,7 +157,8 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   ImDrawVert *vtx_dst = NULL;
   ImDrawIdx *idx_dst = NULL;
 
-  VulkanBuffer *vtx_buf = backend->access_buffer(vertex_buffer);
+  VulkanBuffer *vtx_buf =
+      backend->access_buffer(vertex_buffers[packet->current_frame]);
   vtx_dst = (ImDrawVert *)vtx_buf->mapped_data;
 
   if (vtx_dst) {
@@ -163,7 +170,8 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
     }
   }
 
-  VulkanBuffer *idx_buf = backend->access_buffer(index_buffer);
+  VulkanBuffer *idx_buf =
+      backend->access_buffer(index_buffers[packet->current_frame]);
   idx_dst = (ImDrawIdx *)idx_buf->mapped_data;
 
   if (idx_dst) {
@@ -178,8 +186,10 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   command_buffer->push_marker("ImGui");
 
   command_buffer->bind_pipeline(pipeline);
-  command_buffer->bind_vertex_buffer(vertex_buffer, 0, 1);
-  command_buffer->bind_index_buffer(index_buffer, 0, VK_INDEX_TYPE_UINT16);
+  command_buffer->bind_vertex_buffer(vertex_buffers[packet->current_frame], 0,
+                                     1);
+  command_buffer->bind_index_buffer(index_buffers[packet->current_frame], 0,
+                                    VK_INDEX_TYPE_UINT16);
 
   VkExtent2D extents{(u32)fb_width, (u32)fb_height};
 
@@ -204,9 +214,10 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   uniform[2] = translate[0];
   uniform[3] = translate[1];
 
-  command_buffer->push_constants(vulkan_pipeline->vk_layout,
-                                 VK_SHADER_STAGE_ALL, 0, sizeof(f32) * 4, // TODO: Fix All shader stage flag
-                                 (void *)uniform);
+  command_buffer->push_constants(
+      vulkan_pipeline->vk_layout, VK_SHADER_STAGE_ALL, 0,
+      sizeof(f32) * 4, // TODO: Fix All shader stage flag
+      (void *)uniform);
 
   // Will project scissor/clipping rectangles into framebuffer space
   ImVec2 clip_off = draw_data->DisplayPos; // (0,0) unless using multi-viewports

@@ -10,6 +10,7 @@ namespace Helix {
 
 struct RenderPacket;
 
+// TODO: Maybe add a primitive node that can be a child.
 struct Node {
   cstring name{nullptr};
   u32 parent_index{INVALID_NODE_ID};
@@ -38,21 +39,23 @@ typedef bool (*PFN_draw_node_property)(NodeDrawProperty *);
 
 struct NodeHierarchy {
 public:
-  Array<Node> nodes;
-  Array<u32> root_node_indices;
-  Array<Transform> local_transforms;
-  Array<Transform> world_transforms;
-
   void init();
   void shutdown();
 
-  u32 add_node(cstring name, u32 parent_index);
+  u32 add_node(cstring name, u32 parent_index, bool is_mesh_node = false);
   void add_point_light_node();
 
   void imgui_draw_node_hierarchy();
   void imgui_draw_node_property();
 
   void update(u32 node_index);
+
+  Array<Node> nodes;
+  Array<u32> root_node_indices;
+  Array<u32> mesh_node_indices;
+  Array<Transform> local_transforms;
+  Array<Transform> world_transforms;
+  StringBuffer string_buffer{};
 
 private:
   void draw_node(u32 node_index);
@@ -66,8 +69,6 @@ private:
 
   Array<PointLightInfo> point_light_info;
   Array<PointLightNode> point_light_nodes;
-
-  StringBuffer string_buffer{};
 
   PFN_draw_node_property draw_node_property{nullptr};
 };

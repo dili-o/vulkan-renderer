@@ -1,5 +1,6 @@
 #include "Platform.hpp"
 #include "Renderer/ImguiFrontend.hpp"
+#include "SDL3/SDL_video.h"
 
 #if HELIX_PLATFORM_WINDOWS
 #include "Core/Event.hpp"
@@ -117,6 +118,11 @@ u64 Platform::get_current_thread_id() { return (u64)GetCurrentThreadId(); }
 void Platform::sleep(u64 ms) { SDL_Delay(ms); }
 
 void Platform::set_title(cstring title) { SDL_SetWindowTitle(window, title); }
+
+bool Platform::toggle_fullscreen() {
+  is_fullscreen = !is_fullscreen;
+  return SDL_SetWindowFullscreen(window, is_fullscreen);
+}
 
 i32 Platform::get_logical_processor_count() {
   SYSTEM_INFO sysinfo;

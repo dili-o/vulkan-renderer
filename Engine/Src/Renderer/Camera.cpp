@@ -22,7 +22,7 @@ static bool camera_move_event(u16 code, void *sender, void *listener,
                               EventContext context) {
   Camera *cam = (Camera *)listener;
   cam->on_key_event(code == SDL_EVENT_KEY_DOWN, context.data.u16[0]);
-  return true;
+  return false;
 }
 
 static bool camera_mouse_event(u16 code, void *sender, void *listener,

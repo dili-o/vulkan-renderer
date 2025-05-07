@@ -89,7 +89,6 @@ option ( TRACY_ON_DEMAND "" ON )
 set(TRACY_CLIENT_ADDRESS "127.0.0.1" CACHE STRING "Tracy client address")
 set(TRACY_PROFILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/profiler/build/Release/tracy-profiler.exe" CACHE STRING "Tracy profiler executable path")
 
-
 add_subdirectory(Vendor/tracy)
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
@@ -100,6 +99,9 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 )
 
 target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
+# FastGlTF
+add_subdirectory(Vendor/fastgltf)
+target_link_libraries(${PROJECT_NAME} PUBLIC fastgltf::fastgltf)
 # Include the vendor folder
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/")
 

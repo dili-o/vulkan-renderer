@@ -57,7 +57,7 @@ bool EventService::register_event(u16 code, void *listener,
 
   u32 registered_count = events_array.size;
   for (u32 i = 0; i < registered_count; ++i) {
-    if (events_array[i].listener == listener) {
+    if (events_array[i].listener == listener && listener != nullptr) {
       HWARN("Attempting to register the same listener more than once");
       return false;
     }

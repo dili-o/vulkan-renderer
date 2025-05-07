@@ -49,6 +49,16 @@ void FileService::change_directory(cstring path) {
   }
 }
 
+cstring FileService::get_file_extension(cstring file_path) {
+  // TODO: Maybe check if the '.' comes after the '/' or '\'
+  cstring last_fullstop = strrchr(file_path, '.');
+  if (last_fullstop) {
+    return last_fullstop + 1;
+  }
+  HERROR("File path does not contain an extension");
+  return nullptr;
+}
+
 cstring FileService::get_file_from_path(cstring path) {
   cstring last_forward_separator = strrchr(path, '/');
   cstring last_backward_separator = strrchr(path, '\\');

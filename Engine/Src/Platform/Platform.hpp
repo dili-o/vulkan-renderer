@@ -24,6 +24,8 @@ struct Platform : public Service {
 
   void set_title(cstring title);
 
+  bool toggle_fullscreen();
+
   static i32 get_logical_processor_count();
   static u64 get_current_processor_id();
   u64 get_current_thread_id();
@@ -31,6 +33,7 @@ struct Platform : public Service {
   void *platform_handle = nullptr;
   bool requested_exit{true};
   bool is_suspended{false};
+  bool is_fullscreen{false};
   i32 width{0};
   i32 height{0};
   cstring name{nullptr};
