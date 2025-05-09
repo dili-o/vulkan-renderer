@@ -595,7 +595,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
 
-  fastgltf::Scene &gltf_scene = asset->scenes[asset->defaultScene.value()];
+  fastgltf::Scene &root_scene = asset->scenes[asset->defaultScene.value()];
 
   Array<u32> node_parents{};
   node_parents.init(stack_allocator, asset->nodes.size(), asset->nodes.size());
@@ -610,12 +610,26 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
   RingQueue<u32> node_queue{};
   node_queue.init(stack_allocator, asset->nodes.size());
 
-  // Enqueue root nodes
-  for (u32 i = 0; i < gltf_scene.nodeIndices.size(); ++i) {
-    node_queue.enqueue((u32)gltf_scene.nodeIndices[i]);
-  }
-
   u32 old_root_node_size = scene->node_hierarchy.root_node_indices.size;
+
+  u32 root_node_parent =
+      root_scene.nodeIndices.size() == 1
+          ? INVALID_NODE_ID
+          : scene->node_hierarchy.add_node(nullptr, INVALID_NODE_ID);
+
+  // Enqueue root nodes
+  for (u32 i = 0; i < root_scene.nodeIndices.size(); ++i) {
+    node_queue.enqueue((u32)root_scene.nodeIndices[i]);
+    fastgltf::Node &node = asset->nodes[root_scene.nodeIndices[i]];
+    cstring node_name = node.name.empty()
+                            ? nullptr
+                            : scene->node_hierarchy.string_buffer.append_use_f(
+                                  "%s", node.name.c_str());
+
+    gltf_to_hierarchy_node[root_scene.nodeIndices[i]] =
+        scene->node_hierarchy.add_node(node_name, root_node_parent,
+                                       node.meshIndex.has_value());
+  }
 
   while (node_queue.size) {
     u32 gltf_node_index = UINT32_MAX;
@@ -629,11 +643,6 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
                                   "%s", node.name.c_str());
     // Get the node_hierarchy_index
     u32 node_hierarchy_index = gltf_to_hierarchy_node[gltf_node_index];
-    if (node_hierarchy_index == INVALID_NODE_ID) {
-      node_hierarchy_index = scene->node_hierarchy.add_node(
-          node_name, node_parents[gltf_node_index], node.meshIndex.has_value());
-      gltf_to_hierarchy_node[gltf_node_index] = node_hierarchy_index;
-    }
 
     // Transform
     if (std::holds_alternative<fastgltf::TRS>(node.transform)) {
@@ -655,6 +664,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
       transform.set_transform(matrix);
     }
 
+    // Add children to the queue
     for (u32 i = 0; i < node.children.size(); ++i) {
       node_parents[node.children[i]] = node_hierarchy_index;
       node_queue.enqueue(node.children[i]);

@@ -30,7 +30,7 @@ struct ImguiFrontend : public Service {
   virtual void init(void *configuration) override;
   virtual void shutdown() override;
 
-  void handle_events(void *event);
+  bool handle_events(void *event);
 
   void begin_frame();
 

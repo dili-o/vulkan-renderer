@@ -31,3 +31,6 @@
 [submodule "Engine/Vendor/fastgltf"]
 	path = Engine/Vendor/fastgltf
 	url = https://github.com/spnda/fastgltf.git
+[submodule "Engine/Assets/Models/Bistro"]
+	path = Engine/Assets/Models/Bistro
+	url = https://github.com/zeux/niagara_bistro.git

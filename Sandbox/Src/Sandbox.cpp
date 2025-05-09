@@ -1,9 +1,6 @@
 #include "Sandbox.hpp"
 #include "Core/Engine.hpp"
-#include "Core/String.hpp"
-#include "Platform/File.hpp"
-#include "glm/trigonometric.hpp"
-#include <cmath>
+#include "Platform/Process.hpp"
 #include <tracy/Tracy.hpp>
 
 #include "Renderer/Scene.hpp"
@@ -73,29 +70,41 @@ void Sandbox::render_frame(f32 dt) {
       ImGui::End();
     }
 
-    static bool model_loaded = false;
-    if (!model_loaded) {
-      ImGui::SetNextWindowPos(ImVec2(0, 96), ImGuiCond_FirstUseEver);
-      ImGui::SetNextWindowSize(ImVec2(94, 40), ImGuiCond_FirstUseEver);
-      if (ImGui::Begin("Load Model", NULL, flags)) {
-        if (ImGui::Button("Load Model")) {
-          char *file_path = nullptr;
-          char *file_name = nullptr;
-          if (FileService::open_file_dialog(
-                  &file_name, &file_path,
-                  &MemoryService::instance()->system_allocator)) {
-            if (file_path && file_name) {
-              string_replace(file_path, '\\', '/');
-              scene.load_mesh(file_path, file_name);
-
-              MemoryService::instance()->system_allocator.deallocate(file_name);
-              MemoryService::instance()->system_allocator.deallocate(file_path);
-              // model_loaded = true;
-            }
+    static bool profiler_loaded = false;
+    if (!profiler_loaded) {
+      ImGui::SetNextWindowPos(ImVec2(94, 96), ImGuiCond_Always);
+      ImGui::SetNextWindowSize(ImVec2(162, 40), ImGuiCond_Always);
+      if (ImGui::Begin("Start Profiler", NULL, flags)) {
+        if (ImGui::Button("Start Profiler")) {
+          profiler_loaded = true;
+          if (!launch_tracy_profiler()) {
+            HERROR("Unable to start Tracy Profiler");
           }
         }
         ImGui::End();
       }
+    }
+
+    ImGui::SetNextWindowPos(ImVec2(0, 96), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(94, 40), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Load Model", NULL, flags)) {
+      if (ImGui::Button("Load Model")) {
+        char *file_path = nullptr;
+        char *file_name = nullptr;
+        if (FileService::open_file_dialog(
+                &file_name, &file_path,
+                &MemoryService::instance()->system_allocator)) {
+          if (file_path && file_name) {
+            string_replace(file_path, '\\', '/');
+            scene.load_mesh(file_path, file_name);
+
+            MemoryService::instance()->system_allocator.deallocate(file_name);
+            MemoryService::instance()->system_allocator.deallocate(file_path);
+            // model_loaded = true;
+          }
+        }
+      }
+      ImGui::End();
     }
 
     scene.node_hierarchy.imgui_draw_node_hierarchy();

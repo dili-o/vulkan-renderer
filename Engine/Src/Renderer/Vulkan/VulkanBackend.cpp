@@ -1519,10 +1519,11 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
     wait_info.pValues = &wait_value;
     vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
 
+    // TODO: Right now I'm just using the second thread only to avoid getting
+    // the main command buffers when they are still recording
     VulkanCommandBuffer *graphics_command_buffer =
         command_buffer_manager.get_command_buffer(
-            frame_number % max_frames_in_flight,
-            Platform::get_current_processor_id(), true);
+            frame_number % max_frames_in_flight, 1, true);
 
     // Generate mipmaps
     if (creation.mip_level_count > 1) {

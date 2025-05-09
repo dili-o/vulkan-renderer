@@ -3,6 +3,7 @@
 #include "Renderer/Vulkan/VulkanImguiBackend.hpp"
 #include <SDL3/SDL_events.h>
 #include <imgui/backends/imgui_impl_sdl3.h>
+#include <imgui_internal.h>
 #include <tracy/Tracy.hpp>
 
 namespace Helix {
@@ -42,10 +43,11 @@ void ImguiFrontend::init(void *config_) {
   HELIX_SERVICE_INIT_MSG(ImguiFrontend);
 }
 
-void ImguiFrontend::handle_events(void *event_) {
+bool ImguiFrontend::handle_events(void *event_) {
 
   SDL_Event *event = (SDL_Event *)event_;
   ImGui_ImplSDL3_ProcessEvent(event);
+  return ImGui::GetCurrentContext()->NavWindow;
 }
 
 void ImguiFrontend::shutdown() {
