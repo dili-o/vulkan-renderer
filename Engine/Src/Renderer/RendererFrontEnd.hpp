@@ -29,6 +29,7 @@ struct RendererFrontEnd : public Service {
 
   BufferHandle create_buffer(BufferCreation &creation);
   PipelineHandle create_pipeline(PipelineCreation &creation);
+
   TextureHandle create_texture(TextureCreation &creation);
 
   BufferResource *access_buffer(BufferHandle handle);
@@ -50,14 +51,13 @@ struct RendererFrontEnd : public Service {
   ResourcePool<BufferResource> buffers{};
   ResourcePool<PipelineResource> pipelines{};
   ResourcePool<TextureResource> textures{};
-  // Array<PBRMaterial> pbr_materials{};
-  // BufferHandle vertex_buffer{};
-  // Array<BufferHandle> index_buffers{};
-  // Array<TextureHandle> model_textures{};
+
   BufferHandle uniform_buffers[max_frames_in_flight];
+
   PipelineHandle pipeline{};
 
-  TextureHandle default_texture;
+  TextureHandle default_albedo_texture;
+  TextureHandle default_normal_texture;
 };
 
 } // namespace Helix

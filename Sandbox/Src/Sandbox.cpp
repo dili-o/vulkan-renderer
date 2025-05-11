@@ -1,4 +1,5 @@
 #include "Sandbox.hpp"
+#include "Core/Application.hpp"
 #include "Core/Engine.hpp"
 #include "Platform/Process.hpp"
 #include <tracy/Tracy.hpp>
@@ -50,25 +51,19 @@ void Sandbox::update(RenderPacket *packet) {
 
 void Sandbox::render_frame(f32 dt) {
   ZoneScoped;
-  if (!Platform::instance()->is_fullscreen) {
+  ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
+                           ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+  ImGui::SetNextWindowBgAlpha(0.25f);
+  ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(256, 96), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Frame time", NULL, flags)) {
+    ImGui::Text("Frame time: %.3f ms",
+                Application::instance()->get_delta_time() * 1000.f);
+    ImGui::Checkbox("Limit Frames", &Application::instance()->limit_frames);
+    ImGui::End();
+  }
 
-    bool show_demo = true;
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
-                             ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoMove;
-    ImGui::SetNextWindowBgAlpha(0.25f);
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(256, 96), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Frame time", &show_demo, flags)) {
-      ImGui::Text("Frame time: %.3f ms",
-                  Application::instance()->get_delta_time() * 1000.f);
-      ImGui::Text("Camera Position: %.2f, %.2f, %.2f", camera.position.x,
-                  camera.position.y, camera.position.z);
-      ImGui::Text("Camera Pitch: %.3f",
-                  fmod(glm::degrees(camera.pitch), 360.f));
-      ImGui::Text("Camera Yaw: %.3f", fmod(glm::degrees(camera.yaw), 360.f));
-      ImGui::End();
-    }
+  if (!Platform::instance()->is_fullscreen) {
 
     static bool profiler_loaded = false;
     if (!profiler_loaded) {

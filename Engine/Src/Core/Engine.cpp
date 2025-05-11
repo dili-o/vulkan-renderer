@@ -1,7 +1,6 @@
 #include "Engine.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererTypes.hpp"
-#include <tracy/Tracy.hpp>
 
 namespace Helix {
 
@@ -23,7 +22,7 @@ void Engine::init(Game *game) {
 
   JobServiceConfiguration job_config{};
   job_config.allocator = &memory_service.system_allocator;
-  job_config.thread_count = Platform::get_logical_processor_count();
+  job_config.thread_count = Platform::get_logical_processor_count() - 1;
   JobType::Enum job_thread_types[15];
   for (u32 i = 0; i < job_config.thread_count; ++i) {
     job_thread_types[i] = JobType::General;

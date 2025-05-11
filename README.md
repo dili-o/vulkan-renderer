@@ -13,3 +13,4 @@ A renderer for viewing 3d models
 - [stb_image](https://github.com/nothings/stb/blob/master/stb_image.h)
 - [dear imgui](https://github.com/ocornut/imgui)
 - [Tracy](https://github.com/wolfpld/tracy)
+- [MikkTSpace](https://github.com/mmikk/MikkTSpace)

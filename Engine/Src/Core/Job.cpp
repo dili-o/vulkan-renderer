@@ -4,10 +4,10 @@
 #include "Core/Assert.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Platform/HMutex.hpp"
 #include "Platform/Platform.hpp"
 #include <cstring>
-#include <tracy/Tracy.hpp>
 namespace Helix {
 
 void job_type_to_string(JobType::Enum type, char *buffer, u32 buffer_size) {
@@ -234,7 +234,7 @@ void process_queue(RingQueue<JobInfo> *queue, HMutex *queue_mutex) {
 }
 
 void JobService::update() {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   if (!s_job_service || !running) {
     return;
   }
@@ -244,27 +244,26 @@ void JobService::update() {
   process_queue(&low_priority_queue, &low_priority_mutex);
 
   // Process pending results
-  {
-    ZoneScopedN("Process Job Results");
-    for (u16 i = 0; i < MAX_JOB_RESULTS; ++i) {
-      HASSERT(result_mutex.lock());
-      JobResultEntry entry = pending_results[i];
-      HASSERT(result_mutex.unlock());
+  HELIX_PROFILER_ZONE("Process Job Results", HELIX_PROFILER_COLOR_DEFAULT)
+  for (u16 i = 0; i < MAX_JOB_RESULTS; ++i) {
+    HASSERT(result_mutex.lock());
+    JobResultEntry entry = pending_results[i];
+    HASSERT(result_mutex.unlock());
 
-      if (entry.id != UINT16_MAX) {
-        entry.callback(entry.params);
+    if (entry.id != UINT16_MAX) {
+      entry.callback(entry.params);
 
-        if (entry.params) {
-          allocator->deallocate(entry.params);
-        }
-
-        HASSERT(result_mutex.lock());
-        memset(&pending_results[i], 0, sizeof(JobResultEntry));
-        pending_results[i].id = UINT16_MAX;
-        HASSERT(result_mutex.unlock());
+      if (entry.params) {
+        allocator->deallocate(entry.params);
       }
+
+      HASSERT(result_mutex.lock());
+      memset(&pending_results[i], 0, sizeof(JobResultEntry));
+      pending_results[i].id = UINT16_MAX;
+      HASSERT(result_mutex.unlock());
     }
   }
+  HELIX_PROFILER_ZONE_END()
 }
 
 void JobService::submit(JobInfo info) {

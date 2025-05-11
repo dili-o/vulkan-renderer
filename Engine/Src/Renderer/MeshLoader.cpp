@@ -1,31 +1,100 @@
 #include "MeshLoader.hpp"
+#include "Containers/Array.hpp"
 #include "Core/Assert.hpp"
 #include "Core/Job.hpp"
+#include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Platform/File.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/Scene.hpp"
-#include "fastgltf/math.hpp"
-#include "fastgltf/types.hpp"
 // Vendors
 #include <fastgltf/core.hpp>
+#include <fastgltf/math.hpp>
 #include <fastgltf/tools.hpp>
+#include <fastgltf/types.hpp>
 #include <glm/gtx/hash.hpp>
+#include <mikktspace.h>
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
-#include <tracy/Tracy.hpp>
+
+#pragma region mikktspace
+// struct SMikkTSpaceContext {
+//   const std::vector<Vertex> &vertices;
+//   const std::vector<uint32_t> &indices;
+//   std::vector<glm::vec4> &tangents;
+// };
+
+struct SMikkTSpaceContextUserData {
+  const Helix::Vertex *vertices;
+  const Helix::Array<u32> &indices;
+  Helix::Array<glm::vec4> &tangents;
+};
+
+int GetNumFaces(const SMikkTSpaceContext *context) {
+  SMikkTSpaceContextUserData *user_data =
+      (SMikkTSpaceContextUserData *)context->m_pUserData;
+  return (i32)user_data->indices.size / 3;
+}
+
+int GetNumVerticesOfFace(const SMikkTSpaceContext *, int) { return 3; }
+
+void GetPosition(const SMikkTSpaceContext *context, float pos[3], int faceIdx,
+                 int vertIdx) {
+  SMikkTSpaceContextUserData *user_data =
+      (SMikkTSpaceContextUserData *)context->m_pUserData;
+  int index = user_data->indices[faceIdx * 3 + vertIdx];
+  const glm::vec3 &position = user_data->vertices[index].pos;
+  pos[0] = position.x;
+  pos[1] = position.y;
+  pos[2] = position.z;
+}
+
+void GetNormal(const SMikkTSpaceContext *context, float norm[3], int faceIdx,
+               int vertIdx) {
+  SMikkTSpaceContextUserData *user_data =
+      (SMikkTSpaceContextUserData *)context->m_pUserData;
+  int index = user_data->indices[faceIdx * 3 + vertIdx];
+  const glm::vec3 &normal = user_data->vertices[index].normal;
+  norm[0] = normal.x;
+  norm[1] = normal.y;
+  norm[2] = normal.z;
+}
+
+void GetTexCoord(const SMikkTSpaceContext *context, float uv[2], int faceIdx,
+                 int vertIdx) {
+  SMikkTSpaceContextUserData *user_data =
+      (SMikkTSpaceContextUserData *)context->m_pUserData;
+  int index = user_data->indices[faceIdx * 3 + vertIdx];
+  const glm::vec2 &texCoord = user_data->vertices[index].tex_coord;
+  uv[0] = texCoord.x;
+  uv[1] = texCoord.y;
+}
+
+void SetTSpaceBasic(const SMikkTSpaceContext *context, const float tangent[3],
+                    float sign, int faceIdx, int vertIdx) {
+  SMikkTSpaceContextUserData *user_data =
+      (SMikkTSpaceContextUserData *)context->m_pUserData;
+  int index = user_data->indices[faceIdx * 3 + vertIdx];
+  user_data->tangents[index] =
+      glm::vec4(tangent[0], tangent[1], tangent[2], sign);
+}
+
+#pragma endregion mikktspace
 
 namespace std {
 template <> struct hash<Helix::Vertex> {
   size_t operator()(Helix::Vertex const &vertex) const {
     size_t h1 = hash<glm::vec3>()(vertex.pos);
     size_t h2 = hash<glm::vec3>()(vertex.normal);
-    size_t h3 = hash<glm::vec2>()(vertex.tex_coord);
+    size_t h3 = hash<glm::vec4>()(vertex.tangent);
+    size_t h4 = hash<glm::vec2>()(vertex.tex_coord);
 
     size_t combined = h1;
     combined ^= h2 + 0x9e3779b9 + (combined << 6) + (combined >> 2);
     combined ^= h3 + 0x9e3779b9 + (combined << 6) + (combined >> 2);
+    combined ^= h4 + 0x9e3779b9 + (combined << 6) + (combined >> 2);
     return combined;
   }
 };
@@ -34,22 +103,24 @@ template <> struct hash<Helix::Vertex> {
 
 namespace Helix {
 
+enum MaterialAttribute { MaterialAttribute_Albedo, MaterialAttribute_Normal };
+
 struct TextureLoadRequest {
   char *file_path;
   FileReadResult read_result;
-  u32 material_to_update_index{0};
-  Array<PBRMaterial> *pbr_materials{nullptr};
 };
 
 struct TextureLoadSuccess {
   TextureCreation tex_creation{};
   void *texture_data{nullptr};
   u32 material_to_update_index{0};
+  MaterialAttribute attribute_to_update;
   Array<PBRMaterial> *pbr_materials{nullptr};
 };
 
+// TODO: Specify the image component type
 bool load_texture_data(void *entry_data, void *result_data) {
-  ZoneScopedC(0xFF00FF);
+  HELIX_PROFILER_FUNCTION_COLOR(0xFF00FF);
   TextureLoadRequest *request = (TextureLoadRequest *)entry_data;
   TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
 
@@ -71,7 +142,6 @@ bool load_texture_data(void *entry_data, void *result_data) {
 
   MemoryService::instance()->system_allocator.deallocate(
       request->read_result.data);
-  // TODO: See what happens if you try to deallocate nullptr
   MemoryService::instance()->system_allocator.deallocate(request->file_path);
   if (!texture_data) {
     HERROR("Unable to load texture data: {}, Reason: {}",
@@ -82,8 +152,6 @@ bool load_texture_data(void *entry_data, void *result_data) {
   res->tex_creation.initial_data = texture_data;
   res->tex_creation.width = width;
   res->tex_creation.height = height;
-  res->pbr_materials = request->pbr_materials;
-  res->material_to_update_index = request->material_to_update_index;
 
   return true;
 }
@@ -98,7 +166,6 @@ bool load_texture_success(void *result_data) {
   res->tex_creation.usage =
       TextureUsage::Enum(TextureUsage::TransferDest | TextureUsage::Sampled |
                          TextureUsage::TransferSrc);
-  res->tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
   res->tex_creation.type = TextureType::Texture2D;
 
   u32 w = res->tex_creation.width;
@@ -114,14 +181,27 @@ bool load_texture_success(void *result_data) {
   res->tex_creation.mip_level_count = mip_levels;
 
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
-  TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
-  (*res->pbr_materials)[res->material_to_update_index].albedo_texture_handle =
-      handle;
+
+  switch (res->attribute_to_update) {
+  case MaterialAttribute_Albedo: {
+    res->tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
+    TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
+    (*res->pbr_materials)[res->material_to_update_index].albedo_texture_handle =
+        handle;
+  } break;
+  case MaterialAttribute_Normal: {
+    res->tex_creation.format = TextureFormat::R8G8B8A8_UNORM;
+    TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
+    (*res->pbr_materials)[res->material_to_update_index].normal_texture_handle =
+        handle;
+  } break;
+  }
 
   free(res->tex_creation.initial_data);
   return true;
 }
 
+// TODO: Add tangent calculation
 bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
   Directory dir{};
@@ -164,13 +244,12 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
     tinyobj::material_t &material = materials[i];
     if (!material.diffuse_texname.empty()) {
 
-      pbr_material.albedo_texture_handle = renderer_frontend->default_texture;
+      pbr_material.albedo_texture_handle =
+          renderer_frontend->default_albedo_texture;
       char *file_full_path =
           string_concat(path, material.diffuse_texname.c_str(), allocator);
       TextureLoadRequest load_request{};
       load_request.file_path = file_full_path;
-      load_request.pbr_materials = &scene->pbr_materials;
-      load_request.material_to_update_index = scene->pbr_materials.size - 1;
 
       JobInfo info = create_job_info(
           load_texture_data, load_texture_success, nullptr, &load_request,
@@ -180,6 +259,8 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
       TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
       res_data->tex_creation.name = renderer_frontend->string_buffer.append_use(
           FileService::get_file_from_path(file_full_path));
+      res_data->pbr_materials = &scene->pbr_materials;
+      res_data->material_to_update_index = scene->pbr_materials.size - 1;
       JobService::instance()->submit(info);
     } else {
       u8 def_colour[4];
@@ -321,8 +402,9 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
   return true;
 }
 
-void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
-                       fastgltf::Texture &texture, cstring texture_path) {
+void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
+                           fastgltf::Texture &texture, cstring texture_path,
+                           MaterialAttribute attribute) {
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
 
@@ -346,9 +428,6 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
           [&](fastgltf::sources::Array &array) {
             TextureLoadRequest load_request{};
             load_request.file_path = nullptr;
-            load_request.pbr_materials = &scene->pbr_materials;
-            load_request.material_to_update_index =
-                scene->pbr_materials.size - 1;
             load_request.read_result.size = array.bytes.size();
             load_request.read_result.data =
                 (char *)halloca(array.bytes.size(), allocator);
@@ -367,6 +446,10 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
                 texture_name ? texture_name
                              : renderer_frontend->string_buffer.append_use_f(
                                    "texture_%d", scene->pbr_materials.size);
+            res_data->attribute_to_update = attribute;
+            res_data->pbr_materials = &scene->pbr_materials;
+            res_data->material_to_update_index = scene->pbr_materials.size - 1;
+
             JobService::instance()->submit(info);
           },
           [&](fastgltf::sources::URI &filePath) {
@@ -383,9 +466,6 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
             TextureLoadRequest load_request{};
             load_request.file_path =
                 string_concat(texture_path, filePath.uri.c_str(), allocator);
-            load_request.pbr_materials = &scene->pbr_materials;
-            load_request.material_to_update_index =
-                scene->pbr_materials.size - 1;
 
             JobInfo info = create_job_info(
                 load_texture_data, load_texture_success, nullptr, &load_request,
@@ -398,6 +478,9 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
                 texture_name ? texture_name
                              : renderer_frontend->string_buffer.append_use(
                                    filePath.uri.c_str());
+            res_data->attribute_to_update = attribute;
+            res_data->pbr_materials = &scene->pbr_materials;
+            res_data->material_to_update_index = scene->pbr_materials.size - 1;
             JobService::instance()->submit(info);
           },
 
@@ -417,9 +500,6 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
                     [&](fastgltf::sources::Array &array) {
                       TextureLoadRequest load_request{};
                       load_request.file_path = nullptr;
-                      load_request.pbr_materials = &scene->pbr_materials;
-                      load_request.material_to_update_index =
-                          scene->pbr_materials.size - 1;
                       load_request.read_result.size = bufferView.byteLength;
                       load_request.read_result.data =
                           (char *)halloca(bufferView.byteLength, allocator);
@@ -441,14 +521,15 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
                               ? texture_name
                               : renderer_frontend->string_buffer.append_use_f(
                                     "texture_%d", scene->pbr_materials.size);
+                      res_data->attribute_to_update = attribute;
+                      res_data->pbr_materials = &scene->pbr_materials;
+                      res_data->material_to_update_index =
+                          scene->pbr_materials.size - 1;
                       JobService::instance()->submit(info);
                     },
                     [&](fastgltf::sources::Vector &vector) {
                       TextureLoadRequest load_request{};
                       load_request.file_path = nullptr;
-                      load_request.pbr_materials = &scene->pbr_materials;
-                      load_request.material_to_update_index =
-                          scene->pbr_materials.size - 1;
                       load_request.read_result.size = bufferView.byteLength;
                       load_request.read_result.data =
                           (char *)halloca(bufferView.byteLength, allocator);
@@ -470,6 +551,10 @@ void gltf_load_texture(Scene *scene, fastgltf::Asset &asset,
                               ? texture_name
                               : renderer_frontend->string_buffer.append_use_f(
                                     "texture_%d", scene->pbr_materials.size);
+                      res_data->attribute_to_update = attribute;
+                      res_data->pbr_materials = &scene->pbr_materials;
+                      res_data->material_to_update_index =
+                          scene->pbr_materials.size - 1;
                       JobService::instance()->submit(info);
                     }},
                 buffer.data);
@@ -556,13 +641,14 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
     if (material.pbrData.baseColorTexture.has_value()) {
 
-      gltf_load_texture(
+      gltf_load_pbr_texture(
           scene, asset.get(),
           asset->textures[material.pbrData.baseColorTexture.value()
                               .textureIndex],
-          path);
+          path, MaterialAttribute_Albedo);
 
-      pbr_material.albedo_texture_handle = renderer_frontend->default_texture;
+      pbr_material.albedo_texture_handle =
+          renderer_frontend->default_albedo_texture;
 
     } else {
       u8 def_colour[4];
@@ -588,6 +674,17 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
       pbr_material.albedo_texture_handle =
           renderer_frontend->create_texture(tex_creation);
+    }
+
+    // Normal Texture
+    pbr_material.normal_texture_handle =
+        renderer_frontend->default_normal_texture;
+    if (material.normalTexture.has_value()) {
+
+      gltf_load_pbr_texture(
+          scene, asset.get(),
+          asset->textures[material.normalTexture.value().textureIndex], path,
+          MaterialAttribute_Normal);
     }
   }
   allocator->deallocate(file_full_path);
@@ -680,11 +777,13 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
     }
 
     if (node.meshIndex.has_value()) {
+        size_t mesids = node.meshIndex.value();
       fastgltf::Mesh &gltf_mesh = asset->meshes[node.meshIndex.value()];
       Mesh &mesh = scene->meshes.push_use();
       mesh.draws.init(allocator, gltf_mesh.primitives.size(),
                       gltf_mesh.primitives.size());
 
+      // Single Vertex buffer for each mesh
       Array<Vertex> vertices{};
       vertices.init(allocator, 4);
 
@@ -703,13 +802,12 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
             primitive.materialIndex.value() + previous_material_size;
 
         // load indexes
+        // Index buffer per primitive
         Array<u32> indices{};
         {
           fastgltf::Accessor &index_accessor =
               asset->accessors[primitive.indicesAccessor.value()];
           indices.init(allocator, index_accessor.count);
-
-          HDEBUG("Accessor type: {}", static_cast<int>(index_accessor.type));
 
           fastgltf::iterateAccessor<u32>(
               asset.get(), index_accessor,
@@ -752,11 +850,11 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
         // load tex_coord vertices
         {
-          fastgltf::Accessor &tex_coord_accessor =
-              asset->accessors[primitive.findAttribute("TEXCOORD_0")
-                                   ->accessorIndex];
-
-          if (tex_coord_accessor.type == fastgltf::AccessorType::Vec2) {
+          fastgltf::Attribute *tex_attribute =
+              primitive.findAttribute("TEXCOORD_0");
+          if (tex_attribute != primitive.attributes.end()) {
+            fastgltf::Accessor &tex_coord_accessor =
+                asset->accessors[tex_attribute->accessorIndex];
             fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
                 asset.get(), tex_coord_accessor,
                 [&](fastgltf::math::fvec2 uv, size_t index) {
@@ -764,6 +862,55 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
                   vertex.tex_coord.x = uv.data()[0];
                   vertex.tex_coord.y = uv.data()[1];
                 });
+          }
+        }
+        // load tangent vertices
+        {
+          fastgltf::Attribute *tangent_attribute =
+              primitive.findAttribute("TANGENT");
+          if (tangent_attribute != primitive.attributes.end()) {
+            fastgltf::Accessor &tangent_accessor =
+                asset->accessors[tangent_attribute->accessorIndex];
+
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+                asset.get(), tangent_accessor,
+                [&](fastgltf::math::fvec4 t, size_t index) {
+                  Vertex &vertex = vertices[initial_vtx + index];
+                  vertex.tangent.x = t.data()[0];
+                  vertex.tangent.y = t.data()[1];
+                  vertex.tangent.z = t.data()[2];
+                  vertex.tangent.w = t.data()[3];
+                });
+          } else {
+            Array<glm::vec4> tangents_data{};
+            tangents_data.init(allocator, indices.size, indices.size);
+            // TODO: Generate tangesnts
+            SMikkTSpaceInterface interface = {};
+            interface.m_getNumFaces = GetNumFaces;
+            interface.m_getNumVerticesOfFace = GetNumVerticesOfFace;
+            interface.m_getPosition = GetPosition;
+            interface.m_getNormal = GetNormal;
+            interface.m_getTexCoord = GetTexCoord;
+            interface.m_setTSpaceBasic = SetTSpaceBasic;
+
+            SMikkTSpaceContextUserData user_data{&vertices.data[initial_vtx],
+                                                 indices, tangents_data};
+
+            SMikkTSpaceContext mikkContext = {};
+            mikkContext.m_pInterface = &interface;
+            mikkContext.m_pUserData = &user_data;
+
+            genTangSpaceDefault(&mikkContext);
+
+            for (u32 i = 0; i < indices.size; ++i) {
+              u32 index = indices[i];
+              Vertex &vertex = vertices[initial_vtx + index];
+              vertex.tangent = tangents_data[initial_vtx + index];
+            }
+
+            tangents_data.shutdown();
+
+            HERROR("Primitive does not have tangents");
           }
         }
 

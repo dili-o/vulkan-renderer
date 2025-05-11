@@ -1,10 +1,11 @@
 #include "ImguiFrontend.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Renderer/Vulkan/VulkanImguiBackend.hpp"
+// Vendor
 #include <SDL3/SDL_events.h>
 #include <imgui/backends/imgui_impl_sdl3.h>
 #include <imgui_internal.h>
-#include <tracy/Tracy.hpp>
 
 namespace Helix {
 ImguiBackend *ImguiCreateBackend(RendererBackendType type) {
@@ -59,12 +60,12 @@ void ImguiFrontend::shutdown() {
 }
 
 void ImguiFrontend::begin_frame() {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   backend->begin_frame();
 }
 
 void ImguiFrontend::render_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   backend->render_frame(packet);
 }
 

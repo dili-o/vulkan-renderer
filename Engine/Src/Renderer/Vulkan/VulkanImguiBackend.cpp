@@ -1,17 +1,16 @@
 #include "VulkanImguiBackend.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/Vulkan/CommandBuffer.hpp"
 #include "Renderer/Vulkan/VulkanBackend.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
-
+// Vendor
 #define IMGUI_IMPL_VULKAN_USE_VOLK
 #include <imgui/backends/imgui_impl_sdl3.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
-
-#include <tracy/Tracy.hpp>
 
 namespace Helix {
 static uint32_t s_vb_size = 665536, s_ib_size = 665536;
@@ -116,13 +115,13 @@ void VulkanImguiBackend::shutdown() {
 }
 
 void VulkanImguiBackend::begin_frame() {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   ImGui_ImplSDL3_NewFrame();
   ImGui::NewFrame();
 }
 
 void VulkanImguiBackend::render_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   ImGui::Render();
   ImDrawData *draw_data = ImGui::GetDrawData();
 

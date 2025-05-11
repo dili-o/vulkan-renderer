@@ -3,6 +3,7 @@
 #include "Core/Clock.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Game.hpp"
 #include "Platform/File.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
@@ -10,12 +11,9 @@
 #include "Renderer/ImguiFrontend.hpp"
 #include "RendererBackend.hpp"
 #include "RendererTypes.hpp"
-
+// Vendor
 #include <cstring>
-#include <glm/gtx/hash.hpp>
 #include <stb_image.h>
-#include <tiny_obj_loader.h>
-#include <tracy/Tracy.hpp>
 
 namespace Helix {
 
@@ -55,9 +53,7 @@ void RendererFrontEnd::init(void *_config) {
   buffers.init(allocator, 10);
   pipelines.init(allocator, 10);
   textures.init(allocator, 10);
-  // model_textures.init(allocator, 10);
   string_buffer.init(allocator, hmega(6));
-  // pbr_materials.init(allocator, 25);
 
   // Create Uniform Buffers
   {
@@ -138,7 +134,7 @@ void RendererFrontEnd::init(void *_config) {
     tex_creation.height = 1;
   }
 
-  tex_creation.name = "default_texture";
+  tex_creation.name = "default_albedo_texture";
   tex_creation.depth = 1;
   tex_creation.array_layer_count = 1;
   tex_creation.array_base_level = 0;
@@ -148,9 +144,14 @@ void RendererFrontEnd::init(void *_config) {
       TextureUsage::Enum(TextureUsage::TransferDest | TextureUsage::Sampled);
   tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
   tex_creation.type = TextureType::Texture2D;
-  default_texture = create_texture(tex_creation);
+  default_albedo_texture = create_texture(tex_creation);
 
-  // index_buffers.init(allocator, 10);
+  u8 def_normal[4] = {128, 128, 255, 255};
+  tex_creation.format = TextureFormat::R8G8B8A8_UNORM;
+  tex_creation.initial_data = def_normal;
+  tex_creation.width = 1;
+  tex_creation.height = 1;
+  default_normal_texture = create_texture(tex_creation);
 
   print_gpu_stats();
 
@@ -159,7 +160,8 @@ void RendererFrontEnd::init(void *_config) {
 
 void RendererFrontEnd::shutdown() {
   destroy_pipeline(pipeline);
-  destroy_texture(default_texture);
+  destroy_texture(default_albedo_texture);
+  destroy_texture(default_normal_texture);
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
@@ -180,7 +182,7 @@ void RendererFrontEnd::on_resize(u16 width, u16 height) {
 }
 
 bool RendererFrontEnd::render_frame(RenderPacket *packet) {
-  ZoneScopedC(tracy::Color::Orange);
+  HELIX_PROFILER_FUNCTION_COLOR(tracy::Color::Orange);
 
   if (begin_frame(packet)) {
     backend->render_frame(packet);
@@ -202,7 +204,7 @@ bool RendererFrontEnd::render_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   packet->current_frame = current_frame;
   BufferResource *uniform_buffer =
       buffers.obtain(uniform_buffers[current_frame]);
@@ -211,7 +213,7 @@ bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
 }
 
 bool RendererFrontEnd::end_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   current_frame = (current_frame + 1) % max_frames_in_flight;
   return backend->end_frame(packet);
 }
@@ -259,8 +261,8 @@ PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
 }
 
 TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
-  ZoneScoped;
-  ZoneText(creation.name, strlen(creation.name));
+  HELIX_PROFILER_FUNCTION();
+  HELIX_PROFILER_ZONE_TEXT(creation.name, strlen(creation.name));
   TextureHandle handle = textures.obtain_new();
   if (handle.index == k_invalid_index) {
     HERROR("Failed to obtain new TextureResource");

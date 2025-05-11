@@ -22,6 +22,14 @@ file(GLOB IMGUI_SOURCE_LIST
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui/backends/imgui_impl_vulkan.cpp"
 )
 
+option(HELIX_WITH_TRACY "Enable Tracy profiler integration" ON)
+
+set(EXTRA_SOURCE_LIST "")
+
+if(HELIX_WITH_TRACY)
+    list(APPEND EXTRA_SOURCE_LIST "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/public/TracyClient.cpp")
+endif()
+
 # Build as a Static Lib
 add_library(${PROJECT_NAME} STATIC
     ${SOURCE_LIST}
@@ -29,7 +37,8 @@ add_library(${PROJECT_NAME} STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tlsf/tlsf.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tiny_obj_loader.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/stb_image.h" 
-    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/public/TracyClient.cpp" 
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/mikktspace.c" 
+    ${EXTRA_SOURCE_LIST}
 )
 
 if(WIN32)
@@ -83,22 +92,25 @@ target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
 # Dear Imgui
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui")
 #Tracy
-option(TRACY_ENABLE "" ON)
-option ( TRACY_ON_DEMAND "" ON )
+if(HELIX_WITH_TRACY)
+  option(TRACY_ENABLE "" ON)
+  option ( TRACY_ON_DEMAND "" ON )
 
-set(TRACY_CLIENT_ADDRESS "127.0.0.1" CACHE STRING "Tracy client address")
-set(TRACY_PROFILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/profiler/build/Release/tracy-profiler.exe" CACHE STRING "Tracy profiler executable path")
+  set(TRACY_CLIENT_ADDRESS "127.0.0.1" CACHE STRING "Tracy client address")
+  set(TRACY_PROFILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/profiler/build/Release/tracy-profiler.exe" CACHE STRING "Tracy profiler executable path")
 
-add_subdirectory(Vendor/tracy)
+  add_subdirectory(Vendor/tracy)
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC
-    TRACY_ENABLE
-    TRACY_ON_DEMAND
-    "TRACY_CLIENT_ADDRESS=\"${TRACY_CLIENT_ADDRESS}\""
-    "TRACY_PROFILER_DIR=\"${TRACY_PROFILER_DIR}\""
-)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC
+      TRACY_ENABLE
+      TRACY_ON_DEMAND
+      "TRACY_CLIENT_ADDRESS=\"${TRACY_CLIENT_ADDRESS}\""
+      "TRACY_PROFILER_DIR=\"${TRACY_PROFILER_DIR}\""
+      "HELIX_WITH_TRACY=1"
+  )
 
-target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
+  target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
+endif()
 # FastGlTF
 add_subdirectory(Vendor/fastgltf)
 target_link_libraries(${PROJECT_NAME} PUBLIC fastgltf::fastgltf)

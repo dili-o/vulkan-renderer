@@ -24,5 +24,6 @@ struct Application : Service {
   Clock clock;
   f64 last_time{0.0};
   f32 delta_time{0.f};
+  bool limit_frames{true};
 };
 } // namespace Helix

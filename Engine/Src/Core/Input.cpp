@@ -1,9 +1,9 @@
 #include "Input.hpp"
-#include "Event.hpp"
-#include "Log.hpp"
-#include "Memory.hpp"
+#include "Core/Event.hpp"
+#include "Core/Log.hpp"
+#include "Core/Profiler.hpp"
+// Vendor
 #include <SDL3/SDL_events.h>
-#include <tracy/Tracy.hpp>
 
 namespace Helix {
 struct KeyboardState {
@@ -44,7 +44,7 @@ void InputService::shutdown() {
 }
 
 void InputService::update(f32 dt) {
-  ZoneScopedC(tracy::Color::Red);
+  HELIX_PROFILER_FUNCTION_COLOR(tracy::Color::Red);
   if (!s_input_service) {
     HERROR("Attempting to update uninitialised InputService");
     return;

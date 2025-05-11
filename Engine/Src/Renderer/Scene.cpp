@@ -8,8 +8,6 @@
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/RendererTypes.hpp"
 
-#include <tracy/Tracy.hpp>
-
 namespace Helix {
 
 bool static imgui_point_light_property(NodeDrawProperty *node_property) {
@@ -269,7 +267,9 @@ void Scene::init() {
   // Default material
   PBRMaterial &pbr_material = pbr_materials.push_use();
   pbr_material.albedo_texture_handle =
-      RendererFrontEnd::instance()->default_texture;
+      RendererFrontEnd::instance()->default_albedo_texture;
+  pbr_material.normal_texture_handle =
+      RendererFrontEnd::instance()->default_normal_texture;
 }
 
 void Scene::shutdown() {
@@ -281,8 +281,10 @@ void Scene::shutdown() {
   // TODO: Right now some .obj models (bistro interior and exterior) have shapes
   // that use multiple materials. Deleting all materials right (calls delete on
   // already deleted materials)
-  for (PBRMaterial &mat : pbr_materials) {
+  for (u32 i = 0; i < pbr_materials.size; ++i) {
+    PBRMaterial &mat = pbr_materials[i];
     RendererFrontEnd::instance()->destroy_texture(mat.albedo_texture_handle);
+    RendererFrontEnd::instance()->destroy_texture(mat.normal_texture_handle);
   }
   pbr_materials.shutdown();
   string_buffer.shutdown();
@@ -315,8 +317,12 @@ void Scene::unload_mesh(u32 mesh_index) {
       PBRMaterial &material = pbr_materials[mesh.draws[i].material_index];
       // TODO: remove
       if (material.albedo_texture_handle.index !=
-          renderer_frontend->default_texture.index) {
+          renderer_frontend->default_albedo_texture.index) {
         renderer_frontend->destroy_texture(material.albedo_texture_handle);
+      }
+      if (material.normal_texture_handle.index !=
+          renderer_frontend->default_normal_texture.index) {
+        renderer_frontend->destroy_texture(material.normal_texture_handle);
       }
     }
   }

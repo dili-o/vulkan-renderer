@@ -4,6 +4,7 @@
 #include "Core/Defines.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Core/String.hpp"
 #include "Game.hpp"
 #include "Platform/File.hpp"
@@ -15,13 +16,13 @@
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/CommandBuffer.hpp"
+#include "Renderer/Vulkan/SpirvParser.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
-#include "SpirvParser.hpp"
+// Vendor
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
-#include <tracy/Tracy.hpp>
 #include <vulkan/vulkan_core.h>
 
 #ifdef _DEBUG
@@ -494,7 +495,7 @@ void VulkanBackend::resize_swapchain() {
 }
 
 bool VulkanBackend::begin_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   u64 wait_value = frame_number < max_frames_in_flight ? 0 : frame_number;
   VkSemaphoreWaitInfo wait_info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
   wait_info.semaphoreCount = 1;
@@ -527,7 +528,7 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
 }
 
 bool VulkanBackend::end_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   VulkanCommandBuffer *command_buffer =
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,
                                                 false);
@@ -755,7 +756,8 @@ void VulkanBackend::create_swapchain() {
 
   depth_handle = create_texture(tex_creation);
 
-  HTRACE("Created swapchain successfully");
+  HTRACE("Created swapchain {}x{} successfully", swapchain.vk_extents.width,
+         swapchain.vk_extents.height);
 }
 
 void VulkanBackend::destroy_swapchain() {
@@ -838,17 +840,23 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       PBRMaterial &material =
           packet->game->scene.pbr_materials[draw.material_index];
 
-      TextureResource *texture_resource =
+      TextureResource *albedo_texture_resource =
           RendererFrontEnd::instance()->textures.obtain(
               material.albedo_texture_handle);
+      TextureResource *normal_texture_resource =
+          RendererFrontEnd::instance()->textures.obtain(
+              material.normal_texture_handle);
 
       struct PushConstant {
         glm::mat4 model;
         u32 albedo_texture_index;
+        u32 normal_texture_index;
       };
 
-      PushConstant push_constant{draw.transform.get_mat4(),
-                                 texture_resource->internal_handle.index};
+      PushConstant push_constant{
+          draw.transform.get_mat4(),
+          albedo_texture_resource->internal_handle.index,
+          normal_texture_resource->internal_handle.index};
 
       VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
 
@@ -1225,15 +1233,13 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
       VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
   color_blend_attachment.blendEnable = VK_TRUE;
-  color_blend_attachment.srcColorBlendFactor =
-      VK_BLEND_FACTOR_SRC_ALPHA; // Optional
+  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
   color_blend_attachment.dstColorBlendFactor =
-      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;                          // Optional
-  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;            // Optional
-  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-  color_blend_attachment.dstAlphaBlendFactor =
-      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;               // Optional
-  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
+      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+  color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
   VkPipelineColorBlendStateCreateInfo color_blending{
       VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -1409,8 +1415,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 }
 
 TextureHandle VulkanBackend::create_texture(TextureCreation &creation) {
-  ZoneScoped;
-  ZoneText(creation.name, strlen(creation.name));
+  HELIX_PROFILER_FUNCTION();
+  HELIX_PROFILER_ZONE_TEXT(creation.name, strlen(creation.name));
   creation.alias_image = create_image(creation);
   creation.name = string_buffer.append_use_f("%s_View", creation.name);
   return create_image_view(creation);
@@ -2090,7 +2096,7 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 }
 
 void VulkanBackend::render_frame(RenderPacket *packet) {
-  ZoneScoped;
+  HELIX_PROFILER_FUNCTION();
   VulkanCommandBuffer *command_buffer =
       command_buffer_manager.get_command_buffer(packet->current_frame, 0,
                                                 false);

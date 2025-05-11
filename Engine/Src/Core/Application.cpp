@@ -3,10 +3,10 @@
 #include "Core/Input.hpp"
 #include "Core/Job.hpp"
 #include "Core/Log.hpp"
+#include "Core/Profiler.hpp"
 #include "Game.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
-#include <tracy/Tracy.hpp>
 
 namespace Helix {
 
@@ -69,29 +69,29 @@ void Application::run() {
 
       RendererFrontEnd::instance()->render_frame(&packet);
 
-      {
-        ZoneScopedN("Calculate remaining time and update frame count");
-        f64 frame_end_time = platform->get_absolute_time();
-        f64 frame_elapsed_time = frame_end_time - frame_start_time;
-        running_time += frame_elapsed_time;
-        f64 remaining_seconds = target_frame_seconds - frame_elapsed_time;
+      HELIX_PROFILER_ZONE("Calculate remaining time and update frame count",
+                          HELIX_PROFILER_COLOR_DEFAULT)
+      f64 frame_end_time = platform->get_absolute_time();
+      f64 frame_elapsed_time = frame_end_time - frame_start_time;
+      running_time += frame_elapsed_time;
+      f64 remaining_seconds = target_frame_seconds - frame_elapsed_time;
 
-        if (remaining_seconds > 0) {
-          u64 remaining_ms = (remaining_seconds * 1000);
+      if (remaining_seconds > 0) {
+        u64 remaining_ms = (remaining_seconds * 1000);
 
-          // If there is time left, give it back to the OS.
-          bool limit_frames = true;
-          if (remaining_ms > 0 && limit_frames) {
-            ZoneScopedN("Application sleep");
-            platform->sleep(remaining_ms - 1);
-          }
-
-          frame_count++;
+        // If there is time left, give it back to the OS.
+        if (remaining_ms > 0 && limit_frames) {
+          HELIX_PROFILER_ZONE("Application sleep", HELIX_PROFILER_COLOR_DEFAULT)
+          platform->sleep(remaining_ms - 1);
+          HELIX_PROFILER_ZONE_END()
         }
-        last_time = current_time;
+
+        frame_count++;
       }
+      last_time = current_time;
+      HELIX_PROFILER_ZONE_END()
     }
-    FrameMark;
+    HELIX_PROFILER_FRAME("Frame");
   }
 }
 
