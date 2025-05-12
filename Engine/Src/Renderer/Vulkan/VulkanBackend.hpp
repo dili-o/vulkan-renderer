@@ -40,8 +40,26 @@ struct VulkanBackend : public RendererBackend {
   virtual TextureHandle create_texture(TextureCreation &creation) override;
   ImageViewHandle create_image_view(TextureCreation &creation);
   ImageHandle create_image(TextureCreation &creation);
-  virtual bool update_shader_uniform_set(ShaderUniformSet &set,
-                                         PipelineHandle pipeline) override;
+
+  inline virtual BindingSetLayoutHandle
+  create_binding_set_layout(BindingSetLayoutCreation &creation) override {
+    return create_descriptor_set_layout(creation);
+  }
+  inline virtual BindingSetHandle
+  create_binding_set(BindingSetCreation &creation) override {
+    return create_descriptor_set(creation);
+  }
+
+  BindingSetLayoutHandle
+  create_descriptor_set_layout(BindingSetLayoutCreation &creation);
+  BindingSetHandle create_descriptor_set(BindingSetCreation &creation);
+
+  virtual bool update_binding_set(BindingSetHandle set,
+                                  BindingSetUpdateInfo *update_infos,
+                                  u32 update_count) override;
+  virtual void set_pipeline_binding_set(PipelineHandle pipeline,
+                                        BindingSetHandle set,
+                                        u32 set_index) override;
   void create_descriptor_pool(u32 max_frames_in_flight);
   void create_sync_objects(u32 max_frames_in_flight);
   SamplerHandle create_sampler(SamplerCreation &creation);
@@ -58,14 +76,19 @@ struct VulkanBackend : public RendererBackend {
   virtual void destroy_buffer(BufferHandle handle) override;
   virtual void destroy_pipeline(PipelineHandle handle) override;
   virtual void destroy_texture(TextureHandle handle) override;
+  inline virtual void destroy_binding_set(BindingSetHandle handle) override {
+    destroy_descriptor_set(handle);
+  }
   void destroy_image(TextureHandle handle);
   void destroy_image_view(TextureHandle handle);
   void destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle);
+  void destroy_descriptor_set(DescriptorSetHandle handle);
   void destroy_sampler(SamplerHandle handle);
 
   void destroy_buffer_instant(BufferHandle handle);
   void destroy_pipeline_instant(PipelineHandle handle);
   void destroy_descriptor_set_layout_instant(DescriptorSetLayoutHandle handle);
+  void destroy_descriptor_set_instant(DescriptorSetHandle handle);
   void destroy_image_instant(TextureHandle handle);
   void destroy_image_view_instant(TextureHandle handle);
   void destroy_sampler_instant(SamplerHandle handle);
@@ -110,8 +133,8 @@ struct VulkanBackend : public RendererBackend {
 
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorPool vk_bindless_descriptor_pool{VK_NULL_HANDLE};
-  VkDescriptorSetLayout vk_bindless_descriptor_layout{VK_NULL_HANDLE};
-  VkDescriptorSet vk_bindless_descriptor_set{VK_NULL_HANDLE};
+  // VkDescriptorSetLayout vk_bindless_descriptor_layout{VK_NULL_HANDLE};
+  // VkDescriptorSet vk_bindless_descriptor_set{VK_NULL_HANDLE};
 
   Array<TextureHandle> bindless_textures_to_update{};
   Array<ResourceQueueObject> resource_deletion_queue{};

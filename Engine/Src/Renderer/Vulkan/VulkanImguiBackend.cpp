@@ -98,8 +98,14 @@ void VulkanImguiBackend::init(void *configuration) {
   pipeline_creation.shader_count = 2;
   pipeline_creation.pipeline_type = PipelineType::Graphics;
   pipeline_creation.cull_mode = CullMode::None;
+  pipeline_creation.set_layouts[0] =
+      RendererFrontEnd::instance()->bindless_set_layout;
+  pipeline_creation.set_layout_count = 1;
 
   pipeline = backend->create_pipeline(pipeline_creation);
+
+  RendererFrontEnd::instance()->set_pipeline_binding_set(
+      pipeline, RendererFrontEnd::instance()->bindless_set, 0);
 }
 
 void VulkanImguiBackend::shutdown() {
@@ -194,8 +200,10 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
 
   command_buffer->bind_viewport(extents);
 
-  command_buffer->bind_descriptor_sets(pipeline,
-                                       backend->vk_bindless_descriptor_set, 0);
+  VkDescriptorSet vk_bindless_descriptor_set =
+      backend->access_descriptor_set(RendererFrontEnd::instance()->bindless_set)
+          ->vk_handle;
+  command_buffer->bind_descriptor_sets(pipeline, vk_bindless_descriptor_set, 0);
 
   // Setup push constants
   VulkanPipeline *vulkan_pipeline = backend->access_pipeline(pipeline);

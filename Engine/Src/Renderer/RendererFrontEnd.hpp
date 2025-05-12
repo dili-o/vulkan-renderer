@@ -30,6 +30,9 @@ public:
   BufferHandle create_buffer(BufferCreation &creation);
   PipelineHandle create_pipeline(PipelineCreation &creation);
   TextureHandle create_texture(TextureCreation &creation);
+  BindingSetLayoutHandle
+  create_binding_set_layout(BindingSetLayoutCreation &creation);
+  BindingSetHandle create_binding_set(BindingSetCreation &creation);
 
   BufferInfo access_buffer_view(BufferHandle handle);
   TextureInfo access_texture_view(TextureHandle handle);
@@ -38,9 +41,12 @@ public:
   void destroy_buffer(BufferHandle handle);
   void destroy_pipeline(PipelineHandle handle);
   void destroy_texture(TextureHandle handle);
+  void destroy_binding_set(BindingSetHandle handle);
 
-  bool update_shader_uniform_set(ShaderUniformSet &set,
-                                 PipelineHandle pipeline);
+  bool update_binding_set(BindingSetHandle set,
+                          BindingSetUpdateInfo *update_infos, u32 update_count);
+  void set_pipeline_binding_set(PipelineHandle pipeline, BindingSetHandle set,
+                                u32 set_index);
 
   void print_gpu_stats();
 
@@ -56,6 +62,12 @@ public:
 
   TextureHandle default_albedo_texture;
   TextureHandle default_normal_texture;
+
+  BindingSetLayoutHandle scene_set_layout{};
+  BindingSetHandle scene_sets[max_frames_in_flight];
+
+  BindingSetLayoutHandle bindless_set_layout{};
+  BindingSetHandle bindless_set{};
 };
 
 } // namespace Helix

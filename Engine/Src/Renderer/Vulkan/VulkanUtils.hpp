@@ -27,6 +27,12 @@ VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout);
 
 VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode);
 
+VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type);
+
+cstring to_compiler_stage(ShaderStage::Enum stage);
+
+VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage);
+
 VkImageMemoryBarrier2
 create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
                      VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,

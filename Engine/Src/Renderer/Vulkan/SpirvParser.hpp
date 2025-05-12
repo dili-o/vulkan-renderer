@@ -12,7 +12,7 @@ struct ParseResult {
   VkPushConstantRange push_constant{}; // NOTE: only assuming one push constant
                                        // in whole pipeline
 
-  Array<VulkanDescriptorSetLayout> set_layouts;
+  // Array<VulkanDescriptorSetLayout> set_layouts;
 };
 
 void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result);

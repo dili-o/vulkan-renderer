@@ -19,24 +19,24 @@ VkFormat get_unorm_variant(u32 component_count) {
 }
 
 // Returns a new set layout if one does not already exist in the ParseResult
-VulkanDescriptorSetLayout &
-get_set(Array<VulkanDescriptorSetLayout> &set_layouts, u32 set_index) {
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  if (set_layouts.size == 0) {
-    VulkanDescriptorSetLayout &layout = set_layouts.push_use();
-    layout.vk_bindings.init(allocator, 4);
-    return layout;
-  }
-
-  for (u32 i = 0; i < set_layouts.size; ++i) {
-    if (set_layouts[i].set_index == set_index)
-      return set_layouts[i];
-  }
-
-  VulkanDescriptorSetLayout &layout = set_layouts.push_use();
-  layout.vk_bindings.init(allocator, 4);
-  return layout;
-}
+// VulkanDescriptorSetLayout &
+// get_set(Array<VulkanDescriptorSetLayout> &set_layouts, u32 set_index) {
+//  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+//  if (set_layouts.size == 0) {
+//    VulkanDescriptorSetLayout &layout = set_layouts.push_use();
+//    layout.vk_bindings.init(allocator, 4);
+//    return layout;
+//  }
+//
+//  for (u32 i = 0; i < set_layouts.size; ++i) {
+//    if (set_layouts[i].set_index == set_index)
+//      return set_layouts[i];
+//  }
+//
+//  VulkanDescriptorSetLayout &layout = set_layouts.push_use();
+//  layout.vk_bindings.init(allocator, 4);
+//  return layout;
+//}
 
 // Returns a new set binding if one does not already exist in the ParseResult
 VkDescriptorSetLayoutBinding &
@@ -76,33 +76,33 @@ void parse_binary(const u32 *data, size_t data_size,
   // Descriptor Sets
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
 
-  for (u32 i = 0; i < (u32)sets.size(); ++i) {
-    // Check if set == 0 (Reserved for bindless set)
-    if (sets[i]->set == 0)
-      continue;
-    // Check if we've already added the set
-    VulkanDescriptorSetLayout &set_layout =
-        get_set(parse_result.set_layouts, sets[i]->set);
-    set_layout.set_index = sets[i]->set;
+  // for (u32 i = 0; i < (u32)sets.size(); ++i) {
+  //   // Check if set == 0 (Reserved for bindless set)
+  //   if (sets[i]->set == 0)
+  //     continue;
+  //   // Check if we've already added the set
+  //   VulkanDescriptorSetLayout &set_layout =
+  //       get_set(parse_result.set_layouts, sets[i]->set);
+  //   set_layout.set_index = sets[i]->set;
 
-    for (u32 j = 0; j < sets[i]->binding_count; ++j) {
-      SpvReflectDescriptorBinding *spirv_binding = sets[i]->bindings[j];
-      bool is_unique = false;
-      VkDescriptorSetLayoutBinding &vk_binding = get_binding(
-          set_layout.vk_bindings, spirv_binding->binding, is_unique);
-      // First pass
-      if (is_unique) {
-        vk_binding.binding = spirv_binding->binding;
-        vk_binding.descriptorType =
-            (VkDescriptorType)spirv_binding->descriptor_type;
-        vk_binding.descriptorCount = 1;
-        vk_binding.stageFlags = (VkShaderStageFlagBits)module.shader_stage;
-        vk_binding.pImmutableSamplers = nullptr;
-      } else {
-        vk_binding.stageFlags |= (VkShaderStageFlagBits)module.shader_stage;
-      }
-    }
-  }
+  //  for (u32 j = 0; j < sets[i]->binding_count; ++j) {
+  //    SpvReflectDescriptorBinding *spirv_binding = sets[i]->bindings[j];
+  //    bool is_unique = false;
+  //    VkDescriptorSetLayoutBinding &vk_binding = get_binding(
+  //        set_layout.vk_bindings, spirv_binding->binding, is_unique);
+  //    // First pass
+  //    if (is_unique) {
+  //      vk_binding.binding = spirv_binding->binding;
+  //      vk_binding.descriptorType =
+  //          (VkDescriptorType)spirv_binding->descriptor_type;
+  //      vk_binding.descriptorCount = 1;
+  //      vk_binding.stageFlags = (VkShaderStageFlagBits)module.shader_stage;
+  //      vk_binding.pImmutableSamplers = nullptr;
+  //    } else {
+  //      vk_binding.stageFlags |= (VkShaderStageFlagBits)module.shader_stage;
+  //    }
+  //  }
+  //}
 
   // Push Constants
   u32 push_count = 0;
@@ -172,7 +172,7 @@ void parse_binary(const u32 *data, size_t data_size,
 
     VkVertexInputAttributeDescription &attribute =
         parse_result.vertex_attributes[location];
-    attribute.binding = 0; // TODO: For now assume only one descriptor binding
+    attribute.binding = 0; // TODO: For now assume only one description binding
     attribute.location = location;
     attribute.format = (VkFormat)format;
     attribute.offset = binding_description.stride;

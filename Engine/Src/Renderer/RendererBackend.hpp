@@ -19,13 +19,21 @@ struct RendererBackend {
   virtual BufferHandle create_buffer(BufferCreation &creation) = 0;
   virtual PipelineHandle create_pipeline(PipelineCreation &creation) = 0;
   virtual TextureHandle create_texture(TextureCreation &creation) = 0;
+  virtual BindingSetLayoutHandle
+  create_binding_set_layout(BindingSetLayoutCreation &creation) = 0;
+  virtual BindingSetHandle create_binding_set(BindingSetCreation &creation) = 0;
 
   virtual void destroy_buffer(BufferHandle handle) = 0;
   virtual void destroy_pipeline(BufferHandle handle) = 0;
   virtual void destroy_texture(TextureHandle handle) = 0;
+  virtual void destroy_binding_set(BindingSetHandle handle) = 0;
 
-  virtual bool update_shader_uniform_set(ShaderUniformSet &set,
-                                         PipelineHandle pipeline) = 0;
+  virtual bool update_binding_set(BindingSetHandle set,
+                                  BindingSetUpdateInfo *update_infos,
+                                  u32 update_count) = 0;
+  virtual void set_pipeline_binding_set(PipelineHandle pipeline,
+                                        BindingSetHandle set,
+                                        u32 set_index) = 0;
 
   virtual void print_gpu_stats() = 0;
 

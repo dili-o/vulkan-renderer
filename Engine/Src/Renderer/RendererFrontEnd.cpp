@@ -1,6 +1,5 @@
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Containers/ResourcePool.hpp"
-#include "Core/Clock.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
@@ -52,6 +51,22 @@ void RendererFrontEnd::init(void *_config) {
 
   string_buffer.init(allocator, hmega(6));
 
+  BindingSetLayoutCreation layout_creation{};
+  layout_creation.name = "Scene_Global_SetLayout";
+  layout_creation.add_binding(0, 1, ShaderStage::Vertex,
+                              BindingType::UniformBuffer);
+  scene_set_layout = create_binding_set_layout(layout_creation);
+
+  layout_creation.reset();
+  layout_creation.name = "Bindless_SetLayout";
+  layout_creation.is_bindless = true;
+  layout_creation.add_binding(0, 1000, ShaderStage::AllStage,
+                              BindingType::CombinedSampler);
+  bindless_set_layout = create_binding_set_layout(layout_creation);
+  BindingSetCreation set_creation{};
+  set_creation.name = "Bindless_Set";
+  set_creation.layout = bindless_set_layout;
+  bindless_set = create_binding_set(set_creation);
   // Create Uniform Buffers
   {
     BufferCreation creation{};
@@ -64,12 +79,25 @@ void RendererFrontEnd::init(void *_config) {
     for (u32 i = 0; i < max_frames_in_flight; ++i) {
       creation.name = string_buffer.append_use_f("uniform_buffer_%d", i);
       uniform_buffers[i] = create_buffer(creation);
+      set_creation.reset();
+      set_creation.layout = scene_set_layout;
+      set_creation.name = string_buffer.append_use_f("Scene_Global_Set_%d", i);
+      scene_sets[i] = create_binding_set(set_creation);
+
+      BindingSetUpdateInfo update_info;
+      update_info.resource_handle = uniform_buffers[i];
+      update_info.resource_type = ResourceType::Buffer;
+      update_info.binding = 0;
+      update_info.resource_index = 0;
+      update_info.buffer_info.offset = 0;
+      update_info.buffer_info.range = sizeof(UniformBufferObject);
+      update_binding_set(scene_sets[i], &update_info, 1);
     }
   }
 
   {
     PipelineCreation creation;
-    creation.name = "test";
+    creation.name = "pbr_pipeline";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
     creation.shader_create_infos[0] = {"shader.vert", ShaderStage::Vertex};
@@ -77,10 +105,16 @@ void RendererFrontEnd::init(void *_config) {
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::None;
+    creation.set_layouts[0] = bindless_set_layout;
+    creation.set_layouts[1] = scene_set_layout;
+    creation.set_layout_count = 2;
 
     pbr_pipeline = create_pipeline(creation);
 
-    creation.name = "test";
+    set_pipeline_binding_set(pbr_pipeline, bindless_set, 0);
+    set_pipeline_binding_set(pbr_pipeline, scene_sets[0], 1);
+
+    creation.name = "depth_prepass_pipeline";
     creation.shader_create_infos =
         (ShaderCreateInfo *)halloca(sizeof(ShaderCreateInfo), stack_allocator);
     creation.shader_create_infos[0] = {"depth_prepass.vert",
@@ -88,24 +122,10 @@ void RendererFrontEnd::init(void *_config) {
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::Back;
+    creation.set_layouts[0] = scene_set_layout;
+    creation.set_layout_count = 1;
     depth_prepass_pipeline = create_pipeline(creation);
-  }
-
-  ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
-      sizeof(ShaderUniform) * max_frames_in_flight, stack_allocator);
-  for (u32 i = 0; i < max_frames_in_flight; ++i) {
-    shader_uniforms[i].binding = 0;
-    shader_uniforms[i].resource_handle = uniform_buffers[i];
-    shader_uniforms[i].resource_type = ResourceType::Buffer;
-    shader_uniforms[i].buffer_info.offset = 0;
-    shader_uniforms[i].buffer_info.range = sizeof(UniformBufferObject);
-
-    ShaderUniformSet set{};
-    set.uniform_count = 1;
-    set.uniforms = &shader_uniforms[i];
-    set.set_index = 1;
-    update_shader_uniform_set(set, pbr_pipeline);
-    // update_shader_uniform_set(set, depth_prepass_pipeline);
+    set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
   }
 
   TextureCreation tex_creation{};
@@ -164,6 +184,10 @@ void RendererFrontEnd::shutdown() {
   destroy_pipeline(pbr_pipeline);
   destroy_texture(default_albedo_texture);
   destroy_texture(default_normal_texture);
+
+  for (u32 i = 0; i < max_frames_in_flight - 1; ++i) {
+    destroy_binding_set(scene_sets[i + 1]);
+  }
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
@@ -229,6 +253,16 @@ TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
   return backend->create_texture(creation);
 }
 
+BindingSetLayoutHandle RendererFrontEnd::create_binding_set_layout(
+    BindingSetLayoutCreation &creation) {
+  return backend->create_binding_set_layout(creation);
+}
+
+BindingSetHandle
+RendererFrontEnd::create_binding_set(BindingSetCreation &creation) {
+  return backend->create_binding_set(creation);
+}
+
 // TODO: Implement
 BufferInfo RendererFrontEnd::access_buffer_view(BufferHandle handle) {
   BufferInfo info{};
@@ -271,9 +305,24 @@ void RendererFrontEnd::destroy_texture(TextureHandle handle) {
   backend->destroy_texture(handle);
 }
 
-bool RendererFrontEnd::update_shader_uniform_set(ShaderUniformSet &set,
-                                                 PipelineHandle pipeline) {
-  return backend->update_shader_uniform_set(set, pipeline);
+void RendererFrontEnd::destroy_binding_set(BindingSetHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to destroy an invalid BindingSet");
+    return;
+  }
+  backend->destroy_binding_set(handle);
+}
+
+bool RendererFrontEnd::update_binding_set(BindingSetHandle set,
+                                          BindingSetUpdateInfo *update_infos,
+                                          u32 update_count) {
+  return backend->update_binding_set(set, update_infos, update_count);
+}
+
+void RendererFrontEnd::set_pipeline_binding_set(PipelineHandle pipeline,
+                                                BindingSetHandle set,
+                                                u32 set_index) {
+  backend->set_pipeline_binding_set(pipeline, set, set_index);
 }
 
 void RendererFrontEnd::print_gpu_stats() { backend->print_gpu_stats(); }

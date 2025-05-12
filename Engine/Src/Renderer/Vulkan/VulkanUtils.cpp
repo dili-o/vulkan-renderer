@@ -138,6 +138,43 @@ VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode) {
   }
 }
 
+VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type) {
+  switch (binding_type) {
+  case BindingType::UniformBuffer:
+    return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  case BindingType::CombinedSampler:
+    return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  }
+}
+
+cstring to_compiler_stage(ShaderStage::Enum stage) {
+  switch (stage) {
+  case ShaderStage::Vertex:
+    return "vert";
+  case ShaderStage::Fragment:
+    return "frag";
+  case ShaderStage::Compute:
+    return "comp";
+  default:
+    HERROR("Unknown shader stage!");
+    return nullptr;
+  }
+}
+
+VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage_) {
+  VkShaderStageFlags stage{};
+  if (stage_ == ShaderStage::AllStage)
+    return VK_SHADER_STAGE_ALL;
+  if (stage_ & ShaderStage::Vertex)
+    stage |= VK_SHADER_STAGE_VERTEX_BIT;
+  if (stage_ & ShaderStage::Fragment)
+    stage |= VK_SHADER_STAGE_FRAGMENT_BIT;
+  if (stage_ & ShaderStage::Compute)
+    stage |= VK_SHADER_STAGE_COMPUTE_BIT;
+
+  return stage;
+}
+
 VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
   switch (layout) {
   case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:

@@ -50,24 +50,29 @@ struct VulkanBuffer {
 
 struct VulkanDescriptorSetLayout {
   VkDescriptorSetLayout vk_handle{VK_NULL_HANDLE};
-  Array<VkDescriptorSetLayoutBinding> vk_bindings;
-  u32 set_index = 0;
+  // Array<VkDescriptorSetLayoutBinding> vk_bindings; // TODO: Remove
 
-  Array<DescriptorSetHandle> allocated_sets{};
+  // Array<DescriptorSetHandle> allocated_sets{}; // TODO: Remove,
+  // reference_count already does what this does
   cstring name{nullptr};
+  // u32 set_index = 0;       // TODO: Remove
+  i32 reference_count = 0; // Number of Descriptor sets that use this layout
+  bool is_bindless = false;
 };
 
 struct VulkanDescriptorSet {
   VkDescriptorSet vk_handle{VK_NULL_HANDLE};
   DescriptorSetLayoutHandle set_layout;
   cstring name{nullptr};
+  i32 reference_count = 0; // Number of Pipelines that use this set
 };
 
 struct VulkanPipeline {
   VkPipeline vk_handle{VK_NULL_HANDLE};
   VkPipelineLayout vk_layout{VK_NULL_HANDLE};
-  DescriptorSetLayoutHandle *set_layouts = nullptr;
-  u32 set_layout_count = 0;
+  // DescriptorSetLayoutHandle *set_layouts = nullptr; // TODO: Remove
+  DescriptorSetHandle *sets = nullptr;
+  u32 set_count = 0;
   VkPipelineBindPoint bind_point;
   cstring name{nullptr};
 };

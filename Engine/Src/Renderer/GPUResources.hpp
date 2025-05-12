@@ -1,4 +1,6 @@
 #pragma once
+#include "Containers/ResourcePool.hpp"
+#include "Core/Assert.hpp"
 #include "GPUResourceTypes.hpp"
 
 namespace Helix {
@@ -81,6 +83,8 @@ struct PipelineCreation {
   cstring name;
 
   CullMode::Enum cull_mode = CullMode::Back;
+  BindingSetLayoutHandle set_layouts[5]; // TODO: Remove magic number
+  u32 set_layout_count = 0;
 
   PipelineCreation &reset();
 };
@@ -97,13 +101,14 @@ struct TextureCreation {
 
   TextureUsage::Enum usage;
 
-  ResourceHandle alias_image{};
+  TextureHandle alias_image{};
 
   TextureFormat::Enum format = TextureFormat::Undefined;
   TextureType::Enum type = TextureType::Texture2D;
 
   cstring name = nullptr;
 };
+
 #pragma endregion Creation
 
 // TODO: Expand
@@ -118,10 +123,20 @@ struct TextureInfo {};
 // TODO: Expand
 struct PipelineInfo {};
 
-struct ShaderUniform {
+#define MAX_BINDING_PER_SET 16
+
+struct BindingInfo {
+  u32 binding;
+  u32 resource_count;
+  ShaderStage::Enum stage;
+  BindingType::Enum type;
+};
+
+struct BindingSetUpdateInfo {
   ResourceHandle resource_handle;
   ResourceType::Enum resource_type;
-  u32 binding;
+  u32 binding = 0;
+  u32 resource_index = 0;
   union {
     struct {
       u32 offset;
@@ -135,10 +150,41 @@ struct ShaderUniform {
   };
 };
 
-struct ShaderUniformSet {
-  ShaderUniform *uniforms = nullptr;
-  u32 uniform_count = 0;
-  u32 set_index;
+struct BindingSetLayoutCreation {
+  BindingInfo binding_infos[MAX_BINDING_PER_SET];
+  u32 binding_count = 0;
+  bool is_bindless = false;
+  cstring name = nullptr;
+
+  BindingSetLayoutCreation &reset() {
+    binding_count = 0;
+    is_bindless = false;
+    name = nullptr;
+    return *this;
+  }
+
+  BindingSetLayoutCreation &add_binding(u32 binding, u32 resource_count,
+                                        ShaderStage::Enum stage,
+                                        BindingType::Enum type) {
+    HASSERT(binding < 15);
+    binding_infos[binding_count].binding = binding;
+    binding_infos[binding_count].resource_count = resource_count;
+    binding_infos[binding_count].stage = stage;
+    binding_infos[binding_count].type = type;
+    ++binding_count;
+    return *this;
+  }
+};
+
+struct BindingSetCreation {
+  BindingSetLayoutHandle layout;
+  cstring name = nullptr;
+
+  BindingSetCreation &reset() {
+    name = nullptr;
+    layout.index = k_invalid_index;
+    return *this;
+  }
 };
 
 } // namespace Helix
