@@ -52,6 +52,7 @@ public:
   BufferHandle uniform_buffers[max_frames_in_flight];
 
   PipelineHandle pbr_pipeline{};
+  PipelineHandle depth_prepass_pipeline{};
 
   TextureHandle default_albedo_texture;
   TextureHandle default_normal_texture;

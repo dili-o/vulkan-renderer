@@ -78,13 +78,17 @@ void RendererFrontEnd::init(void *_config) {
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::None;
 
-    Clock clock{};
-    clock.start();
-    f64 start_time = clock.get_elapsed_time_ms();
     pbr_pipeline = create_pipeline(creation);
 
-    f64 delta_time = clock.get_elapsed_time_ms() - start_time;
-    HTRACE("Pipeline create time: {:.3f} ms", delta_time);
+    creation.name = "test";
+    creation.shader_create_infos =
+        (ShaderCreateInfo *)halloca(sizeof(ShaderCreateInfo), stack_allocator);
+    creation.shader_create_infos[0] = {"depth_prepass.vert",
+                                       ShaderStage::Vertex};
+    creation.shader_count = 1;
+    creation.pipeline_type = PipelineType::Graphics;
+    creation.cull_mode = CullMode::Back;
+    depth_prepass_pipeline = create_pipeline(creation);
   }
 
   ShaderUniform *shader_uniforms = (ShaderUniform *)halloca(
@@ -101,6 +105,7 @@ void RendererFrontEnd::init(void *_config) {
     set.uniforms = &shader_uniforms[i];
     set.set_index = 1;
     update_shader_uniform_set(set, pbr_pipeline);
+    // update_shader_uniform_set(set, depth_prepass_pipeline);
   }
 
   TextureCreation tex_creation{};
@@ -155,6 +160,7 @@ void RendererFrontEnd::init(void *_config) {
 }
 
 void RendererFrontEnd::shutdown() {
+  destroy_pipeline(depth_prepass_pipeline);
   destroy_pipeline(pbr_pipeline);
   destroy_texture(default_albedo_texture);
   destroy_texture(default_normal_texture);

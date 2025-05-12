@@ -2,10 +2,9 @@
 #include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
-
+// Vendor
 #include <cstring>
 #include <spirv_reflect.h>
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 

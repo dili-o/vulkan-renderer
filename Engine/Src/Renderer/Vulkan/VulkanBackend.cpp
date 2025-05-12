@@ -417,7 +417,7 @@ bool VulkanBackend::init(void *_config) {
   frame_number = 0;
 
   VulkanCommandBuffer *cb =
-      command_buffer_manager.get_command_buffer(0, 5, false);
+      command_buffer_manager.get_command_buffer(0, 0, false);
   graphics_queue_tracer = TracyVkContext(
       vk_instance, vk_physical_device, vk_device, vk_graphics_queue,
       cb->vk_handle, vkGetInstanceProcAddr, vkGetDeviceProcAddr);
@@ -815,7 +815,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   // TODO: Renderpass and Framebuffer struct
   // TODO:
-  VulkanPipeline *pipeline = access_pipeline({0, 0});
+  VulkanPipeline *pipeline =
+      access_pipeline(RendererFrontEnd::instance()->pbr_pipeline);
   command_buffer->bind_pipeline({0, 0});
 
   command_buffer->bind_viewport(swapchain.vk_extents);
@@ -1887,8 +1888,9 @@ void VulkanBackend::destroy_image_view_instant(TextureHandle handle) {
   }
   VulkanImageView *image_view = image_views.obtain(handle);
   if (image_view) {
-	  vkDestroyImageView(vk_device, image_view->vk_handle, vk_allocation_callbacks);
-	  image_views.release(handle);
+    vkDestroyImageView(vk_device, image_view->vk_handle,
+                       vk_allocation_callbacks);
+    image_views.release(handle);
   }
 }
 
@@ -1942,6 +1944,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
     HERROR("Failed to obtain a VulkanDescriptorSet resource!");
     return false;
   }
+
   VulkanDescriptorSet *d_set = access_descriptor_set(handle);
 
   VulkanPipeline *pipeline = access_pipeline(pipeline_handle);
@@ -2028,7 +2031,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
 void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
   VkDescriptorPoolSize pool_size{};
   pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  pool_size.descriptorCount = (max_frames_in_flight);
+  pool_size.descriptorCount = (1);
 
   VkDescriptorPoolSize pool_sizes[] = {pool_size};
 
@@ -2050,7 +2053,7 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
       VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   bindless_pool_info.poolSizeCount = 1;
   bindless_pool_info.pPoolSizes = &bindless_poolsize;
-  bindless_pool_info.maxSets = MAX_TEXTURES;
+  bindless_pool_info.maxSets = 1;
   bindless_pool_info.flags =
       VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
 
