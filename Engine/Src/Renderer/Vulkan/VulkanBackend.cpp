@@ -23,6 +23,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cstring>
+#include <tracy/TracyVulkan.hpp>
 #include <vulkan/vulkan_core.h>
 
 #ifdef _DEBUG
@@ -61,6 +62,9 @@ cstring to_compiler_stage(ShaderStage::Enum stage);
 VkShaderStageFlagBits to_vk_shader_stage(ShaderStage::Enum stage);
 
 #pragma endregion HelperFunctions
+
+static TracyVkCtx graphics_queue_tracer;
+static TracyVkCtx compute_queue_tracer;
 
 bool VulkanBackend::init(void *_config) {
   VkResult res = volkInitialize();
@@ -411,6 +415,12 @@ bool VulkanBackend::init(void *_config) {
   resource_deletion_queue.init(allocator, 10);
 
   frame_number = 0;
+
+  VulkanCommandBuffer *cb =
+      command_buffer_manager.get_command_buffer(0, 5, false);
+  graphics_queue_tracer = TracyVkContext(
+      vk_instance, vk_physical_device, vk_device, vk_graphics_queue,
+      cb->vk_handle, vkGetInstanceProcAddr, vkGetDeviceProcAddr);
   HINFO("Vulkan Backend Initialized");
 
   return true;
@@ -444,6 +454,7 @@ bool VulkanBackend::shutdown() {
   vkDestroyDescriptorSetLayout(vk_device, vk_bindless_descriptor_layout,
                                vk_allocation_callbacks);
 
+  TracyVkDestroy(graphics_queue_tracer);
   command_buffer_manager.shutdown();
   transfer_command_buffer_manager.shutdown();
 
@@ -541,6 +552,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
+  TracyVkCollect(graphics_queue_tracer, command_buffer->vk_handle);
   command_buffer->end();
 
   // Update Bindless Textures
@@ -781,6 +793,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                           RenderPacket *packet,
                                           u32 current_frame) {
   command_buffer->push_marker("Frame");
+  TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Graphics CB");
 
   command_buffer->transition_image(
       &swapchain.images[swapchain.current_image_index],
@@ -821,52 +834,53 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->bind_descriptor_sets({0, 0}, vk_bindless_descriptor_set, 0);
   command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle, 1);
 
-  for (u32 i = 0; i < packet->mesh_count; ++i) {
+  {
+    TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Draw Calls");
+    for (u32 i = 0; i < packet->mesh_count; ++i) {
+      Mesh &mesh = packet->meshes[i];
+      BufferResource *vertex_buffer =
+          RendererFrontEnd::instance()->access_buffer(mesh.vertex_buffer);
+      command_buffer->bind_vertex_buffer(vertex_buffer->internal_handle, 0, 1);
 
-    Mesh &mesh = packet->meshes[i];
-    BufferResource *vertex_buffer =
-        RendererFrontEnd::instance()->access_buffer(mesh.vertex_buffer);
-    command_buffer->bind_vertex_buffer(vertex_buffer->internal_handle, 0, 1);
+      for (u32 j = 0; j < mesh.draws.size; ++j) {
+        MeshDraw &draw = mesh.draws[j];
+        BufferResource *index_buffer =
+            RendererFrontEnd::instance()->access_buffer(draw.index_buffer);
+        // TODO: Maybe only bind 1 index buffer per mesh
+        command_buffer->bind_index_buffer(index_buffer->internal_handle, 0,
+                                          VK_INDEX_TYPE_UINT32);
 
-    for (u32 j = 0; j < mesh.draws.size; ++j) {
-      MeshDraw &draw = mesh.draws[j];
-      BufferResource *index_buffer =
-          RendererFrontEnd::instance()->access_buffer(draw.index_buffer);
-      // TODO: Maybe only bind 1 index buffer per mesh
-      command_buffer->bind_index_buffer(index_buffer->internal_handle, 0,
-                                        VK_INDEX_TYPE_UINT32);
+        // TODO: Maybe add a pointer to pbr_materials in RenderPacket
+        PBRMaterial &material =
+            packet->game->scene.pbr_materials[draw.material_index];
 
-      // TODO: Maybe add a pointer to pbr_materials in RenderPacket
-      PBRMaterial &material =
-          packet->game->scene.pbr_materials[draw.material_index];
+        TextureResource *albedo_texture_resource =
+            RendererFrontEnd::instance()->textures.obtain(
+                material.albedo_texture_handle);
+        TextureResource *normal_texture_resource =
+            RendererFrontEnd::instance()->textures.obtain(
+                material.normal_texture_handle);
 
-      TextureResource *albedo_texture_resource =
-          RendererFrontEnd::instance()->textures.obtain(
-              material.albedo_texture_handle);
-      TextureResource *normal_texture_resource =
-          RendererFrontEnd::instance()->textures.obtain(
-              material.normal_texture_handle);
+        struct PushConstant {
+          glm::mat4 model;
+          u32 albedo_texture_index;
+          u32 normal_texture_index;
+        };
 
-      struct PushConstant {
-        glm::mat4 model;
-        u32 albedo_texture_index;
-        u32 normal_texture_index;
-      };
+        PushConstant push_constant{
+            draw.transform.get_mat4(),
+            albedo_texture_resource->internal_handle.index,
+            normal_texture_resource->internal_handle.index};
 
-      PushConstant push_constant{
-          draw.transform.get_mat4(),
-          albedo_texture_resource->internal_handle.index,
-          normal_texture_resource->internal_handle.index};
+        VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
 
-      VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+        command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                       sizeof(PushConstant), &push_constant);
 
-      command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
-                                     sizeof(PushConstant), &push_constant);
-
-      command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
+        command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
+      }
     }
   }
-
   // NOTE: Imgui needs to use the renderpass
   // command_buffer->end_current_renderpass();
 
@@ -1314,13 +1328,14 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
                                   vk_allocation_callbacks,
                                   &pipeline->vk_layout));
   // Dynamic Rendering
-  VkPipelineRenderingCreateInfoKHR pipeline_create{
+  VkPipelineRenderingCreateInfo pipeline_rendering_create{
       VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
-  pipeline_create.pNext = VK_NULL_HANDLE;
-  pipeline_create.colorAttachmentCount = 1;
-  pipeline_create.pColorAttachmentFormats = &swapchain.vk_surface_format.format;
-  pipeline_create.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-  pipeline_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+  pipeline_rendering_create.pNext = VK_NULL_HANDLE;
+  pipeline_rendering_create.colorAttachmentCount = 1;
+  pipeline_rendering_create.pColorAttachmentFormats =
+      &swapchain.vk_surface_format.format;
+  pipeline_rendering_create.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+  pipeline_rendering_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
   // Pipeline Cache
   VkPipelineCache pipeline_cache{VK_NULL_HANDLE};
@@ -1370,12 +1385,12 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     pipeline_info.pViewportState = &viewport_state;
     pipeline_info.pRasterizationState = &rasterizer;
     pipeline_info.pMultisampleState = &multisampling;
-    pipeline_info.pDepthStencilState = &depth_stencil; // Optional
+    pipeline_info.pDepthStencilState = &depth_stencil;
     pipeline_info.pColorBlendState = &color_blending;
     pipeline_info.pDynamicState = &dynamic_state;
     pipeline_info.layout = pipeline->vk_layout;
     pipeline_info.renderPass = VK_NULL_HANDLE;
-    pipeline_info.pNext = &pipeline_create;
+    pipeline_info.pNext = &pipeline_rendering_create;
 
     (vkCreateGraphicsPipelines(vk_device, pipeline_cache, 1, &pipeline_info,
                                vk_allocation_callbacks, &pipeline->vk_handle));

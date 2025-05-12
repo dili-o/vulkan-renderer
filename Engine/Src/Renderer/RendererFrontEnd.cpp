@@ -84,7 +84,7 @@ void RendererFrontEnd::init(void *_config) {
     Clock clock{};
     clock.start();
     f64 start_time = clock.get_elapsed_time_ms();
-    pipeline = create_pipeline(creation);
+    pbr_pipeline = create_pipeline(creation);
 
     f64 delta_time = clock.get_elapsed_time_ms() - start_time;
     HTRACE("Pipeline create time: {:.3f} ms", delta_time);
@@ -104,7 +104,7 @@ void RendererFrontEnd::init(void *_config) {
     set.uniform_count = 1;
     set.uniforms = &shader_uniforms[i];
     set.set_index = 1;
-    update_shader_uniform_set(set, pipeline);
+    update_shader_uniform_set(set, pbr_pipeline);
   }
 
   TextureCreation tex_creation{};
@@ -159,7 +159,7 @@ void RendererFrontEnd::init(void *_config) {
 }
 
 void RendererFrontEnd::shutdown() {
-  destroy_pipeline(pipeline);
+  destroy_pipeline(pbr_pipeline);
   destroy_texture(default_albedo_texture);
   destroy_texture(default_normal_texture);
 

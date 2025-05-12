@@ -19,6 +19,7 @@ struct RendererFrontEnd : public Service {
 
   HELIX_DECLARE_SERVICE(RendererFrontEnd);
 
+public:
   void on_resize(u16 width, u16 height);
 
   bool render_frame(RenderPacket *packet);
@@ -29,7 +30,6 @@ struct RendererFrontEnd : public Service {
 
   BufferHandle create_buffer(BufferCreation &creation);
   PipelineHandle create_pipeline(PipelineCreation &creation);
-
   TextureHandle create_texture(TextureCreation &creation);
 
   BufferResource *access_buffer(BufferHandle handle);
@@ -48,16 +48,17 @@ struct RendererFrontEnd : public Service {
 
   StringBuffer string_buffer{};
 
-  ResourcePool<BufferResource> buffers{};
-  ResourcePool<PipelineResource> pipelines{};
-  ResourcePool<TextureResource> textures{};
-
   BufferHandle uniform_buffers[max_frames_in_flight];
 
-  PipelineHandle pipeline{};
+  PipelineHandle pbr_pipeline{};
 
   TextureHandle default_albedo_texture;
   TextureHandle default_normal_texture;
+
+private:
+  ResourcePool<BufferResource> buffers{};
+  ResourcePool<PipelineResource> pipelines{};
+  ResourcePool<TextureResource> textures{};
 };
 
 } // namespace Helix

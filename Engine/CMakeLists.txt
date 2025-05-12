@@ -95,7 +95,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 if(HELIX_WITH_TRACY)
   option(TRACY_ENABLE "" ON)
   option ( TRACY_ON_DEMAND "" ON )
-
+  add_compile_definitions(TRACY_VK_USE_SYMBOL_TABLE)
   set(TRACY_CLIENT_ADDRESS "127.0.0.1" CACHE STRING "Tracy client address")
   set(TRACY_PROFILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/profiler/build/Release/tracy-profiler.exe" CACHE STRING "Tracy profiler executable path")
 
