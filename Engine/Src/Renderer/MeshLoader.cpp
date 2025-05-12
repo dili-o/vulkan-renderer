@@ -878,7 +878,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
                 });
           } else {
             Array<glm::vec4> tangents_data{};
-            tangents_data.init(allocator, indices.size, indices.size);
+            tangents_data.init(allocator, vertices.size, vertices.size);
             // TODO: Generate tangesnts
             SMikkTSpaceInterface interface = {};
             interface.m_getNumFaces = GetNumFaces;
@@ -888,7 +888,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
             interface.m_getTexCoord = GetTexCoord;
             interface.m_setTSpaceBasic = SetTSpaceBasic;
 
-            SMikkTSpaceContextUserData user_data{&vertices.data[initial_vtx],
+            SMikkTSpaceContextUserData user_data{vertices.data,
                                                  indices, tangents_data};
 
             SMikkTSpaceContext mikkContext = {};
@@ -899,8 +899,8 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
             for (u32 i = 0; i < indices.size; ++i) {
               u32 index = indices[i];
-              Vertex &vertex = vertices[initial_vtx + index];
-              vertex.tangent = tangents_data[initial_vtx + index];
+              Vertex &vertex = vertices[index];
+              vertex.tangent = tangents_data[index];
             }
 
             tangents_data.shutdown();
