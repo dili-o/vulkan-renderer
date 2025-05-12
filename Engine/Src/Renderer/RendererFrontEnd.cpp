@@ -50,9 +50,6 @@ void RendererFrontEnd::init(void *_config) {
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
 
-  buffers.init(allocator, 10);
-  pipelines.init(allocator, 10);
-  textures.init(allocator, 10);
   string_buffer.init(allocator, hmega(6));
 
   // Create Uniform Buffers
@@ -94,8 +91,7 @@ void RendererFrontEnd::init(void *_config) {
       sizeof(ShaderUniform) * max_frames_in_flight, stack_allocator);
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     shader_uniforms[i].binding = 0;
-    BufferResource *buffer = buffers.obtain(uniform_buffers[i]);
-    shader_uniforms[i].internal_resource_handle = buffer->internal_handle;
+    shader_uniforms[i].resource_handle = uniform_buffers[i];
     shader_uniforms[i].resource_type = ResourceType::Buffer;
     shader_uniforms[i].buffer_info.offset = 0;
     shader_uniforms[i].buffer_info.range = sizeof(UniformBufferObject);
@@ -167,10 +163,7 @@ void RendererFrontEnd::shutdown() {
     destroy_buffer(uniform_buffers[i]);
   }
 
-  textures.shutdown();
   backend->shutdown();
-  buffers.shutdown();
-  pipelines.shutdown();
   hfree(backend, &MemoryService::instance()->system_allocator);
 
   string_buffer.shutdown();
@@ -206,9 +199,7 @@ bool RendererFrontEnd::render_frame(RenderPacket *packet) {
 bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
   packet->current_frame = current_frame;
-  BufferResource *uniform_buffer =
-      buffers.obtain(uniform_buffers[current_frame]);
-  packet->scene_data_buffer = uniform_buffer->internal_handle;
+  packet->scene_data_buffer = uniform_buffers[current_frame];
   return backend->begin_frame(packet);
 }
 
@@ -219,72 +210,35 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
 }
 
 BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
-  BufferHandle handle = buffers.obtain_new();
-  if (handle.index == k_invalid_index) {
-    HERROR("Failed to obtain new buffer resource");
-    return handle;
-  }
-
-  BufferHandle internal_handle = backend->create_buffer(creation);
-  if (internal_handle.index == k_invalid_index) {
-    buffers.release(handle);
-    handle.index = k_invalid_index;
-    return handle;
-  }
-
-  BufferResource *buffer = buffers.obtain(handle);
-  buffer->handle = handle;
-  buffer->internal_handle = internal_handle;
-
-  return handle;
+  return backend->create_buffer(creation);
 }
 
 PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
-  PipelineHandle handle = pipelines.obtain_new();
-  if (handle.index == k_invalid_index) {
-    HERROR("Failed to obntain new PipelineResource");
-    return handle;
-  }
-
-  PipelineHandle internal_handle = backend->create_pipeline(creation);
-  if (internal_handle.index == k_invalid_index) {
-    pipelines.release(handle);
-    handle.index = k_invalid_index;
-    return handle;
-  }
-
-  PipelineResource *pipeline = pipelines.obtain(handle);
-  pipeline->handle = handle;
-  pipeline->internal_handle = internal_handle;
-
-  return handle;
+  return backend->create_pipeline(creation);
 }
 
 TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
   HELIX_PROFILER_FUNCTION();
   HELIX_PROFILER_ZONE_TEXT(creation.name, strlen(creation.name));
-  TextureHandle handle = textures.obtain_new();
-  if (handle.index == k_invalid_index) {
-    HERROR("Failed to obtain new TextureResource");
-    return handle;
-  }
-
-  TextureHandle internal_handle = backend->create_texture(creation);
-  if (internal_handle.index == k_invalid_index) {
-    textures.release(handle);
-    handle.index = k_invalid_index;
-    return handle;
-  }
-
-  TextureResource *texture = textures.obtain(handle);
-  texture->handle = handle;
-  texture->internal_handle = internal_handle;
-
-  return handle;
+  return backend->create_texture(creation);
 }
 
-BufferResource *RendererFrontEnd::access_buffer(BufferHandle handle) {
-  return buffers.obtain(handle);
+// TODO: Implement
+BufferInfo RendererFrontEnd::access_buffer_view(BufferHandle handle) {
+  BufferInfo info{};
+  return info;
+}
+
+// TODO: Implement
+TextureInfo RendererFrontEnd::access_texture_view(TextureHandle handle) {
+  TextureInfo info{};
+  return info;
+}
+
+// TODO: Implement
+PipelineInfo RendererFrontEnd::access_pipeline_view(PipelineHandle handle) {
+  PipelineInfo info{};
+  return info;
 }
 
 void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
@@ -292,36 +246,23 @@ void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
     HERROR("Attempting to destroy an invalid buffer");
     return;
   }
-  BufferResource *buffer = buffers.obtain(handle);
-  backend->destroy_buffer(buffer->internal_handle);
-
-  buffers.release(handle);
+  backend->destroy_buffer(handle);
 }
 
 void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
-
   if (handle.index == k_invalid_index) {
     HERROR("Attempting to destroy an invalid pipeline");
     return;
   }
-  PipelineResource *pipeline = pipelines.obtain(handle);
-  backend->destroy_pipeline(pipeline->internal_handle);
-
-  pipelines.release(handle);
+  backend->destroy_pipeline(handle);
 }
 
 void RendererFrontEnd::destroy_texture(TextureHandle handle) {
-
   if (handle.index == k_invalid_index) {
     HERROR("Attempting to destroy an invalid texture");
     return;
   }
-  TextureResource *texture = textures.obtain(handle);
-  if (texture) {
-    backend->destroy_texture(texture->internal_handle);
-
-    textures.release(handle);
-  }
+  backend->destroy_texture(handle);
 }
 
 bool RendererFrontEnd::update_shader_uniform_set(ShaderUniformSet &set,

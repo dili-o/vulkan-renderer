@@ -838,28 +838,17 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Draw Calls");
     for (u32 i = 0; i < packet->mesh_count; ++i) {
       Mesh &mesh = packet->meshes[i];
-      BufferResource *vertex_buffer =
-          RendererFrontEnd::instance()->access_buffer(mesh.vertex_buffer);
-      command_buffer->bind_vertex_buffer(vertex_buffer->internal_handle, 0, 1);
+      command_buffer->bind_vertex_buffer(mesh.vertex_buffer, 0, 1);
 
       for (u32 j = 0; j < mesh.draws.size; ++j) {
         MeshDraw &draw = mesh.draws[j];
-        BufferResource *index_buffer =
-            RendererFrontEnd::instance()->access_buffer(draw.index_buffer);
         // TODO: Maybe only bind 1 index buffer per mesh
-        command_buffer->bind_index_buffer(index_buffer->internal_handle, 0,
+        command_buffer->bind_index_buffer(draw.index_buffer, 0,
                                           VK_INDEX_TYPE_UINT32);
 
         // TODO: Maybe add a pointer to pbr_materials in RenderPacket
         PBRMaterial &material =
             packet->game->scene.pbr_materials[draw.material_index];
-
-        TextureResource *albedo_texture_resource =
-            RendererFrontEnd::instance()->textures.obtain(
-                material.albedo_texture_handle);
-        TextureResource *normal_texture_resource =
-            RendererFrontEnd::instance()->textures.obtain(
-                material.normal_texture_handle);
 
         struct PushConstant {
           glm::mat4 model;
@@ -867,10 +856,9 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
           u32 normal_texture_index;
         };
 
-        PushConstant push_constant{
-            draw.transform.get_mat4(),
-            albedo_texture_resource->internal_handle.index,
-            normal_texture_resource->internal_handle.index};
+        PushConstant push_constant{draw.transform.get_mat4(),
+                                   material.albedo_texture_handle.index,
+                                   material.normal_texture_handle.index};
 
         VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
 
@@ -1898,8 +1886,10 @@ void VulkanBackend::destroy_image_view_instant(TextureHandle handle) {
     return;
   }
   VulkanImageView *image_view = image_views.obtain(handle);
-  vkDestroyImageView(vk_device, image_view->vk_handle, vk_allocation_callbacks);
-  image_views.release(handle);
+  if (image_view) {
+	  vkDestroyImageView(vk_device, image_view->vk_handle, vk_allocation_callbacks);
+	  image_views.release(handle);
+  }
 }
 
 void VulkanBackend::destroy_sampler_instant(SamplerHandle handle) {
@@ -1982,8 +1972,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
   for (u32 i = 0; i < set.uniform_count; i++) {
     if (set.uniforms[i].resource_type == ResourceType::Buffer) {
       VkDescriptorBufferInfo &buffer_info = buffer_infos[i];
-      VulkanBuffer *buffer =
-          access_buffer(set.uniforms[i].internal_resource_handle);
+      VulkanBuffer *buffer = access_buffer(set.uniforms[i].resource_handle);
 
       buffer_info.buffer = buffer->vk_handle;
       buffer_info.offset = set.uniforms[i].buffer_info.offset;
@@ -2003,7 +1992,7 @@ bool VulkanBackend::update_shader_uniform_set(ShaderUniformSet &set,
     } else if (set.uniforms[i].resource_type == ResourceType::Texture) {
       VkDescriptorImageInfo &image_info = image_infos[i];
       VulkanImageView *image_view =
-          access_image_view(set.uniforms[i].internal_resource_handle);
+          access_image_view(set.uniforms[i].resource_handle);
 
       image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
       image_info.imageView = image_view->vk_handle;

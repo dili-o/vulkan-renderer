@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Containers/ResourcePool.hpp"
 #include "Core/Service.hpp"
 #include "Core/String.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
@@ -32,7 +31,9 @@ public:
   PipelineHandle create_pipeline(PipelineCreation &creation);
   TextureHandle create_texture(TextureCreation &creation);
 
-  BufferResource *access_buffer(BufferHandle handle);
+  BufferInfo access_buffer_view(BufferHandle handle);
+  TextureInfo access_texture_view(TextureHandle handle);
+  PipelineInfo access_pipeline_view(PipelineHandle handle);
 
   void destroy_buffer(BufferHandle handle);
   void destroy_pipeline(PipelineHandle handle);
@@ -54,11 +55,6 @@ public:
 
   TextureHandle default_albedo_texture;
   TextureHandle default_normal_texture;
-
-private:
-  ResourcePool<BufferResource> buffers{};
-  ResourcePool<PipelineResource> pipelines{};
-  ResourcePool<TextureResource> textures{};
 };
 
 } // namespace Helix

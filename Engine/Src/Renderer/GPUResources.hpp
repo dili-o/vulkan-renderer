@@ -106,28 +106,20 @@ struct TextureCreation {
 };
 #pragma endregion Creation
 
-struct BufferResource {
-  BufferHandle handle;
-  BufferHandle internal_handle;
-};
-
+// TODO: Expand
 struct BufferInfo {
   u32 size = 0;
   cstring name = nullptr;
 };
 
-struct PipelineResource {
-  PipelineHandle handle;
-  PipelineHandle internal_handle;
-};
+// TODO: Expand
+struct TextureInfo {};
 
-struct TextureResource {
-  TextureHandle handle;
-  TextureHandle internal_handle;
-};
+// TODO: Expand
+struct PipelineInfo {};
 
 struct ShaderUniform {
-  ResourceHandle internal_resource_handle;
+  ResourceHandle resource_handle;
   ResourceType::Enum resource_type;
   u32 binding;
   union {

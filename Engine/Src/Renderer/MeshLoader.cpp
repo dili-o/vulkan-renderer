@@ -20,11 +20,6 @@
 #include <tiny_obj_loader.h>
 
 #pragma region mikktspace
-// struct SMikkTSpaceContext {
-//   const std::vector<Vertex> &vertices;
-//   const std::vector<uint32_t> &indices;
-//   std::vector<glm::vec4> &tangents;
-// };
 
 struct SMikkTSpaceContextUserData {
   const Helix::Vertex *vertices;
@@ -777,7 +772,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
     }
 
     if (node.meshIndex.has_value()) {
-        size_t mesids = node.meshIndex.value();
+      size_t mesids = node.meshIndex.value();
       fastgltf::Mesh &gltf_mesh = asset->meshes[node.meshIndex.value()];
       Mesh &mesh = scene->meshes.push_use();
       mesh.draws.init(allocator, gltf_mesh.primitives.size(),
