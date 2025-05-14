@@ -1,9 +1,9 @@
 #pragma once
 
+#include "Containers/Array.hpp"
 #include "Core/Defines.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "VulkanTypes.hpp"
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 struct VulkanBackend;
@@ -38,8 +38,9 @@ struct VulkanCommandBuffer {
   void pipeline_barrier(VkImageMemoryBarrier2 *image_memory_barriers,
                         u32 image_memory_barrier_count);
 
-  // TODO: Fully implement this when you've added renderpasses and framebuffers
-  void bind_renderpass(VkExtent2D extents, VkImageView view);
+  void bind_renderpass(RenderPassHandle render_pass,
+                       TextureHandle *color_attachments,
+                       TextureHandle depth_attachment);
   void end_current_renderpass();
 
   void bind_pipeline(PipelineHandle handle);

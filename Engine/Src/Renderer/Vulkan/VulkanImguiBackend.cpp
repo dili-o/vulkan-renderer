@@ -101,6 +101,9 @@ void VulkanImguiBackend::init(void *configuration) {
   pipeline_creation.set_layouts[0] =
       RendererFrontEnd::instance()->bindless_set_layout;
   pipeline_creation.set_layout_count = 1;
+  pipeline_creation.render_pass = backend->swapchain_pass;
+  pipeline_creation.enable_depth_write = false;
+  pipeline_creation.enable_depth_test = false;
 
   pipeline = backend->create_pipeline(pipeline_creation);
 
@@ -274,6 +277,7 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
     vtx_buffer_offset += cmd_list->VtxBuffer.Size;
   }
 
+  command_buffer->end_current_renderpass();
   command_buffer->pop_marker();
 }
 

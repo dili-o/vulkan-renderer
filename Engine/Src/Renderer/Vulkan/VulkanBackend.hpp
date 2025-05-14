@@ -1,12 +1,12 @@
 #pragma once
 
-#include "CommandBuffer.hpp"
-#include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/String.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/RendererBackend.hpp"
+#include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/RendererTypes.hpp"
+#include "Renderer/Vulkan/CommandBuffer.hpp"
 #include "VulkanTypes.hpp"
 
 namespace Helix {
@@ -57,9 +57,13 @@ struct VulkanBackend : public RendererBackend {
   virtual bool update_binding_set(BindingSetHandle set,
                                   BindingSetUpdateInfo *update_infos,
                                   u32 update_count) override;
+  virtual RenderPassHandle get_swapchain_pass() override;
+
   virtual void set_pipeline_binding_set(PipelineHandle pipeline,
                                         BindingSetHandle set,
                                         u32 set_index) override;
+  virtual RenderPassHandle
+  create_render_pass(RenderPassCreation &creation) override;
   void create_descriptor_pool(u32 max_frames_in_flight);
   void create_sync_objects(u32 max_frames_in_flight);
   SamplerHandle create_sampler(SamplerCreation &creation);
@@ -72,6 +76,7 @@ struct VulkanBackend : public RendererBackend {
   VulkanImage *access_image(TextureHandle handle);
   VulkanImageView *access_image_view(TextureHandle handle);
   VulkanSampler *access_sampler(SamplerHandle handle);
+  RenderPass *access_render_pass(RenderPassHandle handle);
 
   virtual void destroy_buffer(BufferHandle handle) override;
   virtual void destroy_pipeline(PipelineHandle handle) override;
@@ -79,6 +84,7 @@ struct VulkanBackend : public RendererBackend {
   inline virtual void destroy_binding_set(BindingSetHandle handle) override {
     destroy_descriptor_set(handle);
   }
+  virtual void destroy_render_pass(RenderPassHandle handle) override;
   void destroy_image(TextureHandle handle);
   void destroy_image_view(TextureHandle handle);
   void destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle);
@@ -133,14 +139,13 @@ struct VulkanBackend : public RendererBackend {
 
   VkDescriptorPool vk_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorPool vk_bindless_descriptor_pool{VK_NULL_HANDLE};
-  // VkDescriptorSetLayout vk_bindless_descriptor_layout{VK_NULL_HANDLE};
-  // VkDescriptorSet vk_bindless_descriptor_set{VK_NULL_HANDLE};
 
   Array<TextureHandle> bindless_textures_to_update{};
   Array<ResourceQueueObject> resource_deletion_queue{};
 
-  TextureHandle depth_handle{};
+  TextureHandle depth_images[max_frames_in_flight];
   SamplerHandle default_sampler{};
+  RenderPassHandle swapchain_pass{};
 
   ResourcePool<VulkanBuffer> buffers{};
   ResourcePool<VulkanPipeline> pipelines{};
@@ -149,6 +154,7 @@ struct VulkanBackend : public RendererBackend {
   ResourcePool<VulkanImageView> image_views{};
   ResourcePool<VulkanImage> images{};
   ResourcePool<VulkanSampler> samplers{};
+  ResourcePool<RenderPass> render_passes{};
 
   bool resize_frame = false;
 };

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Containers/Array.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Defines.hpp"
 
@@ -50,12 +49,7 @@ struct VulkanBuffer {
 
 struct VulkanDescriptorSetLayout {
   VkDescriptorSetLayout vk_handle{VK_NULL_HANDLE};
-  // Array<VkDescriptorSetLayoutBinding> vk_bindings; // TODO: Remove
-
-  // Array<DescriptorSetHandle> allocated_sets{}; // TODO: Remove,
-  // reference_count already does what this does
   cstring name{nullptr};
-  // u32 set_index = 0;       // TODO: Remove
   i32 reference_count = 0; // Number of Descriptor sets that use this layout
   bool is_bindless = false;
 };
@@ -70,7 +64,6 @@ struct VulkanDescriptorSet {
 struct VulkanPipeline {
   VkPipeline vk_handle{VK_NULL_HANDLE};
   VkPipelineLayout vk_layout{VK_NULL_HANDLE};
-  // DescriptorSetLayoutHandle *set_layouts = nullptr; // TODO: Remove
   DescriptorSetHandle *sets = nullptr;
   u32 set_count = 0;
   VkPipelineBindPoint bind_point;
@@ -90,7 +83,7 @@ struct VulkanImage {
 
 struct VulkanImageView {
   VkImageView vk_handle{VK_NULL_HANDLE};
-  ResourceHandle image;
+  ImageHandle image;
   cstring name = nullptr;
 };
 
@@ -101,11 +94,10 @@ struct VulkanSampler {
 struct VulkanSwapchain {
   VkSurfaceFormatKHR vk_surface_format{};
   VkPresentModeKHR vk_present_mode = VK_PRESENT_MODE_FIFO_KHR;
-  VkExtent2D vk_extents{};
   u32 image_count = 0;
   u32 current_image_index = 0;
-  VulkanImage images[MAX_SWAPCHAIN_IMAGES];
-  VulkanImageView image_views[MAX_SWAPCHAIN_IMAGES];
+  ImageHandle images[MAX_SWAPCHAIN_IMAGES];
+  ImageViewHandle image_views[MAX_SWAPCHAIN_IMAGES];
   VkSwapchainKHR vk_handle{VK_NULL_HANDLE};
 };
 

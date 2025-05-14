@@ -2,6 +2,7 @@
 #include "Core/Memory.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
+#include "SDL/src/video/khronos/vulkan/vulkan_core.h"
 #include "VulkanBackend.hpp"
 #include "VulkanUtils.hpp"
 #include <vulkan/vulkan_core.h>
@@ -97,36 +98,63 @@ void VulkanCommandBuffer::pipeline_barrier(
   vkCmdPipelineBarrier2(vk_handle, &dependency_info);
 }
 
-void VulkanCommandBuffer::bind_renderpass(VkExtent2D extents,
-                                          VkImageView view) {
-  VkRenderingAttachmentInfo color_attachment_info{
-      VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-  color_attachment_info.imageView = view;
-  color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  color_attachment_info.clearValue = {{{0.f, 0.f, 0.1f, 1.0f}}};
-  color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
+                                          TextureHandle *color_attachments,
+                                          TextureHandle depth_attachment) {
+  RenderPass *render_pass = backend->access_render_pass(render_pass_handle);
+  VkRenderingAttachmentInfo color_attachment_infos[MAX_COLOR_ATTACHMENTS];
+  for (u32 i = 0; i < render_pass->num_colour_attachments; ++i) {
+    VkRenderingAttachmentInfo &color_attachment_info =
+        color_attachment_infos[i];
+    color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    VulkanImageView *view = backend->access_image_view(color_attachments[i]);
+    color_attachment_info.imageView = view->vk_handle;
+    color_attachment_info.imageLayout =
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color_attachment_info.loadOp =
+        to_vk_load_op(render_pass->colour_attachments[i].load_op);
+
+    color_attachment_info.storeOp =
+        to_vk_store_op(render_pass->colour_attachments[i].store_op);
+
+    color_attachment_info.clearValue = {{{0.f, 0.f, 0.1f, 1.0f}}};
+    color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+    color_attachment_info.pNext = nullptr;
+    color_attachment_info.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment_info.resolveImageView = VK_NULL_HANDLE;
+  }
 
   VkRenderingAttachmentInfo depth_attachment_info{
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-  depth_attachment_info.imageView =
-      backend->image_views.obtain(backend->depth_handle)->vk_handle;
-  depth_attachment_info.imageLayout =
-      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-  depth_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  depth_attachment_info.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-  depth_attachment_info.clearValue.depthStencil = {1.f, 0};
-  depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+  bool has_depth =
+      render_pass->depth_attachment.format != TextureFormat::Undefined;
 
+  if (has_depth) {
+    VulkanImageView *depth_image_view =
+        backend->access_image_view(depth_attachment);
+    VulkanImage *depth_image = backend->access_image(depth_image_view->image);
+    depth_attachment_info.imageView = depth_image_view->vk_handle;
+    depth_attachment_info.imageLayout = depth_image->current_layout;
+    depth_attachment_info.loadOp =
+        to_vk_load_op(render_pass->depth_attachment.load_op);
+    depth_attachment_info.storeOp =
+        to_vk_store_op(render_pass->depth_attachment.store_op);
+    depth_attachment_info.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    depth_attachment_info.clearValue.depthStencil = {1.f, 0};
+    depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+  }
+
+  VulkanImage *swapchain_image =
+      backend->access_image(backend->swapchain.images[0]);
   VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
   render_info.layerCount = 1;
-  render_info.renderArea = {{0, 0}, extents};
+  render_info.renderArea = {
+      {0, 0},
+      {swapchain_image->vk_extents.width, swapchain_image->vk_extents.height}};
   render_info.viewMask = 0;
-  render_info.colorAttachmentCount = 1;
-  render_info.pColorAttachments = &color_attachment_info;
-  render_info.pDepthAttachment = &depth_attachment_info;
+  render_info.colorAttachmentCount = render_pass->num_colour_attachments;
+  render_info.pColorAttachments = color_attachment_infos;
+  render_info.pDepthAttachment = has_depth ? &depth_attachment_info : nullptr;
   render_info.pStencilAttachment = nullptr;
 
   vkCmdBeginRendering(vk_handle, &render_info);

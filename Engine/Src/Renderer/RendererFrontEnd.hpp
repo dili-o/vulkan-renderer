@@ -33,6 +33,7 @@ public:
   BindingSetLayoutHandle
   create_binding_set_layout(BindingSetLayoutCreation &creation);
   BindingSetHandle create_binding_set(BindingSetCreation &creation);
+  RenderPassHandle create_render_pass(RenderPassCreation &creation);
 
   BufferInfo access_buffer_view(BufferHandle handle);
   TextureInfo access_texture_view(TextureHandle handle);
@@ -42,6 +43,7 @@ public:
   void destroy_pipeline(PipelineHandle handle);
   void destroy_texture(TextureHandle handle);
   void destroy_binding_set(BindingSetHandle handle);
+  void destroy_render_pass(RenderPassHandle handle);
 
   bool update_binding_set(BindingSetHandle set,
                           BindingSetUpdateInfo *update_infos, u32 update_count);
@@ -68,6 +70,8 @@ public:
 
   BindingSetLayoutHandle bindless_set_layout{};
   BindingSetHandle bindless_set{};
+
+  RenderPassHandle depth_prepass{};
 };
 
 } // namespace Helix

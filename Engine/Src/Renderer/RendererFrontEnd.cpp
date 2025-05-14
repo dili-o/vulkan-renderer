@@ -95,6 +95,11 @@ void RendererFrontEnd::init(void *_config) {
     }
   }
 
+  // Depth prepass
+  RenderPassCreation pass_creation{};
+  pass_creation.add_depth_attachment(LoadOp::Clear, StoreOp::Store,
+                                     TextureFormat::D32);
+  depth_prepass = create_render_pass(pass_creation);
   {
     PipelineCreation creation;
     creation.name = "pbr_pipeline";
@@ -108,6 +113,9 @@ void RendererFrontEnd::init(void *_config) {
     creation.set_layouts[0] = bindless_set_layout;
     creation.set_layouts[1] = scene_set_layout;
     creation.set_layout_count = 2;
+    creation.enable_depth_write = true;
+    creation.enable_depth_test = true;
+    creation.render_pass = backend->get_swapchain_pass();
 
     pbr_pipeline = create_pipeline(creation);
 
@@ -121,9 +129,12 @@ void RendererFrontEnd::init(void *_config) {
                                        ShaderStage::Vertex};
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::Back;
+    creation.cull_mode = CullMode::None;
     creation.set_layouts[0] = scene_set_layout;
     creation.set_layout_count = 1;
+    creation.enable_depth_write = true;
+    creation.enable_depth_test = true;
+    creation.render_pass = depth_prepass;
     depth_prepass_pipeline = create_pipeline(creation);
     set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
   }
@@ -193,6 +204,7 @@ void RendererFrontEnd::shutdown() {
     destroy_buffer(uniform_buffers[i]);
   }
 
+  destroy_render_pass(depth_prepass);
   backend->shutdown();
   hfree(backend, &MemoryService::instance()->system_allocator);
 
@@ -263,6 +275,11 @@ RendererFrontEnd::create_binding_set(BindingSetCreation &creation) {
   return backend->create_binding_set(creation);
 }
 
+RenderPassHandle
+RendererFrontEnd::create_render_pass(RenderPassCreation &creation) {
+  return backend->create_render_pass(creation);
+}
+
 // TODO: Implement
 BufferInfo RendererFrontEnd::access_buffer_view(BufferHandle handle) {
   BufferInfo info{};
@@ -311,6 +328,10 @@ void RendererFrontEnd::destroy_binding_set(BindingSetHandle handle) {
     return;
   }
   backend->destroy_binding_set(handle);
+}
+
+void RendererFrontEnd::destroy_render_pass(RenderPassHandle handle) {
+  backend->destroy_render_pass(handle);
 }
 
 bool RendererFrontEnd::update_binding_set(BindingSetHandle set,

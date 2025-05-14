@@ -119,6 +119,10 @@ VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
     return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
   case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
     return VK_ACCESS_2_NONE;
+  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
   default:
     HERROR("Unknown layout");
     return VK_ACCESS_2_NONE;
@@ -191,9 +195,33 @@ VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
     return VK_ACCESS_2_TRANSFER_WRITE_BIT;
   case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
     return VK_ACCESS_2_NONE;
+  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
   default:
     HERROR("Unknown layout");
     return VK_ACCESS_2_NONE;
+  }
+}
+
+VkAttachmentLoadOp to_vk_load_op(LoadOp::Enum load_op) {
+  switch (load_op) {
+  case LoadOp::Clear:
+    return VK_ATTACHMENT_LOAD_OP_CLEAR;
+  case LoadOp::Load:
+    return VK_ATTACHMENT_LOAD_OP_LOAD;
+  case LoadOp::DontCare:
+    return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  }
+}
+
+VkAttachmentStoreOp to_vk_store_op(StoreOp::Enum store_op) {
+  switch (store_op) {
+  case StoreOp::DontCare:
+    return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  case StoreOp::Store:
+    return VK_ATTACHMENT_STORE_OP_STORE;
   }
 }
 

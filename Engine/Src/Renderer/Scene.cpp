@@ -315,7 +315,6 @@ void Scene::unload_mesh(u32 mesh_index) {
     // Skip the default material
     if (mesh.draws[i].material_index != 0) {
       PBRMaterial &material = pbr_materials[mesh.draws[i].material_index];
-      // TODO: remove
       if (material.albedo_texture_handle.index !=
           renderer_frontend->default_albedo_texture.index) {
         renderer_frontend->destroy_texture(material.albedo_texture_handle);

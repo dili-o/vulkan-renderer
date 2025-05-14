@@ -59,6 +59,14 @@ namespace CullMode {
 enum Enum { None, Front, Back, FrontAndBack };
 }
 
+namespace LoadOp {
+enum Enum { Load, Clear, DontCare };
+}
+
+namespace StoreOp {
+enum Enum { Store, DontCare };
+}
+
 #pragma region Creation
 struct BufferCreation {
   BufferUsage::Enum usage_flags = BufferUsage::None;
@@ -85,6 +93,10 @@ struct PipelineCreation {
   CullMode::Enum cull_mode = CullMode::Back;
   BindingSetLayoutHandle set_layouts[5]; // TODO: Remove magic number
   u32 set_layout_count = 0;
+
+  RenderPassHandle render_pass;
+  bool enable_depth_write = true;
+  bool enable_depth_test = true;
 
   PipelineCreation &reset();
 };
@@ -185,6 +197,45 @@ struct BindingSetCreation {
     layout.index = k_invalid_index;
     return *this;
   }
+};
+
+struct AttachmentOps {
+  LoadOp::Enum load_op;
+  StoreOp::Enum store_op;
+  TextureFormat::Enum format = TextureFormat::Undefined;
+};
+
+#define MAX_COLOR_ATTACHMENTS 8
+
+struct RenderPassCreation {
+  AttachmentOps colour_attachments[MAX_COLOR_ATTACHMENTS];
+  u32 num_colour_attachments{0};
+  AttachmentOps depth_attachment{};
+
+  RenderPassCreation &add_color_attachment(LoadOp::Enum load_op,
+                                           StoreOp::Enum store_op,
+                                           TextureFormat::Enum format) {
+    colour_attachments[num_colour_attachments].format = format;
+    colour_attachments[num_colour_attachments].store_op = store_op;
+    colour_attachments[num_colour_attachments].load_op = load_op;
+    ++num_colour_attachments;
+    return *this;
+  }
+
+  RenderPassCreation &add_depth_attachment(LoadOp::Enum load_op,
+                                           StoreOp::Enum store_op,
+                                           TextureFormat::Enum format) {
+    depth_attachment.format = format;
+    depth_attachment.store_op = store_op;
+    depth_attachment.load_op = load_op;
+    return *this;
+  }
+};
+
+struct RenderPass {
+  AttachmentOps colour_attachments[MAX_COLOR_ATTACHMENTS];
+  u32 num_colour_attachments;
+  AttachmentOps depth_attachment;
 };
 
 } // namespace Helix

@@ -22,11 +22,15 @@ struct RendererBackend {
   virtual BindingSetLayoutHandle
   create_binding_set_layout(BindingSetLayoutCreation &creation) = 0;
   virtual BindingSetHandle create_binding_set(BindingSetCreation &creation) = 0;
+  virtual RenderPassHandle create_render_pass(RenderPassCreation &creation) = 0;
 
   virtual void destroy_buffer(BufferHandle handle) = 0;
   virtual void destroy_pipeline(BufferHandle handle) = 0;
   virtual void destroy_texture(TextureHandle handle) = 0;
   virtual void destroy_binding_set(BindingSetHandle handle) = 0;
+  virtual void destroy_render_pass(RenderPassHandle handle) = 0;
+
+  virtual RenderPassHandle get_swapchain_pass() = 0;
 
   virtual bool update_binding_set(BindingSetHandle set,
                                   BindingSetUpdateInfo *update_infos,

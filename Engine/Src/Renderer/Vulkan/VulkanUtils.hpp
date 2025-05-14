@@ -1,6 +1,7 @@
 #pragma once
 #include "Renderer/GPUResources.hpp"
 #include "VulkanTypes.hpp"
+#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 #define VK_CHECK(call)                                                         \
@@ -32,6 +33,10 @@ VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type);
 cstring to_compiler_stage(ShaderStage::Enum stage);
 
 VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage);
+
+VkAttachmentLoadOp to_vk_load_op(LoadOp::Enum load_op);
+
+VkAttachmentStoreOp to_vk_store_op(StoreOp::Enum store_op);
 
 VkImageMemoryBarrier2
 create_image_barrier(VulkanImage *image, VkImageLayout old_layout,

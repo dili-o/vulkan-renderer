@@ -9,6 +9,7 @@ using PipelineHandle = ResourceHandle;
 using TextureHandle = ResourceHandle;
 using BindingSetLayoutHandle = ResourceHandle;
 using BindingSetHandle = ResourceHandle;
+using RenderPassHandle = ResourceHandle;
 
 namespace ShaderStage {
 enum Enum {
