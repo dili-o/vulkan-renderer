@@ -101,10 +101,12 @@ struct VulkanBackend : public RendererBackend {
 
   void free_queued_resources();
 
-  void upload_buffer_data(void *data, VkBuffer dst_buffer, u32 size);
+  virtual void upload_buffer_data(void *data, BufferHandle dst_buffer, u32 size,
+                                  u32 offset) override;
 
   void update_uniform_buffer(RenderPacket *packet);
 
+  virtual void update_draw_commands(Scene *scene) override;
   virtual void print_gpu_stats() override;
 
   void set_resource_name(VkObjectType type, u64 handle, cstring name);
@@ -124,6 +126,7 @@ struct VulkanBackend : public RendererBackend {
   VkPhysicalDeviceProperties vk_physical_device_properties{};
   VkDevice vk_device{VK_NULL_HANDLE};
   VkQueue vk_graphics_queue{VK_NULL_HANDLE};
+  VkQueue vk_compute_queue{VK_NULL_HANDLE};
   VkQueue vk_transfer_queue{VK_NULL_HANDLE};
 
   QueueFamilyIndices queue_family_indices{};
@@ -155,6 +158,8 @@ struct VulkanBackend : public RendererBackend {
   ResourcePool<VulkanImage> images{};
   ResourcePool<VulkanSampler> samplers{};
   ResourcePool<RenderPass> render_passes{};
+
+  BufferHandle indirect_draw_buffer{};
 
   bool resize_frame = false;
 };

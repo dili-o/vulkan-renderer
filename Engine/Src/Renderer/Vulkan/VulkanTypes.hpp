@@ -2,6 +2,7 @@
 
 #include "Containers/ResourcePool.hpp"
 #include "Core/Defines.hpp"
+#include "Renderer/GPUResources.hpp"
 
 #include <cstdint>
 #include <vk_mem_alloc.h>
@@ -21,10 +22,12 @@ using SamplerHandle = ResourceHandle;
 struct QueueFamilyIndices {
   u32 graphics_family_index{UINT32_MAX};
   u32 transfer_family_index{UINT32_MAX};
+  u32 compute_family_index{UINT32_MAX};
 
   bool is_complete() {
     return graphics_family_index != UINT32_MAX &&
-           transfer_family_index != UINT32_MAX;
+           transfer_family_index != UINT32_MAX &&
+           compute_family_index != UINT32_MAX;
   }
 };
 
@@ -45,6 +48,9 @@ struct VulkanBuffer {
   VmaAllocation vma_allocation{VK_NULL_HANDLE};
   void *mapped_data{nullptr};
   cstring name{nullptr};
+  MemoryAccess::Enum memory_access{MemoryAccess::None};
+  BufferUsage::Enum usage{BufferUsage::None};
+  VkDeviceAddress device_address;
 };
 
 struct VulkanDescriptorSetLayout {
@@ -102,5 +108,13 @@ struct VulkanSwapchain {
 };
 
 struct VulkanRenderPass {};
+
+struct IndexedDrawCommand {
+  u32 indexCount;
+  u32 instanceCount;
+  u32 firstIndex;
+  i32 vertexOffset;
+  u32 firstInstance;
+};
 
 } // namespace Helix

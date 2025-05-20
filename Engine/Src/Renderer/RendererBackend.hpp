@@ -7,6 +7,7 @@ namespace Helix {
 struct Platform;
 struct BufferCreation;
 struct PipelineCreation;
+struct Scene;
 
 struct RendererBackend {
   virtual bool init(void *config) = 0;
@@ -38,7 +39,10 @@ struct RendererBackend {
   virtual void set_pipeline_binding_set(PipelineHandle pipeline,
                                         BindingSetHandle set,
                                         u32 set_index) = 0;
+  virtual void upload_buffer_data(void *data, BufferHandle dst_buffer, u32 size,
+                                  u32 offset) = 0;
 
+  virtual void update_draw_commands(Scene *scene) = 0;
   virtual void print_gpu_stats() = 0;
 
   Platform *platform{nullptr};

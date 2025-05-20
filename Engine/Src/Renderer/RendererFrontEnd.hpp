@@ -11,6 +11,7 @@ namespace Helix {
 const u32 max_frames_in_flight = 2;
 
 struct RendererBackend;
+struct Scene;
 
 struct RendererFrontEnd : public Service {
   virtual void init(void *config) override;
@@ -50,6 +51,9 @@ public:
   void set_pipeline_binding_set(PipelineHandle pipeline, BindingSetHandle set,
                                 u32 set_index);
 
+  void upload_buffer_data(void *data, BufferHandle dst_buffer, u32 size,
+                          u32 offset);
+  void update_draw_commands(Scene *scene);
   void print_gpu_stats();
 
   u32 current_frame;

@@ -295,15 +295,21 @@ void Scene::shutdown() {
 bool Scene::load_mesh(cstring path, cstring model) {
 
   cstring file_extension = FileService::get_file_extension(model);
-  if (string_equals("obj", file_extension))
-    return load_obj_mesh(this, path, model);
-  else if (string_equals("gltf", file_extension))
-    return load_gltf_mesh(this, path, model);
-  else if (string_equals("glb", file_extension))
-    return load_gltf_mesh(this, path, model);
+  bool mesh_loaded = false;
 
-  HERROR("Unknown mesh file type: {}", file_extension);
-  return false;
+  // TODO: Add later
+  // if (string_equals("obj", file_extension))
+  //   mesh_loaded = load_obj_mesh(this, path, model);
+  if (string_equals("gltf", file_extension))
+    mesh_loaded = load_gltf_mesh(this, path, model);
+  else if (string_equals("glb", file_extension))
+    mesh_loaded = load_gltf_mesh(this, path, model);
+  else
+    HERROR("Unknown mesh file type: {}", file_extension);
+
+  if (mesh_loaded)
+    RendererFrontEnd::instance()->update_draw_commands(this);
+  return mesh_loaded;
 }
 
 void Scene::unload_mesh(u32 mesh_index) {
@@ -326,12 +332,10 @@ void Scene::unload_mesh(u32 mesh_index) {
     }
   }
 
-  for (u32 i = 0; i < mesh.draws.size; ++i) {
-    renderer_frontend->destroy_buffer(mesh.draws[i].index_buffer);
-  }
   mesh.draws.shutdown();
 
   renderer_frontend->destroy_buffer(mesh.vertex_buffer);
+  renderer_frontend->destroy_buffer(mesh.index_buffer);
 
   // meshes.delete_swap(mesh_index);
 }

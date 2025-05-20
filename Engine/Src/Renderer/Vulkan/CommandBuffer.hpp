@@ -68,7 +68,8 @@ struct VulkanCommandBuffer {
   // This should be able to record any upload commands
   // Maybe also have a version of this function that takes in ResourceHandles
   // instead
-  void copy_buffer_to_buffer(VkBuffer dst_buffer, VkBuffer src_buffer, u32 size,
+  void copy_buffer_to_buffer(VkBuffer dst_buffer, u32 dst_offset,
+                             VkBuffer src_buffer, u32 src_offset, u32 size,
                              VkQueue vk_queue);
 
   // Note: This function transitions the image to

@@ -226,15 +226,17 @@ void VulkanCommandBuffer::draw_indexed(u32 index_count, u32 instance_count,
 }
 
 void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
-                                                VkBuffer src_buffer, u32 size,
+                                                u32 dst_offset,
+                                                VkBuffer src_buffer,
+                                                u32 src_offset, u32 size,
                                                 VkQueue vk_queue) {
   // TODO: Add a flag that lets you record multiple commands before submitting
 
   begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
   VkBufferCopy2 region{VK_STRUCTURE_TYPE_BUFFER_COPY_2};
-  region.srcOffset = 0;
-  region.dstOffset = 0;
+  region.srcOffset = src_offset;
+  region.dstOffset = dst_offset;
   region.size = size;
 
   VkCopyBufferInfo2 buffer_info{VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2};

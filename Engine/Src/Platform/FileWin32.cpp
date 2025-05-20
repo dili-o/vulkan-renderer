@@ -49,6 +49,16 @@ void FileService::change_directory(cstring path) {
   }
 }
 
+bool FileService::directory_exists(cstring path) {
+  DWORD attributes = GetFileAttributesA(path);
+
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    return false;
+  }
+
+  return (attributes & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 cstring FileService::get_file_extension(cstring file_path) {
   // TODO: Maybe check if the '.' comes after the '/' or '\'
   cstring last_fullstop = strrchr(file_path, '.');
@@ -244,5 +254,6 @@ void FileService::expand_enviroment_variable(cstring variable, char *dst_string,
                                              u32 size) {
   ExpandEnvironmentStringsA(variable, dst_string, size);
 }
+
 } // namespace Helix
 #endif

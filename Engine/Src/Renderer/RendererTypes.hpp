@@ -67,7 +67,7 @@ struct Transform {
 };
 
 struct MeshDraw {
-  BufferHandle index_buffer;
+  u32 index_buffer_offset;
   u32 material_index;
   u32 primitive_count;
   Transform transform;
@@ -76,6 +76,7 @@ struct MeshDraw {
 struct Mesh {
   Array<MeshDraw> draws;
   BufferHandle vertex_buffer;
+  BufferHandle index_buffer;
 };
 
 struct Game;
@@ -90,11 +91,11 @@ struct RenderPacket {
   Game *game{nullptr};
 };
 
-struct Vertex {
-  glm::vec3 pos;
-  glm::vec3 normal;
+struct alignas(16) Vertex {
+  glm::vec4 pos;
+  glm::vec4 normal;
   glm::vec4 tangent;
-  glm::vec2 tex_coord;
+  glm::vec4 tex_coord;
 
   bool operator==(const Vertex &other) const {
     return pos == other.pos && normal == other.normal &&

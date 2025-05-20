@@ -6,7 +6,7 @@
 namespace Helix {
 
 namespace MemoryState {
-enum Enum { None = 0, Dynamic = 1 << 0, Static = 1 << 1, Persistent = 1 << 2 };
+enum Enum { None = 0, Dynamic = 1 << 0, Static = 1 << 1, Mapped = 1 << 2 };
 }
 
 namespace BufferUsage {
@@ -16,7 +16,10 @@ enum Enum {
   Index = 1 << 1,
   Uniform = 1 << 2,
   TransferSrc = 1 << 3,
-  TransferDest = 1 << 4
+  TransferDest = 1 << 4,
+  IndexedIndirect = 1 << 5,
+  ShaderAddress = 1 << 6,
+  Storage = 1 << 7
 };
 }
 
@@ -72,7 +75,7 @@ struct BufferCreation {
   BufferUsage::Enum usage_flags = BufferUsage::None;
   MemoryState::Enum memory_state_flags = MemoryState::None;
   MemoryAccess::Enum memory_access_flags = MemoryAccess::None;
-  u32 size = 0;
+  u64 size = 0;
   void *initial_data = nullptr;
   cstring name = nullptr;
 

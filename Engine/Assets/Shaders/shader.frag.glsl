@@ -1,6 +1,7 @@
 #version 450
 
-#include "globals.h"
+#include "globals.glsl"
+#include "mesh.glsl"
 
 layout(location = 0) in vec2 tex_coords;
 layout(location = 1) in vec3 frag_pos;
@@ -11,6 +12,7 @@ layout(location = 0) out vec4 outColor;
 layout(push_constant) uniform constants
 {
   mat4 model; // 64B
+  Vertices vertex_buffer;
   uint albedo_index; // 4B
   uint normal_index; // 4B
 };
@@ -39,6 +41,8 @@ void main() {
   if(albedo.a < 0.1f)
     discard;
   // ambient
+  outColor = albedo;
+  return;
   vec3 ambient = 0.25f * albedo.rgb;
   
   // diffuse 
@@ -49,9 +53,12 @@ void main() {
   vec3 lightDir = normalize(-vec3(1.f, -1.f, 0.f));  
   float diff = max(dot(normal, lightDir), 0.0);
   vec3 diffuse = diff * albedo.rgb;
-  
+
   vec3 result = ambient + diffuse;
 
-  outColor  = vec4(result, albedo.a);
+  // float gamma = 2.2;
+  // result = pow(result, vec3(1.0/gamma)); 
+
+  outColor = vec4(result, albedo.a);
 #endif // RANDOM
 }

@@ -23,14 +23,15 @@
 
 struct SMikkTSpaceContextUserData {
   const Helix::Vertex *vertices;
-  const Helix::Array<u32> &indices;
+  const u32 *indices;
+  const u32 indices_count;
   Helix::Array<glm::vec4> &tangents;
 };
 
 int GetNumFaces(const SMikkTSpaceContext *context) {
   SMikkTSpaceContextUserData *user_data =
       (SMikkTSpaceContextUserData *)context->m_pUserData;
-  return (i32)user_data->indices.size / 3;
+  return (i32)user_data->indices_count / 3;
 }
 
 int GetNumVerticesOfFace(const SMikkTSpaceContext *, int) { return 3; }
@@ -315,20 +316,21 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
 
       vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
                     attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]};
+                    attrib.vertices[3 * index.vertex_index + 2], 0.f};
 
       if (index.texcoord_index != -1) {
-        vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index + 0],
-                            1.0f -
-                                attrib.texcoords[2 * index.texcoord_index + 1]};
+        // vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index + 0],
+        //                     1.0f -
+        //                         attrib.texcoords[2 * index.texcoord_index +
+        //                         1]};
       } else {
         HERROR("No Texcoords");
-        vertex.tex_coord = {0.f, 0.f};
+        // vertex.tex_coord = {0.f, 0.f};
       }
       if (index.normal_index != -1) {
-        vertex.normal = {attrib.normals[3 * index.normal_index + 0],
-                         attrib.normals[3 * index.normal_index + 1],
-                         attrib.normals[3 * index.normal_index + 2]};
+        // vertex.normal = {attrib.normals[3 * index.normal_index + 0],
+        //                  attrib.normals[3 * index.normal_index + 1],
+        //                  attrib.normals[3 * index.normal_index + 2]};
       } else {
         HERROR("No normals");
       }
@@ -374,7 +376,7 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
 
     MeshDraw &mesh_draw = mesh.draws[mesh_index];
     mesh_draw.primitive_count = shape.mesh.indices.size();
-    mesh_draw.index_buffer = index_buffer_handle;
+    // mesh_draw.index_buffer = index_buffer_handle;
     mesh_draw.material_index = material_index;
     indices.clear();
   }
@@ -772,7 +774,6 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
     }
 
     if (node.meshIndex.has_value()) {
-      size_t mesids = node.meshIndex.value();
       fastgltf::Mesh &gltf_mesh = asset->meshes[node.meshIndex.value()];
       Mesh &mesh = scene->meshes.push_use();
       mesh.draws.init(allocator, gltf_mesh.primitives.size(),
@@ -781,6 +782,8 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
       // Single Vertex buffer for each mesh
       Array<Vertex> vertices{};
       vertices.init(allocator, 4);
+      Array<u32> indexes{};
+      indexes.init(allocator, 4);
 
       for (u32 i = 0; i < gltf_mesh.primitives.size(); ++i) {
         fastgltf::Primitive &primitive = gltf_mesh.primitives[i];
@@ -792,21 +795,23 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
                 "%s_MeshPrimitive_%d", node_name, i),
             node_hierarchy_index);
 
-        size_t initial_vtx = vertices.size;
+        u32 initial_vtx = vertices.size;
+        u32 initial_idx = indexes.size;
+
         u32 material_index =
             primitive.materialIndex.value() + previous_material_size;
 
         // load indexes
         // Index buffer per primitive
-        Array<u32> indices{};
         {
           fastgltf::Accessor &index_accessor =
               asset->accessors[primitive.indicesAccessor.value()];
-          indices.init(allocator, index_accessor.count);
+
+          indexes.set_capacity(indexes.size + index_accessor.count);
 
           fastgltf::iterateAccessor<u32>(
               asset.get(), index_accessor,
-              [&](std::uint32_t idx) { indices.push(idx + initial_vtx); });
+              [&](std::uint32_t idx) { indexes.push(idx + initial_vtx); });
         }
 
         // load position vertices
@@ -879,7 +884,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
           } else {
             Array<glm::vec4> tangents_data{};
             tangents_data.init(allocator, vertices.size, vertices.size);
-            // TODO: Generate tangesnts
+
             SMikkTSpaceInterface interface = {};
             interface.m_getNumFaces = GetNumFaces;
             interface.m_getNumVerticesOfFace = GetNumVerticesOfFace;
@@ -888,8 +893,9 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
             interface.m_getTexCoord = GetTexCoord;
             interface.m_setTSpaceBasic = SetTSpaceBasic;
 
-            SMikkTSpaceContextUserData user_data{vertices.data,
-                                                 indices, tangents_data};
+            SMikkTSpaceContextUserData user_data{
+                vertices.data, &indexes[initial_idx],
+                (indexes.size - initial_idx), tangents_data};
 
             SMikkTSpaceContext mikkContext = {};
             mikkContext.m_pInterface = &interface;
@@ -897,8 +903,8 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
             genTangSpaceDefault(&mikkContext);
 
-            for (u32 i = 0; i < indices.size; ++i) {
-              u32 index = indices[i];
+            for (u32 i = initial_idx; i < indexes.size; ++i) {
+              u32 index = indexes[i];
               Vertex &vertex = vertices[index];
               vertex.tangent = tangents_data[index];
             }
@@ -909,30 +915,16 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
           }
         }
 
-        BufferCreation creation{};
-        creation.usage_flags =
-            (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
-        creation.memory_state_flags = MemoryState::Static;
-        creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-        // TODO: Verify that indices uses u32 or u16
-        creation.size = sizeof(u32) * indices.size;
-        creation.initial_data = indices.data;
-        creation.name = renderer_frontend->string_buffer.append_use_f(
-            "%s_IndexBuffer", node_name);
-
-        BufferHandle index_buffer_handle =
-            renderer_frontend->create_buffer(creation);
-
         // TODO: Transparency
         MeshDraw &mesh_draw = mesh.draws[i];
-        mesh_draw.primitive_count = indices.size;
-        mesh_draw.index_buffer = index_buffer_handle;
+        mesh_draw.primitive_count = indexes.size - initial_idx;
         mesh_draw.material_index = material_index;
-        indices.shutdown();
+        mesh_draw.index_buffer_offset = initial_idx;
       }
       BufferCreation creation{};
       creation.usage_flags =
-          (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest);
+          (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest |
+                              BufferUsage::ShaderAddress);
       creation.memory_state_flags = MemoryState::Static;
       creation.memory_access_flags = MemoryAccess::GPU_ONLY;
       creation.size = sizeof(Vertex) * vertices.size;
@@ -941,7 +933,19 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
       mesh.vertex_buffer = renderer_frontend->create_buffer(creation);
 
+      creation.reset();
+      creation.usage_flags =
+          (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
+      creation.memory_state_flags = MemoryState::Static;
+      creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+      creation.size = sizeof(u32) * indexes.size;
+      creation.initial_data = indexes.data;
+      creation.name = "Model_Index_Buffer";
+
+      mesh.index_buffer = renderer_frontend->create_buffer(creation);
+
       vertices.shutdown();
+      indexes.shutdown();
     }
   }
 

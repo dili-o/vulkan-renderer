@@ -19,9 +19,11 @@
 #include "Renderer/Vulkan/SpirvParser.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
+#include "SDL/src/video/khronos/vulkan/vulkan_core.h"
 // Vendor
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
+#include <cstdint>
 #include <cstring>
 #include <tracy/TracyVulkan.hpp>
 #include <vulkan/vulkan_core.h>
@@ -33,6 +35,7 @@
 
 #define MIN_BUFFER_SIZE 4
 #define MAX_TEXTURES 1000
+#define MAX_DRAW_COMMANDS 1000
 
 namespace Helix {
 
@@ -186,7 +189,8 @@ bool VulkanBackend::init(void *_config) {
   const VkValidationFeatureEnableEXT features_requested[] = {
       VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
       VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-      VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT};
+      VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+      VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
   VkValidationFeaturesEXT features = {};
   features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
   features.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debug_create_info;
@@ -257,6 +261,17 @@ bool VulkanBackend::init(void *_config) {
   main_queue_info.queueCount = 1;
   main_queue_info.pQueuePriorities = &queue_priority;
   queue_create_infos.push(main_queue_info);
+
+  if (queue_family_indices.graphics_family_index !=
+      queue_family_indices.compute_family_index) {
+    VkDeviceQueueCreateInfo queue_create_info{
+        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+    queue_create_info.queueFamilyIndex =
+        queue_family_indices.compute_family_index;
+    queue_create_info.queueCount = 1;
+    queue_create_info.pQueuePriorities = &queue_priority;
+    queue_create_infos.push(queue_create_info);
+  }
 
   if (queue_family_indices.graphics_family_index !=
       queue_family_indices.transfer_family_index) {
@@ -350,7 +365,8 @@ bool VulkanBackend::init(void *_config) {
   allocator_create_info.instance = vk_instance;
   allocator_create_info.pVulkanFunctions = &vma_vulkan_functions;
   allocator_create_info.flags =
-      VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
+      VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT |
+      VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
   VK_CHECK(vmaCreateAllocator(&allocator_create_info, &vma_allocator));
 
@@ -379,6 +395,14 @@ bool VulkanBackend::init(void *_config) {
                    &vk_graphics_queue);
   set_resource_name(VK_OBJECT_TYPE_QUEUE, (u64)vk_graphics_queue,
                     "Graphics_queue");
+  if (queue_family_indices.graphics_family_index !=
+      queue_family_indices.compute_family_index) {
+    vkGetDeviceQueue(vk_device, queue_family_indices.compute_family_index, 0,
+                     &vk_compute_queue);
+
+    set_resource_name(VK_OBJECT_TYPE_QUEUE, (u64)vk_compute_queue,
+                      "Compute_queue");
+  }
   vk_transfer_queue = vk_graphics_queue;
   if (queue_family_indices.graphics_family_index !=
       queue_family_indices.transfer_family_index) {
@@ -424,6 +448,21 @@ bool VulkanBackend::init(void *_config) {
     default_sampler = create_sampler(sampler_creation);
   }
 
+  {
+    BufferCreation buffer_creation{};
+
+    buffer_creation.usage_flags = BufferUsage::Enum(
+        BufferUsage::IndexedIndirect | BufferUsage::TransferDest);
+    buffer_creation.memory_state_flags = MemoryState::None;
+    buffer_creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+    buffer_creation.size =
+        MAX_DRAW_COMMANDS * sizeof(VkDrawIndexedIndirectCommand);
+    buffer_creation.initial_data = nullptr;
+    buffer_creation.name = "IndexedIndirectBuffer";
+
+    indirect_draw_buffer = create_buffer(buffer_creation);
+  }
+
   resource_deletion_queue.init(allocator, 10);
 
   frame_number = 0;
@@ -448,6 +487,7 @@ bool VulkanBackend::shutdown() {
   }
   destroy_render_pass(swapchain_pass);
   destroy_sampler(default_sampler);
+  destroy_buffer(indirect_draw_buffer);
   free_queued_resources();
   resource_deletion_queue.shutdown();
 
@@ -826,7 +866,7 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                           u32 current_frame) {
   TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Graphics CB");
 
-  VulkanDescriptorSet *dset = access_descriptor_set(
+  VulkanDescriptorSet *scene_set = access_descriptor_set(
       RendererFrontEnd::instance()->scene_sets[current_frame]);
   VulkanImage *swapchain_image =
       access_image(swapchain.images[swapchain.current_image_index]);
@@ -853,70 +893,6 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                  swapchain_image->vk_extents.height};
   command_buffer->bind_scissors(rect);
 
-  // command_buffer->push_marker("Depth Prepass");
-  // command_buffer->bind_renderpass(RendererFrontEnd::instance()->depth_prepass,
-  //                                 nullptr, depth_images[current_frame]);
-
-  // PipelineHandle depth_prepass_pipeline =
-  //     RendererFrontEnd::instance()->depth_prepass_pipeline;
-  // command_buffer->bind_pipeline(depth_prepass_pipeline);
-
-  // command_buffer->bind_viewport(
-  //     {swapchain_image->vk_extents.width,
-  //     swapchain_image->vk_extents.height});
-
-  // VkRect2D rect{};
-  // rect.offset = {0, 0};
-  // rect.extent = {swapchain_image->vk_extents.width,
-  //                swapchain_image->vk_extents.height};
-  // command_buffer->bind_scissors(rect);
-
-  // VulkanDescriptorSet *dset = access_descriptor_set(
-  //     RendererFrontEnd::instance()->scene_sets[current_frame]);
-  // command_buffer->bind_descriptor_sets(depth_prepass_pipeline,
-  // dset->vk_handle,
-  //                                      0);
-  //{
-  //   TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
-  //               "Depth Draws");
-  //   for (u32 i = 0; i < packet->mesh_count; ++i) {
-  //     Mesh &mesh = packet->meshes[i];
-  //     command_buffer->bind_vertex_buffer(mesh.vertex_buffer, 0, 1);
-
-  //    for (u32 j = 0; j < mesh.draws.size; ++j) {
-  //      MeshDraw &draw = mesh.draws[j];
-  //      // TODO: Maybe only bind 1 index buffer per mesh
-  //      command_buffer->bind_index_buffer(draw.index_buffer, 0,
-  //                                        VK_INDEX_TYPE_UINT32);
-
-  //      struct PushConstant {
-  //        glm::mat4 model;
-  //      };
-
-  //      PushConstant push_constant{
-  //          draw.transform.get_mat4(),
-  //      };
-
-  //      VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
-
-  //      VulkanPipeline *pipeline = access_pipeline(depth_prepass_pipeline);
-  //      command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
-  //                                     sizeof(PushConstant), &push_constant);
-
-  //      command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
-  //    }
-  //  }
-  //}
-
-  // command_buffer->end_current_renderpass();
-  // command_buffer->pop_marker();
-
-  // command_buffer->transition_image(
-  //     depth_view->image, depth_image->current_layout,
-  //     VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-  //     VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-  //     VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT);
-
   command_buffer->push_marker("Main Pass");
   TextureHandle main_color_attachments[] = {
       swapchain.images[swapchain.current_image_index]};
@@ -930,19 +906,17 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       access_descriptor_set(RendererFrontEnd::instance()->bindless_set)
           ->vk_handle;
   command_buffer->bind_descriptor_sets({0, 0}, vk_bindless_descriptor_set, 0);
-  command_buffer->bind_descriptor_sets({0, 0}, dset->vk_handle, 1);
+  command_buffer->bind_descriptor_sets({0, 0}, scene_set->vk_handle, 1);
 
   {
     TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Main Draws");
     for (u32 i = 0; i < packet->mesh_count; ++i) {
       Mesh &mesh = packet->meshes[i];
-      command_buffer->bind_vertex_buffer(mesh.vertex_buffer, 0, 1);
+      command_buffer->bind_index_buffer(mesh.index_buffer, 0,
+                                        VK_INDEX_TYPE_UINT32);
 
       for (u32 j = 0; j < mesh.draws.size; ++j) {
         MeshDraw &draw = mesh.draws[j];
-        // TODO: Maybe only bind 1 index buffer per mesh
-        command_buffer->bind_index_buffer(draw.index_buffer, 0,
-                                          VK_INDEX_TYPE_UINT32);
 
         // TODO: Maybe add a pointer to pbr_materials in RenderPacket
         PBRMaterial &material =
@@ -950,20 +924,27 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
         struct PushConstant {
           glm::mat4 model;
+          VkDeviceAddress vertex_buffer;
           u32 albedo_texture_index;
           u32 normal_texture_index;
         };
 
-        PushConstant push_constant{draw.transform.get_mat4(),
-                                   material.albedo_texture_handle.index,
-                                   material.normal_texture_handle.index};
+        PushConstant push_constant{};
+        push_constant.model = draw.transform.get_mat4();
+        push_constant.vertex_buffer =
+            access_buffer(mesh.vertex_buffer)->device_address;
+        push_constant.albedo_texture_index =
+            material.albedo_texture_handle.index;
+        push_constant.normal_texture_index =
+            material.normal_texture_handle.index;
 
         VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
 
         command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
                                        sizeof(PushConstant), &push_constant);
 
-        command_buffer->draw_indexed(draw.primitive_count, 1, 0, 0, 0);
+        command_buffer->draw_indexed(draw.primitive_count, 1,
+                                     draw.index_buffer_offset, 0, 0);
       }
     }
   }
@@ -1116,7 +1097,7 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
   // VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT for buffers that
   // change only once per frame
   memory_info.flags =
-      creation.memory_state_flags & MemoryState::Persistent
+      creation.memory_state_flags & MemoryState::Mapped
           ? VMA_ALLOCATION_CREATE_MAPPED_BIT |
                 VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
           : 0;
@@ -1128,22 +1109,26 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
                            &buffer->vk_handle, &buffer->vma_allocation,
                            &alloc_info));
 
-  if (creation.initial_data) {
-    if (creation.memory_access_flags & MemoryAccess::GPU_ONLY) {
-      upload_buffer_data(creation.initial_data, buffer->vk_handle,
-                         creation.size);
-    } else {
-      vmaMapMemory(vma_allocator, buffer->vma_allocation, &buffer->mapped_data);
-      memcpy(buffer->mapped_data, creation.initial_data, (size_t)creation.size);
-      vmaUnmapMemory(vma_allocator, buffer->vma_allocation);
-    }
-  }
+  buffer->name = creation.name;
+  buffer->memory_access = creation.memory_access_flags;
+  buffer->usage = creation.usage_flags;
+  buffer->mapped_data = nullptr;
 
-  if (creation.memory_state_flags & MemoryState::Persistent) {
+  if (creation.memory_state_flags & MemoryState::Mapped) {
     vmaMapMemory(vma_allocator, buffer->vma_allocation, &buffer->mapped_data);
   }
 
-  buffer->name = creation.name;
+  if (creation.initial_data) {
+    upload_buffer_data(creation.initial_data, handle, creation.size, 0);
+  }
+
+  if (creation.usage_flags & BufferUsage::ShaderAddress) {
+    VkBufferDeviceAddressInfo address_info{
+        VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
+    address_info.buffer = buffer->vk_handle;
+    buffer->device_address = vkGetBufferDeviceAddress(vk_device, &address_info);
+  }
+
   set_resource_name(VK_OBJECT_TYPE_BUFFER, (u64)buffer->vk_handle,
                     creation.name);
 
@@ -1259,7 +1244,9 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   VkPipelineVertexInputStateCreateInfo vertex_input_state{
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
   vertex_input_state.vertexBindingDescriptionCount =
-      1; // TODO: For now assume only one vertex binding
+      parse_result.vertex_attribute_count
+          ? 1
+          : 0; // TODO: For now assume only one vertex binding
   vertex_input_state.pVertexBindingDescriptions = &parse_result.vertex_binding;
   vertex_input_state.vertexAttributeDescriptionCount =
       parse_result.vertex_attribute_count;
@@ -1343,7 +1330,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   color_blend_attachment.dstColorBlendFactor =
       VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
   color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
   color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
@@ -2163,7 +2150,9 @@ bool VulkanBackend::update_binding_set(BindingSetHandle set,
       descriptor_write.dstSet = d_set->vk_handle;
       descriptor_write.dstBinding = update_info.binding;
       descriptor_write.dstArrayElement = update_info.resource_index;
-      descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptor_write.descriptorType = (buffer->usage & BufferUsage::Uniform)
+                                            ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                            : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
       descriptor_write.descriptorCount = 1;
       descriptor_write.pBufferInfo = &buffer_info;
     } else if (update_info.resource_type == ResourceType::Texture) {
@@ -2323,6 +2312,8 @@ void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
   memcpy(uniform_buffer->mapped_data, &ubo, sizeof(ubo));
 }
 
+void VulkanBackend::update_draw_commands(Scene *scene) {}
+
 void VulkanBackend::print_gpu_stats() {
   VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
 
@@ -2345,26 +2336,44 @@ void VulkanBackend::print_gpu_stats() {
   // vmaFreeStatsString(vma_allocator, statsString);
 }
 
-void VulkanBackend::upload_buffer_data(void *data, VkBuffer dst_buffer,
-                                       u32 buffer_size) {
-  VulkanBuffer staging_buffer{};
-  vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   staging_buffer);
+void VulkanBackend::upload_buffer_data(void *data, BufferHandle buffer_handle,
+                                       u32 size, u32 offset) {
+  VulkanBuffer *buffer = access_buffer(buffer_handle);
 
-  vmaMapMemory(vma_allocator, staging_buffer.vma_allocation,
-               &staging_buffer.mapped_data);
-  memcpy(staging_buffer.mapped_data, data, (size_t)buffer_size);
-  vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
+  if (buffer->memory_access & MemoryAccess::GPU_ONLY) {
+    VulkanBuffer staging_buffer{};
+    vk_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     staging_buffer);
 
-  VulkanCommandBuffer *command_buffer =
-      transfer_command_buffer_manager.get_command_buffer(0, 0, false);
-  command_buffer->copy_buffer_to_buffer(dst_buffer, staging_buffer.vk_handle,
-                                        buffer_size, vk_transfer_queue);
+    vmaMapMemory(vma_allocator, staging_buffer.vma_allocation,
+                 &staging_buffer.mapped_data);
+    memcpy(staging_buffer.mapped_data, data, (size_t)size);
+    vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
-  vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
-                   staging_buffer.vma_allocation);
+    VmaAllocationInfo alloc_info;
+    vmaGetAllocationInfo(vma_allocator, buffer->vma_allocation, &alloc_info);
+    VulkanCommandBuffer *command_buffer =
+        transfer_command_buffer_manager.get_command_buffer(0, 0, false);
+    command_buffer->copy_buffer_to_buffer(buffer->vk_handle, offset,
+                                          staging_buffer.vk_handle, 0, size,
+                                          vk_transfer_queue);
+
+    vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
+                     staging_buffer.vma_allocation);
+  } else {
+    VmaAllocationInfo alloc_info;
+    vmaGetAllocationInfo(vma_allocator, buffer->vma_allocation, &alloc_info);
+    if (alloc_info.pMappedData) {
+      memcpy(alloc_info.pMappedData, data, size); // TODO: Include the offset
+    } else {
+      vmaMapMemory(vma_allocator, buffer->vma_allocation, &buffer->mapped_data);
+      HASSERT(buffer->mapped_data);
+      memcpy(buffer->mapped_data, data, size); // TODO: Include the offset
+      vmaUnmapMemory(vma_allocator, buffer->vma_allocation);
+    }
+  }
 }
 
 void VulkanBackend::set_resource_name(VkObjectType type, u64 handle,
@@ -2472,6 +2481,12 @@ select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
           queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
           queue_family_indices.graphics_family_index == UINT32_MAX) {
         queue_family_indices.graphics_family_index = idx;
+        continue;
+      }
+
+      if (queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT &&
+          queue_family_indices.compute_family_index == UINT32_MAX) {
+        queue_family_indices.compute_family_index = idx;
         continue;
       }
 

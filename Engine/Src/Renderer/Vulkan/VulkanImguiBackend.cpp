@@ -68,7 +68,7 @@ void VulkanImguiBackend::init(void *configuration) {
     BufferCreation creation{};
     creation.reset();
     creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Vertex);
-    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_state_flags = MemoryState::Mapped;
     creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
     creation.size = s_vb_size;
     creation.name = "ImGui_Vertex_Buffer";
@@ -77,7 +77,7 @@ void VulkanImguiBackend::init(void *configuration) {
 
     creation.reset();
     creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Index);
-    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_state_flags = MemoryState::Mapped;
     creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
     creation.size = s_ib_size;
     creation.name = "ImGui_Index_Buffer";

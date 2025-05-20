@@ -10,6 +10,8 @@ void Engine::init(Game *game) {
 
   file_service.init();
 
+  file_watcher_service.init();
+
   input_service.init();
 
   MemoryServiceConfiguration mem_config{hmega(1000), hmega(1000)};
@@ -73,6 +75,7 @@ void Engine::shutdown() {
   event_service.shutdown();
   memory_service.shutdown();
   input_service.shutdown();
+  file_watcher_service.shutdown();
   file_service.shutdown();
   log_service.shutdown();
 }

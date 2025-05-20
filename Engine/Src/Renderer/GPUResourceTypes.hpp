@@ -29,6 +29,6 @@ enum Enum { Buffer, Texture };
 }
 
 namespace BindingType {
-enum Enum { CombinedSampler, UniformBuffer };
+enum Enum { CombinedSampler, UniformBuffer, StorageBuffer };
 }
 } // namespace Helix

@@ -2,6 +2,7 @@
 
 #include "Core/Application.hpp"
 #include "Core/Event.hpp"
+#include "Core/FileWatcher.hpp"
 #include "Core/Input.hpp"
 #include "Core/Job.hpp"
 #include "Core/Log.hpp"
@@ -18,6 +19,7 @@ struct Engine {
 
   LogService log_service;
   FileService file_service;
+  FileWatcherService file_watcher_service;
   InputService input_service;
   MemoryService memory_service;
   Platform platform_service;

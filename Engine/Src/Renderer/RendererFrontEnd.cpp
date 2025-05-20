@@ -72,7 +72,7 @@ void RendererFrontEnd::init(void *_config) {
     BufferCreation creation{};
     creation.reset();
     creation.usage_flags = BufferUsage::Uniform;
-    creation.memory_state_flags = MemoryState::Persistent;
+    creation.memory_state_flags = MemoryState::Mapped;
     creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
     creation.size = sizeof(UniformBufferObject);
     creation.initial_data = nullptr;
@@ -344,6 +344,15 @@ void RendererFrontEnd::set_pipeline_binding_set(PipelineHandle pipeline,
                                                 BindingSetHandle set,
                                                 u32 set_index) {
   backend->set_pipeline_binding_set(pipeline, set, set_index);
+}
+
+void RendererFrontEnd::upload_buffer_data(void *data, BufferHandle dst_buffer,
+                                          u32 size, u32 offset) {
+  backend->upload_buffer_data(data, dst_buffer, size, offset);
+}
+
+void RendererFrontEnd::update_draw_commands(Scene *scene) {
+  backend->update_draw_commands(scene);
 }
 
 void RendererFrontEnd::print_gpu_stats() { backend->print_gpu_stats(); }

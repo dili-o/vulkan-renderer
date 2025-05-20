@@ -18,6 +18,13 @@ VkBufferUsageFlags to_vk_buffer_usage_flags(BufferUsage::Enum _usage) {
     usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
   if (_usage & BufferUsage::TransferDest)
     usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  if (_usage & BufferUsage::IndexedIndirect)
+    usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+  if (_usage & BufferUsage::ShaderAddress)
+    usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  if (_usage & BufferUsage::Storage)
+    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
   return usage;
 }
 
@@ -148,6 +155,8 @@ VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type) {
     return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   case BindingType::CombinedSampler:
     return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  case BindingType::StorageBuffer:
+    return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   }
 }
 
