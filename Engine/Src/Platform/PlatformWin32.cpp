@@ -107,9 +107,11 @@ void Platform::handle_os_messages() {
   }
 }
 
-f64 Platform::get_absolute_time() {
+f64 Platform::get_absolute_time_s() {
   return (f64)SDL_GetPerformanceCounter() / (f64)SDL_GetPerformanceFrequency();
 }
+
+f64 Platform::get_absolute_time_ms() { return get_absolute_time_s() * 1000.0; }
 
 u64 Platform::get_current_processor_id() {
   return (u64)GetCurrentProcessorNumber();

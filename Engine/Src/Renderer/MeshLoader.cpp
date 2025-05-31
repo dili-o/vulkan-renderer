@@ -111,7 +111,8 @@ struct TextureLoadSuccess {
   void *texture_data{nullptr};
   u32 material_to_update_index{0};
   MaterialAttribute attribute_to_update;
-  Array<PBRMaterial> *pbr_materials{nullptr};
+  Scene *scene{nullptr};
+  // Array<PBRMaterial> *pbr_materials{nullptr};
 };
 
 // TODO: Specify the image component type
@@ -182,14 +183,16 @@ bool load_texture_success(void *result_data) {
   case MaterialAttribute_Albedo: {
     res->tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
     TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
-    (*res->pbr_materials)[res->material_to_update_index].albedo_texture_handle =
-        handle;
+    (*res->scene)
+        .pbr_materials[res->material_to_update_index]
+        .albedo_texture_handle = handle;
   } break;
   case MaterialAttribute_Normal: {
     res->tex_creation.format = TextureFormat::R8G8B8A8_UNORM;
     TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
-    (*res->pbr_materials)[res->material_to_update_index].normal_texture_handle =
-        handle;
+    (*res->scene)
+        .pbr_materials[res->material_to_update_index]
+        .normal_texture_handle = handle;
   } break;
   }
 
@@ -255,7 +258,7 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
       TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
       res_data->tex_creation.name = renderer_frontend->string_buffer.append_use(
           FileService::get_file_from_path(file_full_path));
-      res_data->pbr_materials = &scene->pbr_materials;
+      res_data->scene = scene;
       res_data->material_to_update_index = scene->pbr_materials.size - 1;
       JobService::instance()->submit(info);
     } else {
@@ -390,7 +393,7 @@ bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
   creation.initial_data = vertices.data;
   creation.name = "Model_Vertex_Buffer";
 
-  mesh.vertex_buffer = renderer_frontend->create_buffer(creation);
+  // mesh.vertex_buffer = renderer_frontend->create_buffer(creation);
 
   // HDEBUG("Vertex size = {}", vertices.size);
   vertices.shutdown();
@@ -444,7 +447,7 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                              : renderer_frontend->string_buffer.append_use_f(
                                    "texture_%d", scene->pbr_materials.size);
             res_data->attribute_to_update = attribute;
-            res_data->pbr_materials = &scene->pbr_materials;
+            res_data->scene = scene;
             res_data->material_to_update_index = scene->pbr_materials.size - 1;
 
             JobService::instance()->submit(info);
@@ -476,7 +479,7 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                              : renderer_frontend->string_buffer.append_use(
                                    filePath.uri.c_str());
             res_data->attribute_to_update = attribute;
-            res_data->pbr_materials = &scene->pbr_materials;
+            res_data->scene = scene;
             res_data->material_to_update_index = scene->pbr_materials.size - 1;
             JobService::instance()->submit(info);
           },
@@ -519,7 +522,7 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                               : renderer_frontend->string_buffer.append_use_f(
                                     "texture_%d", scene->pbr_materials.size);
                       res_data->attribute_to_update = attribute;
-                      res_data->pbr_materials = &scene->pbr_materials;
+                      res_data->scene = scene;
                       res_data->material_to_update_index =
                           scene->pbr_materials.size - 1;
                       JobService::instance()->submit(info);
@@ -549,7 +552,7 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                               : renderer_frontend->string_buffer.append_use_f(
                                     "texture_%d", scene->pbr_materials.size);
                       res_data->attribute_to_update = attribute;
-                      res_data->pbr_materials = &scene->pbr_materials;
+                      res_data->scene = scene;
                       res_data->material_to_update_index =
                           scene->pbr_materials.size - 1;
                       JobService::instance()->submit(info);
@@ -801,7 +804,6 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
         u32 material_index =
             primitive.materialIndex.value() + previous_material_size;
 
-        // load indexes
         // Index buffer per primitive
         {
           fastgltf::Accessor &index_accessor =
@@ -895,7 +897,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
             SMikkTSpaceContextUserData user_data{
                 vertices.data, &indexes[initial_idx],
-                (indexes.size - initial_idx), tangents_data};
+                ((u32)indexes.size - initial_idx), tangents_data};
 
             SMikkTSpaceContext mikkContext = {};
             mikkContext.m_pInterface = &interface;
@@ -919,30 +921,24 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
         MeshDraw &mesh_draw = mesh.draws[i];
         mesh_draw.primitive_count = indexes.size - initial_idx;
         mesh_draw.material_index = material_index;
-        mesh_draw.index_buffer_offset = initial_idx;
+        mesh_draw.index_buffer_offset =
+            initial_idx + renderer_frontend->unified_index_buffer.current_size;
+        mesh_draw.vertex_buffer_offset =
+            renderer_frontend->unified_vertex_buffer.current_size;
       }
-      BufferCreation creation{};
-      creation.usage_flags =
-          (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest |
-                              BufferUsage::ShaderAddress);
-      creation.memory_state_flags = MemoryState::Static;
-      creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-      creation.size = sizeof(Vertex) * vertices.size;
-      creation.initial_data = vertices.data;
-      creation.name = "Model_Vertex_Buffer";
+      // TODO: Make a function in RendererFrontEnd
+      u64 upload_size = sizeof(Vertex) * vertices.size;
+      renderer_frontend->upload_buffer_data(
+          vertices.data, renderer_frontend->unified_vertex_buffer.handle,
+          upload_size,
+          renderer_frontend->unified_vertex_buffer.size_in_bytes());
+      renderer_frontend->unified_vertex_buffer.current_size += vertices.size;
 
-      mesh.vertex_buffer = renderer_frontend->create_buffer(creation);
-
-      creation.reset();
-      creation.usage_flags =
-          (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
-      creation.memory_state_flags = MemoryState::Static;
-      creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-      creation.size = sizeof(u32) * indexes.size;
-      creation.initial_data = indexes.data;
-      creation.name = "Model_Index_Buffer";
-
-      mesh.index_buffer = renderer_frontend->create_buffer(creation);
+      upload_size = sizeof(u32) * indexes.size;
+      renderer_frontend->upload_buffer_data(
+          indexes.data, renderer_frontend->unified_index_buffer.handle,
+          upload_size, renderer_frontend->unified_index_buffer.size_in_bytes());
+      renderer_frontend->unified_index_buffer.current_size += indexes.size;
 
       vertices.shutdown();
       indexes.shutdown();

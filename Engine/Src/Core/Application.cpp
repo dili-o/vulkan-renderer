@@ -47,9 +47,7 @@ void Application::init(void *config) {
 void Application::run() {
   clock.start();
   last_time = clock.get_elapsed_time_s();
-  f64 running_time = 0.0;
-  u8 frame_count = 0;
-  f64 target_frame_seconds = 1.0 / 60.0;
+  f64 target_frame_seconds_ms = 1000.0 / 60.0;
 
   while (!platform->requested_exit) {
     platform->handle_os_messages();
@@ -57,7 +55,7 @@ void Application::run() {
     if (!platform->is_suspended) {
       f64 current_time = clock.get_elapsed_time_s();
       delta_time = current_time - last_time;
-      f64 frame_start_time = platform->get_absolute_time();
+      f64 frame_start_time_ms = platform->get_absolute_time_ms();
 
       InputService::instance()->update(delta_time);
 
@@ -71,22 +69,15 @@ void Application::run() {
 
       HELIX_PROFILER_ZONE("Calculate remaining time and update frame count",
                           HELIX_PROFILER_COLOR_DEFAULT)
-      f64 frame_end_time = platform->get_absolute_time();
-      f64 frame_elapsed_time = frame_end_time - frame_start_time;
-      running_time += frame_elapsed_time;
-      f64 remaining_seconds = target_frame_seconds - frame_elapsed_time;
+      f64 frame_end_time_ms = platform->get_absolute_time_ms();
+      f64 frame_elapsed_time_ms = frame_end_time_ms - frame_start_time_ms;
+      f64 remaining_time_ms = target_frame_seconds_ms - frame_elapsed_time_ms;
 
-      if (remaining_seconds > 0) {
-        u64 remaining_ms = (remaining_seconds * 1000);
-
+      if (remaining_time_ms > 0) {
         // If there is time left, give it back to the OS.
-        if (remaining_ms > 0 && limit_frames) {
-          HELIX_PROFILER_ZONE("Application sleep", HELIX_PROFILER_COLOR_DEFAULT)
-          platform->sleep(remaining_ms - 1);
-          HELIX_PROFILER_ZONE_END()
-        }
-
-        frame_count++;
+        HELIX_PROFILER_ZONE("Application sleep", HELIX_PROFILER_COLOR_DEFAULT)
+        platform->sleep(static_cast<u32>(remaining_time_ms - 1));
+        HELIX_PROFILER_ZONE_END()
       }
       last_time = current_time;
       HELIX_PROFILER_ZONE_END()

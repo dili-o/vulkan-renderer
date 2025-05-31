@@ -6,6 +6,7 @@ namespace Helix {
 
 void Engine::init(Game *game) {
   // Initialize services
+
   log_service.init();
 
   file_service.init();

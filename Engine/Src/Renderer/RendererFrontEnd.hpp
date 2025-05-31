@@ -10,6 +10,11 @@ namespace Helix {
 
 const u32 max_frames_in_flight = 2;
 
+constexpr u64 max_vertex_count = 20'194'304;
+constexpr u64 max_index_count = max_vertex_count * 3;
+constexpr u64 max_draw_count = (max_index_count + 2) / 3;
+constexpr u64 max_material_count = (max_index_count + 2) / 3;
+
 struct RendererBackend;
 struct Scene;
 
@@ -51,8 +56,8 @@ public:
   void set_pipeline_binding_set(PipelineHandle pipeline, BindingSetHandle set,
                                 u32 set_index);
 
-  void upload_buffer_data(void *data, BufferHandle dst_buffer, u32 size,
-                          u32 offset);
+  void upload_buffer_data(void *data, BufferHandle dst_buffer, u64 size,
+                          u64 offset);
   void update_draw_commands(Scene *scene);
   void print_gpu_stats();
 
@@ -76,6 +81,11 @@ public:
   BindingSetHandle bindless_set{};
 
   RenderPassHandle depth_prepass{};
+
+  UnifiedBuffer<Vertex> unified_vertex_buffer{};
+  UnifiedBuffer<u32> unified_index_buffer{};
+  UnifiedBuffer<glm::mat4> unified_transform_buffer{};
+  UnifiedBuffer<GPUPBRMaterial> unified_material_buffer{};
 };
 
 } // namespace Helix

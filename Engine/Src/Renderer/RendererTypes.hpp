@@ -1,14 +1,15 @@
 #pragma once
 
 #include "Containers/Array.hpp"
-#include "Containers/ResourcePool.hpp"
 #include "Core/Defines.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
-#include "Renderer/GPUResources.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
+
+#define MAX_TEXTURES 1000
+#define MAX_MATERIALS 4000
 
 namespace Helix {
 struct Camera;
@@ -41,6 +42,13 @@ struct PBRMaterial {
   TextureHandle occlusion_texture_handle{};
 };
 
+struct GPUPBRMaterial {
+  u32 albedo_texture_index;
+  u32 normal_texture_index;
+  u32 roughness_texture_index;
+  u32 occlusion_texture_index;
+};
+
 struct Transform {
   glm::vec3 position{0.f};
   glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -66,8 +74,17 @@ struct Transform {
   }
 };
 
+template <typename T> struct UnifiedBuffer {
+  BufferHandle handle;
+  size_t current_size{0};
+  size_t capacity{0};
+
+  size_t size_in_bytes() const { return current_size * sizeof(T); }
+};
+
 struct MeshDraw {
-  u32 index_buffer_offset;
+  u64 vertex_buffer_offset;
+  u64 index_buffer_offset;
   u32 material_index;
   u32 primitive_count;
   Transform transform;
@@ -75,8 +92,6 @@ struct MeshDraw {
 
 struct Mesh {
   Array<MeshDraw> draws;
-  BufferHandle vertex_buffer;
-  BufferHandle index_buffer;
 };
 
 struct Game;
@@ -106,6 +121,7 @@ struct alignas(16) Vertex {
 struct UniformBufferObject {
   glm::mat4 view;
   glm::mat4 proj;
+  glm::mat4 view_proj;
 };
 
 } // namespace Helix

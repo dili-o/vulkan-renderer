@@ -19,7 +19,8 @@ struct Platform : public Service {
   HELIX_DECLARE_SERVICE(Platform)
 
   void handle_os_messages();
-  f64 get_absolute_time();
+  f64 get_absolute_time_s();
+  f64 get_absolute_time_ms();
   void sleep(u64 ms);
 
   void set_title(cstring title);

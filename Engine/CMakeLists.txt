@@ -66,7 +66,10 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_SDK_PATH="${VULKAN_SDK_
 add_subdirectory(Vendor/spdlog)
 target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)
 # SDL3
-set(SDL_STATIC ON)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_TEST OFF CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/SDL EXCLUDE_FROM_ALL)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3-static)
 # TLSF

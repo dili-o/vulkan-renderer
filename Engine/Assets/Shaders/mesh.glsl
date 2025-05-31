@@ -8,16 +8,25 @@ struct IndexedDrawCommand{
   uint firstInstance;
 };
 
-struct Vertex
-{
+// TODO: Use pos.w and normal.w as the texCoord x and y
+struct Vertex{
   vec4 pos;
   vec4 normal; 
   vec4 tangent;
-  vec4 tex_coord; 
+  vec4 texCoord; 
 };
 
-layout(std430, buffer_reference) readonly buffer Vertices
-{
+struct PBRMaterial {
+  uint albedoTextureIndex;
+  uint normalTextureIndex;
+  uint roughnessTextureIndex;
+  uint occlusionTextureIndex;
+};
+
+layout(std430, buffer_reference) readonly buffer Vertices{
     Vertex vertices[];
 };
 
+layout(std430, buffer_reference) readonly buffer PBRMaterials{
+    PBRMaterial materials[];
+};

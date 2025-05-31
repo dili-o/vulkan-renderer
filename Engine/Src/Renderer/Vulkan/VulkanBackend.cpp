@@ -26,15 +26,15 @@
 #include <cstdint>
 #include <cstring>
 #include <tracy/TracyVulkan.hpp>
-#include <vulkan/vulkan_core.h>
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
 #define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
+#define SHADER_DEBUG_SYMBOLS
+
 #define MIN_BUFFER_SIZE 4
-#define MAX_TEXTURES 1000
 #define MAX_DRAW_COMMANDS 1000
 
 namespace Helix {
@@ -240,8 +240,10 @@ bool VulkanBackend::init(void *_config) {
   }
 
   Array<cstring> device_extensions{};
-  device_extensions.init(stack_allocator, 1, 1);
-  device_extensions[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+  device_extensions.init(stack_allocator, 2);
+  device_extensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+  device_extensions.push(
+      VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);
   // Create Physical Device
   if (!select_physical_device(vk_instance, vk_physical_device,
                               &vk_physical_device_properties,
@@ -830,9 +832,9 @@ void VulkanBackend::create_swapchain() {
   tex_creation.alias_image = {k_invalid_index, 0};
   tex_creation.format = TextureFormat::D32;
   tex_creation.type = TextureType::Texture2D;
-  tex_creation.name = "depth";
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
+    tex_creation.name = string_buffer.append_use_f("DepthImage_%d", i);
     depth_images[i] = create_texture(tex_creation);
   }
 
@@ -908,13 +910,18 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->bind_descriptor_sets({0, 0}, vk_bindless_descriptor_set, 0);
   command_buffer->bind_descriptor_sets({0, 0}, scene_set->vk_handle, 1);
 
+  RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
+  command_buffer->bind_index_buffer(
+      renderer_frontend->unified_index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
+  if (renderer_frontend->unified_vertex_buffer.current_size) {
+    command_buffer->bind_vertex_buffer(
+        renderer_frontend->unified_vertex_buffer.handle, 0, 1);
+  }
+
   {
     TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Main Draws");
     for (u32 i = 0; i < packet->mesh_count; ++i) {
       Mesh &mesh = packet->meshes[i];
-      command_buffer->bind_index_buffer(mesh.index_buffer, 0,
-                                        VK_INDEX_TYPE_UINT32);
-
       for (u32 j = 0; j < mesh.draws.size; ++j) {
         MeshDraw &draw = mesh.draws[j];
 
@@ -924,15 +931,14 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
         struct PushConstant {
           glm::mat4 model;
-          VkDeviceAddress vertex_buffer;
+          u32 vertex_buffer_offset;
           u32 albedo_texture_index;
           u32 normal_texture_index;
         };
 
         PushConstant push_constant{};
         push_constant.model = draw.transform.get_mat4();
-        push_constant.vertex_buffer =
-            access_buffer(mesh.vertex_buffer)->device_address;
+        push_constant.vertex_buffer_offset = draw.vertex_buffer_offset;
         push_constant.albedo_texture_index =
             material.albedo_texture_handle.index;
         push_constant.normal_texture_index =
@@ -942,9 +948,13 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
         command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
                                        sizeof(PushConstant), &push_constant);
-
-        command_buffer->draw_indexed(draw.primitive_count, 1,
-                                     draw.index_buffer_offset, 0, 0);
+        {
+          TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
+                      "vkCmdDrawIndexed");
+          command_buffer->draw_indexed(draw.primitive_count, 1,
+                                       draw.index_buffer_offset,
+                                       draw.vertex_buffer_offset, 0);
+        }
       }
     }
   }
@@ -1131,6 +1141,7 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
 
   set_resource_name(VK_OBJECT_TYPE_BUFFER, (u64)buffer->vk_handle,
                     creation.name);
+  vmaSetAllocationName(vma_allocator, buffer->vma_allocation, creation.name);
 
   return handle;
 }
@@ -1155,10 +1166,10 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
   char *vulkan_sdk_path = temp_string_buffer.reserve(512);
   FileService::expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path, 512);
-  cstring glsl_compiler_path =
-      temp_string_buffer.append_use_f("%s\\Bin\\glslc.exe", vulkan_sdk_path);
-#ifdef VULKAN_DEBUG_REPORT
-  cstring compiler_debug = "-g";
+  cstring glsl_compiler_path = temp_string_buffer.append_use_f(
+      "%s\\Bin\\glslangValidator.exe", vulkan_sdk_path);
+#ifdef SHADER_DEBUG_SYMBOLS
+  cstring compiler_debug = "-gVS";
 #else
   cstring compiler_debug = "";
 #endif
@@ -1182,7 +1193,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
     cstring shader_args = temp_string_buffer.append_use_f(
-        " -fshader-stage=%s %s.glsl -o %s.spv --target-env=vulkan1.3 %s",
+        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.4 %s",
         to_compiler_stage(shader.stage), shader.filename, shader.filename,
         compiler_debug);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
@@ -1314,7 +1325,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   depth_stencil.depthWriteEnable =
       creation.enable_depth_write ? VK_TRUE : VK_FALSE;
   depth_stencil.depthCompareOp =
-      creation.enable_depth_write ? VK_COMPARE_OP_LESS : VK_COMPARE_OP_EQUAL;
+      creation.enable_depth_write ? VK_COMPARE_OP_LESS : VK_COMPARE_OP_NEVER;
   depth_stencil.depthBoundsTestEnable = VK_FALSE;
   depth_stencil.minDepthBounds = 0.0f;
   depth_stencil.maxDepthBounds = 1.0f;
@@ -1530,6 +1541,7 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
                           &image->vk_handle, &image->vma_allocation, nullptr));
 
   set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)image->vk_handle, creation.name);
+  vmaSetAllocationName(vma_allocator, image->vma_allocation, creation.name);
 
   image->views_count = 0;
   image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -2306,6 +2318,7 @@ void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
   UniformBufferObject ubo{};
   ubo.view = packet->camera->get_view();
   ubo.proj = packet->camera->get_projection();
+  ubo.view_proj = ubo.proj * ubo.view;
 
   VulkanBuffer *uniform_buffer = access_buffer(packet->scene_data_buffer);
 
@@ -2328,19 +2341,22 @@ void VulkanBackend::print_gpu_stats() {
            budgets[i].usage / (1024.0 * 1024.0),
            budgets[i].budget / (1024.0 * 1024.0));
   }
-  // char *statsString = nullptr;
-  // vmaBuildStatsString(vma_allocator, &statsString,
-  //                     VK_FALSE); // VK_TRUE = detailed
-  // printf("%s\n", statsString);
+  char *statString = nullptr;
+  vmaBuildStatsString(vma_allocator, &statString, VK_TRUE);
 
-  // vmaFreeStatsString(vma_allocator, statsString);
+  HTRACE("\n{}", statString);
+
+  vmaFreeStatsString(vma_allocator, statString);
 }
 
 void VulkanBackend::upload_buffer_data(void *data, BufferHandle buffer_handle,
-                                       u32 size, u32 offset) {
+                                       u64 size, u64 offset) {
   VulkanBuffer *buffer = access_buffer(buffer_handle);
 
   if (buffer->memory_access & MemoryAccess::GPU_ONLY) {
+    // TODO: Maybe have multiple command buffers
+    vkQueueWaitIdle(vk_transfer_queue);
+
     VulkanBuffer staging_buffer{};
     vk_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |

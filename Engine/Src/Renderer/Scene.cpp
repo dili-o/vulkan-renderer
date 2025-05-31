@@ -1,8 +1,10 @@
 #include "Renderer/Scene.hpp"
 #include "Containers/RingQueue.hpp"
 #include "Core/Log.hpp"
+#include "Core/Memory.hpp"
 #include "Core/String.hpp"
 #include "Platform/File.hpp"
+#include "Renderer/GPUResources.hpp"
 #include "Renderer/ImguiFrontend.hpp"
 #include "Renderer/MeshLoader.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
@@ -270,6 +272,18 @@ void Scene::init() {
       RendererFrontEnd::instance()->default_albedo_texture;
   pbr_material.normal_texture_handle =
       RendererFrontEnd::instance()->default_normal_texture;
+
+  BufferCreation creation{};
+  creation.usage_flags =
+      BufferUsage::Enum(BufferUsage::ShaderAddress | BufferUsage::TransferDest);
+  creation.memory_state_flags = MemoryState::None;
+  creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+  creation.size = MAX_MATERIALS * sizeof(GPUPBRMaterial);
+  creation.initial_data = nullptr;
+  creation.name = "PBR_Materials_Buffer";
+
+  // pbr_materials_buffer =
+  // RendererFrontEnd::instance()->create_buffer(creation);
 }
 
 void Scene::shutdown() {
@@ -286,6 +300,9 @@ void Scene::shutdown() {
     RendererFrontEnd::instance()->destroy_texture(mat.albedo_texture_handle);
     RendererFrontEnd::instance()->destroy_texture(mat.normal_texture_handle);
   }
+
+  // RendererFrontEnd::instance()->destroy_buffer(pbr_materials_buffer);
+
   pbr_materials.shutdown();
   string_buffer.shutdown();
   meshes.shutdown();
@@ -307,8 +324,6 @@ bool Scene::load_mesh(cstring path, cstring model) {
   else
     HERROR("Unknown mesh file type: {}", file_extension);
 
-  if (mesh_loaded)
-    RendererFrontEnd::instance()->update_draw_commands(this);
   return mesh_loaded;
 }
 
@@ -333,9 +348,6 @@ void Scene::unload_mesh(u32 mesh_index) {
   }
 
   mesh.draws.shutdown();
-
-  renderer_frontend->destroy_buffer(mesh.vertex_buffer);
-  renderer_frontend->destroy_buffer(mesh.index_buffer);
 
   // meshes.delete_swap(mesh_index);
 }

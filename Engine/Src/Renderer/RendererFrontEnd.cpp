@@ -52,36 +52,35 @@ void RendererFrontEnd::init(void *_config) {
   string_buffer.init(allocator, hmega(6));
 
   BindingSetLayoutCreation layout_creation{};
-  layout_creation.name = "Scene_Global_SetLayout";
+  layout_creation.name = "SceneGlobalSetLayout";
   layout_creation.add_binding(0, 1, ShaderStage::Vertex,
                               BindingType::UniformBuffer);
   scene_set_layout = create_binding_set_layout(layout_creation);
 
   layout_creation.reset();
-  layout_creation.name = "Bindless_SetLayout";
+  layout_creation.name = "BindlessSetLayout";
   layout_creation.is_bindless = true;
   layout_creation.add_binding(0, 1000, ShaderStage::AllStage,
                               BindingType::CombinedSampler);
   bindless_set_layout = create_binding_set_layout(layout_creation);
   BindingSetCreation set_creation{};
-  set_creation.name = "Bindless_Set";
+  set_creation.name = "BindlessSet";
   set_creation.layout = bindless_set_layout;
   bindless_set = create_binding_set(set_creation);
   // Create Uniform Buffers
   {
     BufferCreation creation{};
-    creation.reset();
     creation.usage_flags = BufferUsage::Uniform;
     creation.memory_state_flags = MemoryState::Mapped;
     creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
     creation.size = sizeof(UniformBufferObject);
     creation.initial_data = nullptr;
     for (u32 i = 0; i < max_frames_in_flight; ++i) {
-      creation.name = string_buffer.append_use_f("uniform_buffer_%d", i);
+      creation.name = string_buffer.append_use_f("UniformBuffer_%d", i);
       uniform_buffers[i] = create_buffer(creation);
       set_creation.reset();
       set_creation.layout = scene_set_layout;
-      set_creation.name = string_buffer.append_use_f("Scene_Global_Set_%d", i);
+      set_creation.name = string_buffer.append_use_f("SceneGlobalSet_%d", i);
       scene_sets[i] = create_binding_set(set_creation);
 
       BindingSetUpdateInfo update_info;
@@ -94,6 +93,40 @@ void RendererFrontEnd::init(void *_config) {
       update_binding_set(scene_sets[i], &update_info, 1);
     }
   }
+  // UnifiedBuffers
+  {
+    BufferCreation creation{};
+    creation.memory_state_flags = MemoryState::None;
+    creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+    creation.initial_data = nullptr;
+    creation.usage_flags =
+        (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest);
+    creation.size = sizeof(Vertex) * max_vertex_count;
+    creation.name = "UnifiedVertexBuffer";
+    unified_vertex_buffer.handle = create_buffer(creation);
+    unified_vertex_buffer.current_size = 0;
+
+    creation.usage_flags =
+        (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
+    creation.size = sizeof(u32) * max_index_count;
+    creation.name = "UnifiedIndexBuffer";
+    unified_index_buffer.handle = create_buffer(creation);
+    unified_index_buffer.current_size = 0;
+
+    creation.usage_flags = (BufferUsage::Enum)(BufferUsage::TransferDest |
+                                               BufferUsage::ShaderAddress);
+    creation.size = sizeof(glm::mat4) * max_draw_count;
+    creation.name = "UnifiedTransformBuffer";
+    unified_transform_buffer.handle = create_buffer(creation);
+    unified_transform_buffer.current_size = 0;
+
+    creation.usage_flags = (BufferUsage::Enum)(BufferUsage::TransferDest |
+                                               BufferUsage::ShaderAddress);
+    creation.size = sizeof(GPUPBRMaterial) * max_draw_count;
+    creation.name = "UnifiedMaterialBuffer";
+    unified_material_buffer.handle = create_buffer(creation);
+    unified_material_buffer.current_size = 0;
+  }
 
   // Depth prepass
   RenderPassCreation pass_creation{};
@@ -102,11 +135,11 @@ void RendererFrontEnd::init(void *_config) {
   depth_prepass = create_render_pass(pass_creation);
   {
     PipelineCreation creation;
-    creation.name = "pbr_pipeline";
+    creation.name = "PbrPipeline";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"shader.vert", ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"shader.frag", ShaderStage::Fragment};
+    creation.shader_create_infos[0] = {"Shader.vert", ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"Shader.frag", ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::None;
@@ -122,10 +155,10 @@ void RendererFrontEnd::init(void *_config) {
     set_pipeline_binding_set(pbr_pipeline, bindless_set, 0);
     set_pipeline_binding_set(pbr_pipeline, scene_sets[0], 1);
 
-    creation.name = "depth_prepass_pipeline";
+    creation.name = "DepthPrepassPipeline";
     creation.shader_create_infos =
         (ShaderCreateInfo *)halloca(sizeof(ShaderCreateInfo), stack_allocator);
-    creation.shader_create_infos[0] = {"depth_prepass.vert",
+    creation.shader_create_infos[0] = {"DepthPrepass.vert",
                                        ShaderStage::Vertex};
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
@@ -166,7 +199,7 @@ void RendererFrontEnd::init(void *_config) {
     tex_creation.height = 1;
   }
 
-  tex_creation.name = "default_albedo_texture";
+  tex_creation.name = "DefaultAlbedoTexture";
   tex_creation.depth = 1;
   tex_creation.array_layer_count = 1;
   tex_creation.array_base_level = 0;
@@ -203,6 +236,11 @@ void RendererFrontEnd::shutdown() {
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     destroy_buffer(uniform_buffers[i]);
   }
+
+  destroy_buffer(unified_vertex_buffer.handle);
+  destroy_buffer(unified_index_buffer.handle);
+  destroy_buffer(unified_material_buffer.handle);
+  destroy_buffer(unified_transform_buffer.handle);
 
   destroy_render_pass(depth_prepass);
   backend->shutdown();
@@ -347,7 +385,7 @@ void RendererFrontEnd::set_pipeline_binding_set(PipelineHandle pipeline,
 }
 
 void RendererFrontEnd::upload_buffer_data(void *data, BufferHandle dst_buffer,
-                                          u32 size, u32 offset) {
+                                          u64 size, u64 offset) {
   backend->upload_buffer_data(data, dst_buffer, size, offset);
 }
 

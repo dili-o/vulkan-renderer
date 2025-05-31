@@ -86,6 +86,8 @@ struct Scene {
   Array<PBRMaterial> pbr_materials{};
   Array<Mesh> meshes;
   StringBuffer string_buffer{};
+
+  // BufferHandle pbr_materials_buffer{};
 };
 
 } // namespace Helix

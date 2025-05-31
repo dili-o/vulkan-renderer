@@ -91,9 +91,9 @@ void VulkanImguiBackend::init(void *configuration) {
   pipeline_creation.name = "ImGui_Pipeline";
   pipeline_creation.shader_create_infos = (ShaderCreateInfo *)halloca(
       sizeof(ShaderCreateInfo) * 2, stack_allocator);
-  pipeline_creation.shader_create_infos[0] = {"imgui_bindless.vert",
+  pipeline_creation.shader_create_infos[0] = {"ImguiBindless.vert",
                                               ShaderStage::Vertex};
-  pipeline_creation.shader_create_infos[1] = {"imgui_bindless.frag",
+  pipeline_creation.shader_create_infos[1] = {"ImguiBindless.frag",
                                               ShaderStage::Fragment};
   pipeline_creation.shader_count = 2;
   pipeline_creation.pipeline_type = PipelineType::Graphics;

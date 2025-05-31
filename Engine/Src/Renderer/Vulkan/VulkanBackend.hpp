@@ -101,8 +101,8 @@ struct VulkanBackend : public RendererBackend {
 
   void free_queued_resources();
 
-  virtual void upload_buffer_data(void *data, BufferHandle dst_buffer, u32 size,
-                                  u32 offset) override;
+  virtual void upload_buffer_data(void *data, BufferHandle dst_buffer, u64 size,
+                                  u64 offset) override;
 
   void update_uniform_buffer(RenderPacket *packet);
 

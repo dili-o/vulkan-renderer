@@ -12,7 +12,8 @@ template <typename T> struct Array {
   Array();
   ~Array();
 
-  void init(Allocator *allocator, u32 initial_capacity, u32 initial_size = 0);
+  void init(Allocator *allocator, size_t initial_capacity,
+            size_t initial_size = 0);
   void shutdown();
 
   void push(const T &element);
@@ -21,16 +22,16 @@ template <typename T> struct Array {
   template <typename U> void push_array(Array<U> &array);
 
   void pop();
-  void pop_at(u32 index);
-  void delete_swap(u32 index);
+  void pop_at(size_t index);
+  void delete_swap(size_t index);
 
-  T &operator[](u32 index);
-  const T &operator[](u32 index) const;
+  T &operator[](size_t index);
+  const T &operator[](size_t index) const;
 
   void clear();
-  void set_size(u32 new_size);
-  void set_capacity(u32 new_capacity);
-  void resize(u32 new_capacity);
+  void set_size(size_t new_size);
+  void set_capacity(size_t new_capacity);
+  void resize(size_t new_capacity);
 
   T &back();
   const T &back() const;
@@ -38,8 +39,8 @@ template <typename T> struct Array {
   T &front();
   const T &front() const;
 
-  u32 size_in_bytes() const;
-  u32 capacity_in_bytes() const;
+  size_t size_in_bytes() const;
+  size_t capacity_in_bytes() const;
 
   class Iterator {
   private:
@@ -70,8 +71,8 @@ template <typename T> struct Array {
   const Iterator end() const { return Iterator(data + size); }
 
   T *data{nullptr};
-  u32 size{0};     // Occupied size
-  u32 capacity{0}; // Allocated capacity
+  size_t size{0};     // Occupied size
+  size_t capacity{0}; // Allocated capacity
   Allocator *allocator{nullptr};
 
 }; // struct Array
@@ -88,8 +89,8 @@ template <typename T> inline Array<T>::~Array() {
 }
 
 template <typename T>
-inline void Array<T>::init(Allocator *allocator_, u32 initial_capacity,
-                           u32 initial_size) {
+inline void Array<T>::init(Allocator *allocator_, size_t initial_capacity,
+                           size_t initial_size) {
   data = nullptr;
   size = initial_size;
   capacity = 0;
@@ -145,11 +146,11 @@ template <typename T> inline void Array<T>::pop() {
   --size;
 }
 
-template <typename T> inline void Array<T>::pop_at(u32 index) {
+template <typename T> inline void Array<T>::pop_at(size_t index) {
   HASSERT_MSG(index < size || index >= size,
               "Attempting to pop outside of index");
 
-  u32 new_size = size - 1;
+  size_t new_size = size - 1;
   T *new_data = (T *)hallocaa(new_size * sizeof(T), allocator, alignof(T));
 
   memcpy(new_data, data, index * sizeof(T));
@@ -164,37 +165,37 @@ template <typename T> inline void Array<T>::pop_at(u32 index) {
   --size;
 }
 
-template <typename T> inline void Array<T>::delete_swap(u32 index) {
+template <typename T> inline void Array<T>::delete_swap(size_t index) {
   HASSERT(size > 0 && index < size);
   data[index] = data[--size];
 }
 
-template <typename T> inline T &Array<T>::operator[](u32 index) {
+template <typename T> inline T &Array<T>::operator[](size_t index) {
   HASSERT(index < size);
   return data[index];
 }
 
-template <typename T> inline const T &Array<T>::operator[](u32 index) const {
+template <typename T> inline const T &Array<T>::operator[](size_t index) const {
   HASSERT(index < size);
   return data[index];
 }
 
 template <typename T> inline void Array<T>::clear() { size = 0; }
 
-template <typename T> inline void Array<T>::set_size(u32 new_size) {
+template <typename T> inline void Array<T>::set_size(size_t new_size) {
   if (new_size > capacity) {
     resize(new_size);
   }
   size = new_size;
 }
 
-template <typename T> inline void Array<T>::set_capacity(u32 new_capacity) {
+template <typename T> inline void Array<T>::set_capacity(size_t new_capacity) {
   if (new_capacity > capacity) {
     resize(new_capacity);
   }
 }
 
-template <typename T> inline void Array<T>::resize(u32 new_capacity) {
+template <typename T> inline void Array<T>::resize(size_t new_capacity) {
   if (new_capacity < capacity) {
     HWARN("Cannot resize array: new_capacity < capacity");
     return;
@@ -231,11 +232,11 @@ template <typename T> inline const T &Array<T>::front() const {
   return data[0];
 }
 
-template <typename T> inline u32 Array<T>::size_in_bytes() const {
+template <typename T> inline size_t Array<T>::size_in_bytes() const {
   return size * sizeof(T);
 }
 
-template <typename T> inline u32 Array<T>::capacity_in_bytes() const {
+template <typename T> inline size_t Array<T>::capacity_in_bytes() const {
   return capacity * sizeof(T);
 }
 } // namespace Helix

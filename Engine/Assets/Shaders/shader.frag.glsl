@@ -1,20 +1,22 @@
 #version 450
 
-#include "globals.glsl"
-#include "mesh.glsl"
+#extension GL_GOOGLE_include_directive : require
 
-layout(location = 0) in vec2 tex_coords;
-layout(location = 1) in vec3 frag_pos;
-layout(location = 2) in mat3 TBN;
+#include "Globals.glsl"
+#include "Mesh.glsl"
+
+layout(location = 0) in vec2 inTexCoords;
+layout(location = 1) in vec3 inFragPos;
+layout(location = 2) in mat3 inTBN;
 
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant) uniform constants
 {
   mat4 model; // 64B
-  Vertices vertex_buffer;
-  uint albedo_index; // 4B
-  uint normal_index; // 4B
+  uint vertexBufferOffset;
+  uint albedoIndex; // 4B
+  uint normalIndex; // 4B
 };
 
 uint hash(uint a)
@@ -28,7 +30,7 @@ uint hash(uint a)
    return a;
 }
 
-#define RANDOM 0
+#define RANDOM 1
 
 void main() {
 #if RANDOM
@@ -37,18 +39,15 @@ void main() {
   color *= 1.25f;
   outColor = vec4(color, 1.0f) ;
 #else
-  vec4 albedo = texture(global_samplers[nonuniformEXT(albedo_index)], tex_coords); 
-  if(albedo.a < 0.1f)
-    discard;
+  vec4 albedo = texture(globalSamplers[nonuniformEXT(albedoIndex)], inTexCoords); 
   // ambient
   outColor = albedo;
-  return;
   vec3 ambient = 0.25f * albedo.rgb;
   
   // diffuse 
-  vec3 normal = texture(global_samplers[nonuniformEXT(normal_index)], tex_coords).rgb;
+  vec3 normal = texture(globalSamplers[nonuniformEXT(normalIndex)], inTexCoords).rgb;
   normal = normal * 2.f - 1.f;
-  normal = normalize(TBN * normal);
+  normal = normalize(inTBN * normal);
 
   vec3 lightDir = normalize(-vec3(1.f, -1.f, 0.f));  
   float diff = max(dot(normal, lightDir), 0.0);

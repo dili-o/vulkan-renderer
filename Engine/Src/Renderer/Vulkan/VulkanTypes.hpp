@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <vk_mem_alloc.h>
 #include <volk.h>
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 
