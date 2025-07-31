@@ -17,14 +17,14 @@ layout(set = 1, binding = 0) uniform UniformBufferObject {
 layout(push_constant) uniform constants
 {
   mat4 model; // 64B
-  uint vertexBufferOffset;
   uint albedoIndex; // 4B
   uint normalIndex; // 4B
 };
 
-layout(location = 0) out vec2 outTexCoords;
-layout(location = 1) out vec3 outFragPos;
-layout(location = 2) out mat3 outTBN;
+
+//layout(location = 0) out vec2 outFragPos;
+//layout(location = 1) out vec3 outTexCoords;
+//layout(location = 2) out mat3 outTBN;
 
 // TODO: Indirect draw calls, use push constants to push the buffer address for the mesh matrices
 // Vertex shader pushes the mesh info index to the fragment shader
@@ -32,15 +32,15 @@ layout(location = 2) out mat3 outTBN;
 void main() {
   gl_Position = ubo.viewProj * model * vec4(inPosition.xyz, 1.0);
 
-  outTexCoords = inTexCoord.xy;
-  outFragPos = vec3(model * vec4(inPosition.xyz, 1.0f));
+  //outTexCoords = inTexCoord.xy;
+  //outFragPos = vec3(model * vec4(inPosition.xyz, 1.0f));
 
-  mat3 normalMatrix = transpose(inverse(mat3(model)));
-  vec3 T = normalize(normalMatrix * inTangent.xyz);
-  vec3 N = normalize(normalMatrix * inNormal.xyz);
-  // re-orthogonalize T with respect to N
-  T = normalize(T - dot(T, N) * N);
-  vec3 B = cross(N, T) * inTangent.w;
+  //mat3 normalMatrix = transpose(inverse(mat3(model)));
+  //vec3 T = normalize(normalMatrix * inTangent.xyz);
+  //vec3 N = normalize(normalMatrix * inNormal.xyz);
+  //// re-orthogonalize T with respect to N
+  //T = normalize(T - dot(T, N) * N);
+  //vec3 B = cross(N, T) * inTangent.w;
 
-  outTBN = mat3(T, B, N);
+  //outTBN = mat3(T, B, N);
 }

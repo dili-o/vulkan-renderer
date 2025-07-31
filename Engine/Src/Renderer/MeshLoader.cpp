@@ -933,6 +933,8 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
           upload_size,
           renderer_frontend->unified_vertex_buffer.size_in_bytes());
       renderer_frontend->unified_vertex_buffer.current_size += vertices.size;
+      HASSERT(renderer_frontend->unified_vertex_buffer.current_size <
+              max_vertex_count);
 
       upload_size = sizeof(u32) * indexes.size;
       renderer_frontend->upload_buffer_data(

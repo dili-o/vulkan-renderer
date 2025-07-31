@@ -73,7 +73,7 @@ void Application::run() {
       f64 frame_elapsed_time_ms = frame_end_time_ms - frame_start_time_ms;
       f64 remaining_time_ms = target_frame_seconds_ms - frame_elapsed_time_ms;
 
-      if (remaining_time_ms > 0) {
+      if (remaining_time_ms > 0 && limit_frames) {
         // If there is time left, give it back to the OS.
         HELIX_PROFILER_ZONE("Application sleep", HELIX_PROFILER_COLOR_DEFAULT)
         platform->sleep(static_cast<u32>(remaining_time_ms - 1));

@@ -20,7 +20,7 @@ static bool sandbox_key_event(u16 code, void *sender, void *listener,
 void Sandbox::init() {
 
   CameraConfiguration config{};
-  config.position = {0.f, 0.f, 2.f};
+  config.position = {0.f, 0.f, 0.f};
   config.far_plane = 1'000.f;
   camera.init(config);
 

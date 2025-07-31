@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
 project(HelixEngine)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Projects
 add_subdirectory("Engine")
 add_subdirectory("Sandbox")
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Create the shaders cache directory
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Assets/Shaders/Caches")

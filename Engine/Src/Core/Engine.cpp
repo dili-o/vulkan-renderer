@@ -1,4 +1,5 @@
 #include "Engine.hpp"
+#include "Core/Log.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererTypes.hpp"
 
@@ -6,7 +7,6 @@ namespace Helix {
 
 void Engine::init(Game *game) {
   // Initialize services
-
   log_service.init();
 
   file_service.init();
@@ -32,8 +32,9 @@ void Engine::init(Game *game) {
   }
 
   if (job_config.thread_count == 1) {
-    job_thread_types[0] = (JobType::Enum)(
-        job_thread_types[0] | JobType::ResourceLoad | JobType::GpuResource);
+    job_thread_types[0] =
+        (JobType::Enum)(job_thread_types[0] | JobType::ResourceLoad |
+                        JobType::GpuResource);
   } else if (job_config.thread_count == 2) {
 
     job_thread_types[0] =

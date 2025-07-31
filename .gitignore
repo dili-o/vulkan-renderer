@@ -13,3 +13,6 @@ Makefile
 cmake_install.cmake
 compile_commands.json
 .clang-format
+build.bat
+vk_renderer
+

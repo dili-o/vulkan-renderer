@@ -10,7 +10,8 @@ namespace Helix {
 
 const u32 max_frames_in_flight = 2;
 
-constexpr u64 max_vertex_count = 20'194'304;
+constexpr u64 max_vertex_count = 12'338'977;
+
 constexpr u64 max_index_count = max_vertex_count * 3;
 constexpr u64 max_draw_count = (max_index_count + 2) / 3;
 constexpr u64 max_material_count = (max_index_count + 2) / 3;
@@ -24,7 +25,6 @@ struct RendererFrontEnd : public Service {
 
   HELIX_DECLARE_SERVICE(RendererFrontEnd);
 
-public:
   void on_resize(u16 width, u16 height);
 
   bool render_frame(RenderPacket *packet);
@@ -86,6 +86,8 @@ public:
   UnifiedBuffer<u32> unified_index_buffer{};
   UnifiedBuffer<glm::mat4> unified_transform_buffer{};
   UnifiedBuffer<GPUPBRMaterial> unified_material_buffer{};
+  // Caches the handles of the created pipelines
+  Array<PipelineHandle> pipelines;
 };
 
 } // namespace Helix

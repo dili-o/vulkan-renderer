@@ -9,6 +9,7 @@ A renderer for viewing 3d models
 - [glm](https://github.com/g-truc/glm)
 - [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect)
 - [tinyobjloader](https://github.com/tinyobjloader)
+- [fastgltf](https://github.com/spnda/fastgltf)
 - [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 - [stb_image](https://github.com/nothings/stb/blob/master/stb_image.h)
 - [dear imgui](https://github.com/ocornut/imgui)

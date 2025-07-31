@@ -32,6 +32,11 @@ void RendererFrontEnd::init(void *_config) {
     HCRITICAL("Unable to get backend!");
     return;
   }
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
+  size_t stack_marker = stack_allocator->get_marker();
+
+  pipelines.init(allocator, 20);
 
   config->max_frames_in_flight = max_frames_in_flight;
 
@@ -44,10 +49,6 @@ void RendererFrontEnd::init(void *_config) {
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
   current_frame = 0;
-
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
 
   string_buffer.init(allocator, hmega(6));
 
@@ -127,7 +128,6 @@ void RendererFrontEnd::init(void *_config) {
     unified_material_buffer.handle = create_buffer(creation);
     unified_material_buffer.current_size = 0;
   }
-
   // Depth prepass
   RenderPassCreation pass_creation{};
   pass_creation.add_depth_attachment(LoadOp::Clear, StoreOp::Store,
@@ -171,7 +171,7 @@ void RendererFrontEnd::init(void *_config) {
     depth_prepass_pipeline = create_pipeline(creation);
     set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
   }
-
+  // Create default textures
   TextureCreation tex_creation{};
   // Magenta
   u8 def_colour[4] = {255, 0, 255, 255};
@@ -217,8 +217,6 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.width = 1;
   tex_creation.height = 1;
   default_normal_texture = create_texture(tex_creation);
-
-  print_gpu_stats();
 
   stack_allocator->free_marker(stack_marker);
 }
@@ -294,6 +292,8 @@ BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
 }
 
 PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
+  PipelineHandle handle = backend->create_pipeline(creation);
+  pipelines.push(handle);
   return backend->create_pipeline(creation);
 }
 
@@ -349,6 +349,8 @@ void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
     HERROR("Attempting to destroy an invalid pipeline");
     return;
   }
+
+  // TODO: Delete the handle from pipelines
   backend->destroy_pipeline(handle);
 }
 

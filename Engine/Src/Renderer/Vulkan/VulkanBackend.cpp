@@ -190,7 +190,7 @@ bool VulkanBackend::init(void *_config) {
       VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
       VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
       VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-      VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
+      /*VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT*/ };
   VkValidationFeaturesEXT features = {};
   features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
   features.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debug_create_info;
@@ -242,8 +242,6 @@ bool VulkanBackend::init(void *_config) {
   Array<cstring> device_extensions{};
   device_extensions.init(stack_allocator, 2);
   device_extensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-  device_extensions.push(
-      VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);
   // Create Physical Device
   if (!select_physical_device(vk_instance, vk_physical_device,
                               &vk_physical_device_properties,
@@ -299,27 +297,23 @@ bool VulkanBackend::init(void *_config) {
   device_create_info.enabledExtensionCount = device_extensions.size;
   device_create_info.ppEnabledExtensionNames = device_extensions.data;
 
-  // Timeline semaphores
-  VkPhysicalDeviceTimelineSemaphoreFeatures timeline_feature{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES};
-  timeline_feature.timelineSemaphore = VK_TRUE;
-
-  // Enable Bindless descriptors
-  VkPhysicalDeviceDescriptorIndexingFeatures bindless_features{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
-  bindless_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-  bindless_features.runtimeDescriptorArray = VK_TRUE;
-  // bindless_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
-  bindless_features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-  bindless_features.descriptorBindingPartiallyBound = VK_TRUE;
-  bindless_features.pNext = &timeline_feature;
+  // Enable Bindless descriptors, Buffer Device Address, Timeline Semaphore
+  VkPhysicalDeviceVulkan12Features features12 = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+  features12.bufferDeviceAddress = VK_TRUE;
+  features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+  features12.runtimeDescriptorArray  = VK_TRUE;
+  features12.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
+  features12.descriptorBindingPartiallyBound  = VK_TRUE;
+  features12.timelineSemaphore   = VK_TRUE;
+  // features12.descriptorBindingVariableDescriptorCount   = VK_TRUE;
 
   // Enable Dynamic Rendering and Synchronization 2
   VkPhysicalDeviceVulkan13Features features13 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
   features13.dynamicRendering = VK_TRUE;
   features13.synchronization2 = VK_TRUE;
-  features13.pNext = &bindless_features;
+  features13.pNext = &features12;
 
   device_create_info.pNext = &features13;
 
@@ -913,17 +907,16 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
   command_buffer->bind_index_buffer(
       renderer_frontend->unified_index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
-  if (renderer_frontend->unified_vertex_buffer.current_size) {
-    command_buffer->bind_vertex_buffer(
-        renderer_frontend->unified_vertex_buffer.handle, 0, 1);
-  }
+  command_buffer->bind_vertex_buffer(
+      renderer_frontend->unified_vertex_buffer.handle, 0, 1);
 
   {
     TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Main Draws");
-    for (u32 i = 0; i < packet->mesh_count; ++i) {
-      Mesh &mesh = packet->meshes[i];
-      for (u32 j = 0; j < mesh.draws.size; ++j) {
-        MeshDraw &draw = mesh.draws[j];
+    for (u32 m = 0; m < packet->mesh_count; ++m) {
+
+      Mesh &mesh = packet->meshes[m];
+      for (u32 d = 0; d < mesh.draws.size; ++d) {
+        MeshDraw &draw = mesh.draws[d];
 
         // TODO: Maybe add a pointer to pbr_materials in RenderPacket
         PBRMaterial &material =
@@ -931,14 +924,12 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
         struct PushConstant {
           glm::mat4 model;
-          u32 vertex_buffer_offset;
           u32 albedo_texture_index;
           u32 normal_texture_index;
         };
 
         PushConstant push_constant{};
         push_constant.model = draw.transform.get_mat4();
-        push_constant.vertex_buffer_offset = draw.vertex_buffer_offset;
         push_constant.albedo_texture_index =
             material.albedo_texture_handle.index;
         push_constant.normal_texture_index =
@@ -948,13 +939,9 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
         command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
                                        sizeof(PushConstant), &push_constant);
-        {
-          TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
-                      "vkCmdDrawIndexed");
-          command_buffer->draw_indexed(draw.primitive_count, 1,
-                                       draw.index_buffer_offset,
-                                       draw.vertex_buffer_offset, 0);
-        }
+        command_buffer->draw_indexed(draw.primitive_count, 1,
+                                     draw.index_buffer_offset,
+                                     draw.vertex_buffer_offset, 0);
       }
     }
   }
@@ -1193,7 +1180,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
     cstring shader_args = temp_string_buffer.append_use_f(
-        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.4 %s",
+        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.3 %s",
         to_compiler_stage(shader.stage), shader.filename, shader.filename,
         compiler_debug);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
@@ -1550,26 +1537,58 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
   image->mip_count = creation.mip_level_count;
 
   if (creation.initial_data) {
-    VulkanBuffer staging_buffer{};
-    // TODO: Make more configurable for different image formats right now it
-    // assumes a 4 component format
     VkDeviceSize buffer_size = creation.width * creation.height * 4;
 
-    vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     staging_buffer);
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_device_memory;
+    VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    buffer_info.size = buffer_size;
+    buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK(vkCreateBuffer(vk_device, &buffer_info, nullptr, &staging_buffer));
+
+    VkMemoryRequirements mem_requirements;
+    vkGetBufferMemoryRequirements(vk_device, staging_buffer, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_requirements.size;
+    alloc_info.memoryTypeIndex =
+        find_memory_type(mem_requirements.memoryTypeBits,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         vk_physical_device);
+
+    do {
+        VkResult result_ = vkAllocateMemory(vk_device, &alloc_info, vk_allocation_callbacks, &staging_device_memory); {
+            if (result_ == VK_SUCCESS) {
+            }
+            else {
+                LogService::GetCoreLogger()->critical("Assertion Failure: {}, message: " "Error code: {}" " , in file: {}, line: {}", "result_ == VK_SUCCESS", (u32)result_, "D:\\vulkan-renderer-v1\\Engine\\Src\\Renderer\\Vulkan\\VulkanBackend.cpp", 1570); __debugbreak();; __debugbreak();;
+            }
+        };
+    } while (0);
+    vkBindBufferMemory(vk_device, staging_buffer, staging_device_memory, 0);
+
+    // TODO: Make more configurable for different image formats right now it
+    // assumes a 4 component format
+
+    // vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    //                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+    //                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    //                  staging_buffer);
 
     void *data;
-    vmaMapMemory(vma_allocator, staging_buffer.vma_allocation, &data);
+    vkMapMemory(vk_device, staging_device_memory, 0, buffer_size, 0, &data);
     memcpy(data, creation.initial_data, (size_t)buffer_size);
-    vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
+    vkUnmapMemory(vk_device, staging_device_memory);
 
     VulkanCommandBuffer *transfer_command_buffer =
         transfer_command_buffer_manager.get_command_buffer(
             0, Platform::get_current_processor_id(), true);
     transfer_command_buffer->copy_buffer_to_image(
-        handle, staging_buffer.vk_handle, buffer_size, vk_transfer_queue);
+        handle, staging_buffer, buffer_size, vk_transfer_queue);
 
     VkSemaphore transfer_finish_semaphore;
     VkSemaphoreCreateInfo semaphore_info{};
@@ -1761,8 +1780,9 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
 
     transfer_command_buffer->reset();
     graphics_command_buffer->reset();
-    vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
-                     staging_buffer.vma_allocation);
+
+    vkDestroyBuffer(vk_device, staging_buffer, vk_allocation_callbacks);
+    vkFreeMemory(vk_device, staging_device_memory, vk_allocation_callbacks);
   }
 
   image->name = creation.name;

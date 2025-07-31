@@ -84,6 +84,7 @@ add_subdirectory(Vendor/glm)
 target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/glm)
 # SPIRV-REFLECT
+set(SPIRV_REFLECT_EXECUTABLE OFF CACHE BOOL "" FORCE)
 set(SPIRV_REFLECT_STATIC_LIB ON CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/SPIRV-Reflect)
 target_link_libraries(${PROJECT_NAME} PRIVATE spirv-reflect-static)

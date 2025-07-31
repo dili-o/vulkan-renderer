@@ -5,16 +5,15 @@
 #include "Globals.glsl"
 #include "Mesh.glsl"
 
-layout(location = 0) in vec2 inTexCoords;
-layout(location = 1) in vec3 inFragPos;
-layout(location = 2) in mat3 inTBN;
+//layout(location = 0) in vec2 inFragPos;
+//layout(location = 1) in vec3 inTexCoords;
+//layout(location = 2) in mat3 inTBN;
 
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant) uniform constants
 {
   mat4 model; // 64B
-  uint vertexBufferOffset;
   uint albedoIndex; // 4B
   uint normalIndex; // 4B
 };
