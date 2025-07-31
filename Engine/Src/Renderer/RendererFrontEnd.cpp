@@ -241,6 +241,9 @@ void RendererFrontEnd::shutdown() {
   destroy_buffer(unified_transform_buffer.handle);
 
   destroy_render_pass(depth_prepass);
+
+  pipelines.shutdown();
+
   backend->shutdown();
   hfree(backend, &MemoryService::instance()->system_allocator);
 
@@ -294,7 +297,7 @@ BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
 PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
   PipelineHandle handle = backend->create_pipeline(creation);
   pipelines.push(handle);
-  return backend->create_pipeline(creation);
+  return handle;
 }
 
 TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {

@@ -190,7 +190,7 @@ bool VulkanBackend::init(void *_config) {
       VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
       VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
       VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-      /*VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT*/ };
+      /*VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT*/};
   VkValidationFeaturesEXT features = {};
   features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
   features.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debug_create_info;
@@ -302,10 +302,10 @@ bool VulkanBackend::init(void *_config) {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
   features12.bufferDeviceAddress = VK_TRUE;
   features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-  features12.runtimeDescriptorArray  = VK_TRUE;
-  features12.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
-  features12.descriptorBindingPartiallyBound  = VK_TRUE;
-  features12.timelineSemaphore   = VK_TRUE;
+  features12.runtimeDescriptorArray = VK_TRUE;
+  features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  features12.descriptorBindingPartiallyBound = VK_TRUE;
+  features12.timelineSemaphore = VK_TRUE;
   // features12.descriptorBindingVariableDescriptorCount   = VK_TRUE;
 
   // Enable Dynamic Rendering and Synchronization 2
@@ -436,7 +436,7 @@ bool VulkanBackend::init(void *_config) {
 
   swapchain_pass = create_render_pass(pass_creation);
 
-  create_sync_objects(config->max_frames_in_flight);
+  create_sync_objects(swapchain.image_count);
   create_descriptor_pool(config->max_frames_in_flight);
   {
     SamplerCreation sampler_creation{};
@@ -487,7 +487,7 @@ bool VulkanBackend::shutdown() {
   free_queued_resources();
   resource_deletion_queue.shutdown();
 
-  for (u32 i = 0; i < 2; ++i) {
+  for (u32 i = 0; i < swapchain.image_count; ++i) {
     vkDestroySemaphore(vk_device, image_available_semaphores[i],
                        vk_allocation_callbacks);
     vkDestroySemaphore(vk_device, render_finished_semaphores[i],
@@ -670,9 +670,10 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
   VkSemaphoreSubmitInfo signal_semaphore_submit_info{
       VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
   signal_semaphore_submit_info.semaphore =
-      render_finished_semaphores[packet->current_frame];
+      render_finished_semaphores[swapchain.current_image_index];
   signal_semaphore_submit_info.stageMask =
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
   VkSemaphoreSubmitInfo signal_timeline_semaphore_submit_info{
       VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
   signal_timeline_semaphore_submit_info.semaphore =
@@ -695,7 +696,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
   submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
 
   VkSemaphore signal_semaphores[] = {
-      render_finished_semaphores[packet->current_frame]};
+      render_finished_semaphores[swapchain.current_image_index]};
 
   VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
 
@@ -949,23 +950,32 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->pop_marker();
 }
 
-void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
+void VulkanBackend::create_sync_objects(u32 swapchain_image_count) {
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  image_available_semaphores.init(allocator, max_frames_in_flight,
-                                  max_frames_in_flight);
-  render_finished_semaphores.init(allocator, max_frames_in_flight,
-                                  max_frames_in_flight);
+  // TODO: Only use frame_in_flight image_available_semaphores
+  image_available_semaphores.init(allocator, swapchain_image_count,
+                                  swapchain_image_count);
+  render_finished_semaphores.init(allocator, swapchain_image_count,
+                                  swapchain_image_count);
 
   VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
-  for (u32 i = 0; i < max_frames_in_flight; ++i) {
+  for (u32 i = 0; i < swapchain_image_count; ++i) {
     VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
                                vk_allocation_callbacks,
                                &image_available_semaphores[i]));
+
+    set_resource_name(
+        VK_OBJECT_TYPE_SEMAPHORE, (u64)image_available_semaphores[i],
+        string_buffer.append_use_f("image_available_semaphore_%d", i));
+
     VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
                                vk_allocation_callbacks,
                                &render_finished_semaphores[i]));
+    set_resource_name(
+        VK_OBJECT_TYPE_SEMAPHORE, (u64)render_finished_semaphores[i],
+        string_buffer.append_use_f("render_finished_semaphore_%d", i));
   }
 
   VkSemaphoreTypeCreateInfo timeline_create_info{
@@ -977,6 +987,9 @@ void VulkanBackend::create_sync_objects(u32 max_frames_in_flight) {
   VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
                              vk_allocation_callbacks,
                              &vk_timeline_graphics_semaphore));
+  set_resource_name(VK_OBJECT_TYPE_SEMAPHORE,
+                    (u64)vk_timeline_graphics_semaphore,
+                    string_buffer.append_use("vk_timeline_graphics_semaphore"));
 }
 
 SamplerHandle VulkanBackend::create_sampler(SamplerCreation &creation) {
@@ -1561,13 +1574,26 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
                          vk_physical_device);
 
     do {
-        VkResult result_ = vkAllocateMemory(vk_device, &alloc_info, vk_allocation_callbacks, &staging_device_memory); {
-            if (result_ == VK_SUCCESS) {
-            }
-            else {
-                LogService::GetCoreLogger()->critical("Assertion Failure: {}, message: " "Error code: {}" " , in file: {}, line: {}", "result_ == VK_SUCCESS", (u32)result_, "D:\\vulkan-renderer-v1\\Engine\\Src\\Renderer\\Vulkan\\VulkanBackend.cpp", 1570); __debugbreak();; __debugbreak();;
-            }
-        };
+      VkResult result_ =
+          vkAllocateMemory(vk_device, &alloc_info, vk_allocation_callbacks,
+                           &staging_device_memory);
+      {
+        if (result_ == VK_SUCCESS) {
+        } else {
+          LogService::GetCoreLogger()->critical(
+              "Assertion Failure: {}, message: "
+              "Error code: {}"
+              " , in file: {}, line: {}",
+              "result_ == VK_SUCCESS", (u32)result_,
+              "D:\\vulkan-renderer-"
+              "v1\\Engine\\Src\\Renderer\\Vulkan\\VulkanBackend.cpp",
+              1570);
+          __debugbreak();
+          ;
+          __debugbreak();
+          ;
+        }
+      };
     } while (0);
     vkBindBufferMemory(vk_device, staging_buffer, staging_device_memory, 0);
 

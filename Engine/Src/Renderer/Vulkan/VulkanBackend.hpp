@@ -65,7 +65,7 @@ struct VulkanBackend : public RendererBackend {
   virtual RenderPassHandle
   create_render_pass(RenderPassCreation &creation) override;
   void create_descriptor_pool(u32 max_frames_in_flight);
-  void create_sync_objects(u32 max_frames_in_flight);
+  void create_sync_objects(u32 swapchain_image_count);
   SamplerHandle create_sampler(SamplerCreation &creation);
 
   VulkanBuffer *access_buffer(BufferHandle handle);
