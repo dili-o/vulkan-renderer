@@ -74,8 +74,8 @@ bool VulkanBackend::init(void *_config) {
   }
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
 
   RendererConfig *config = (RendererConfig *)_config;
 
@@ -212,7 +212,6 @@ bool VulkanBackend::init(void *_config) {
 
   validation_layer_names.shutdown();
   required_extensions.shutdown();
-  stack_allocator->free_marker(stack_marker);
 #pragma endregion Instance_Creation
 
 #ifdef VULKAN_DEBUG_REPORT
@@ -2576,8 +2575,9 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
                                     VkSurfaceKHR surface,
                                     VulkanSwapchain &swapchain,
                                     VkExtent2D &swapchain_extents) {
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
+  // size_t stack_marker = stack_allocator->get_marker();
   VkSurfaceCapabilitiesKHR capabilities{};
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface,
                                             &capabilities);
@@ -2660,8 +2660,6 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
   }
 
   swapchain.image_count = image_count;
-
-  stack_allocator->free_marker(stack_marker);
 }
 
 u32 find_memory_type(u32 type_filter, VkMemoryPropertyFlags properties,

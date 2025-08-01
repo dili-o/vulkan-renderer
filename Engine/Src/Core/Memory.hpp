@@ -97,6 +97,23 @@ struct StackAllocator : public Allocator {
 
 }; // struct StackAllocator
 
+//
+//
+struct ScopedAllocator {
+  ScopedAllocator(StackAllocator *stack_allocator_)
+      : allocator(stack_allocator_),
+        stack_marker(stack_allocator_->get_marker()) {}
+
+  ~ScopedAllocator() {
+    allocator->free_marker(stack_marker);
+    stack_marker = 0;
+    allocator = nullptr;
+  }
+
+  StackAllocator *allocator = nullptr;
+  size_t stack_marker = 0;
+}; // struct ScopeAllocator
+
 // Memory Service /////////////////////////////////////////////////////
 //
 //
