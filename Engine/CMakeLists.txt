@@ -38,6 +38,7 @@ add_library(${PROJECT_NAME} STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tiny_obj_loader.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/stb_image.h" 
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/mikktspace.c" 
+    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/rapidhash/rapidhash.h" 
     ${EXTRA_SOURCE_LIST}
 )
 

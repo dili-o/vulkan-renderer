@@ -15,3 +15,4 @@ A renderer for viewing 3d models
 - [dear imgui](https://github.com/ocornut/imgui)
 - [Tracy](https://github.com/wolfpld/tracy)
 - [MikkTSpace](https://github.com/mmikk/MikkTSpace)
+- [rapidhash](https://github.com/Nicoshev/rapidhash)
