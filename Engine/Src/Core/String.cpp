@@ -4,6 +4,8 @@
 #include "Core/Memory.hpp"
 
 #include <stdarg.h>
+// Vendor
+#include <Vendor/rapidhash/rapidhash.h>
 
 namespace Helix {
 
@@ -26,6 +28,14 @@ void string_replace(char *str, char find, char replace) {
 }
 
 bool string_equals(cstring a, cstring b) { return !strcmp(a, b); }
+
+u64 string_hash(const void *string_, size_t len, u64 seed) {
+  // We ignore len
+  const cstring *string_ptr = static_cast<const cstring *>(string_);
+  cstring string = static_cast<cstring>(*string_ptr);
+
+  return rapidhash_withSeed(string, strlen(string), seed);
+}
 
 void StringBuffer::init(Allocator *allocator_, size_t size) {
   if (data) {

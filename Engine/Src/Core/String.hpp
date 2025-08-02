@@ -9,6 +9,8 @@ char *string_concat(cstring a, cstring b, Allocator *allocator);
 void string_replace(char *str, char find, char replace);
 bool string_equals(cstring a, cstring b);
 
+u64 string_hash(const void *string, size_t len, u64 seed);
+
 struct StringBuffer {
 
   // Includes a null terminator

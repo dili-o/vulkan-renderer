@@ -2,111 +2,101 @@
 
 #include "Core/Defines.hpp"
 #include "Core/Log.hpp"
+#include "Core/Memory.hpp"
 #include "Math/Prime.hpp"
-#include <cstdlib>
-#include <string.h>
+// Vendor
+#include <Vendor/rapidhash/rapidhash.h>
 
 // https://github.com/jamesroutley/write-a-hash-table
 namespace Helix {
 
-// TODO: Make this templated
-struct Item {
-  char *key;
-  char *value;
+// TODO: Is this even needed, why not just use a bool in the Item struct to mark
+// if it is deleted or even a bitfield
+enum class EntryState : u8 {
+  EMPTY = 0,
+  OCCUPIED,
+  DELETED,
 };
 
-static Item s_deleted_item = {nullptr, nullptr};
+// TODO: Make this templated
+template <typename K, typename V> struct Item {
+  K key;
+  V value;
+  EntryState state{EntryState::EMPTY};
+};
+
+// static Item s_deleted_item = {nullptr, nullptr};
 static const u64 s_prime_1 = 151;
 static const u64 s_prime_2 = 163;
 static const u64 s_initial_base_capacity = 50;
 
-struct HashMap {
+using HashFunction = u64 (*)(const void *, size_t, u64);
 
-  Item *new_item(cstring key, cstring value) {
-    // TODO: Use the allocator
-    Item *i = static_cast<Item *>(malloc(sizeof(Item)));
-    i->key = _strdup(key);
-    i->value = _strdup(value);
-    return i;
-  }
+template <typename K, typename V> struct HashMap {
 
-  void delete_item(Item *item) {
-    free(item->value);
-    free(item->key);
-    free(item);
-  }
-
-  void init(u64 base_capacity_) {
+  // TODO: Use Allocator and maybe a custom hashing function
+  void init(u64 base_capacity_, Allocator *allocator_,
+            HashFunction hash_function_ = nullptr) {
     if (items) {
       HERROR("HashTable already initialized!");
       return;
     }
 
-    base_capacity = base_capacity_;
+    hash_function = hash_function_ ? hash_function_ : rapidhash_withSeed;
 
-    capacity = next_prime(static_cast<i32>(base_capacity));
+    allocator = allocator_;
     size = 0;
-    items = static_cast<Item **>(
-        calloc(static_cast<size_t>(capacity), sizeof(Item *)));
+    base_capacity = (base_capacity_ < 37) ? 37 : base_capacity_;
+    capacity = next_prime(static_cast<i32>(base_capacity));
+    items = static_cast<Item<K, V> *>(
+        halloca(sizeof(Item<K, V>) * capacity, allocator));
+    memset(items, 0, sizeof(Item<K, V>) * capacity);
   }
 
   void shutdown() {
-    for (u64 i = 0; i < size; ++i) {
-      Item *item = items[i];
-      if (item)
-        delete_item(item);
-      item = nullptr;
-    }
+    allocator->deallocate(items);
 
-    free(items);
+    allocator = nullptr;
+    items = nullptr;
     size = 0;
     capacity = 0;
   }
 
   // TODO: Make templated
-  u64 hash(cstring string, const u64 data_length, const u64 seed) {
-    u64 hash = 0;
-    const u64 len_s = static_cast<u64>(strlen(string));
-    for (u64 i = 0; i < len_s; ++i) {
-      hash += static_cast<u64>(pow(seed, len_s - (i + 1)) * string[i]);
-      hash = hash % data_length;
-    }
-
-    return hash;
+  u64 hash(const K &key, const u64 data_length, const u64 seed) {
+    return hash_function(&key, sizeof(K), seed);
   }
 
   // TODO: Make templated
-  u64 get_hash_index(cstring s, const u64 num_buckets, const u64 attempt) {
-    const u64 hash_a = hash(s, s_prime_1, num_buckets);
-    const u64 hash_b = hash(s, s_prime_2, num_buckets);
+  u64 get_hash_index(const K &key, const u64 num_buckets, const u64 attempt) {
+    const u64 hash_a = hash(key, s_prime_1, num_buckets);
+    const u64 hash_b = hash(key, s_prime_2, num_buckets);
     return (hash_a + (attempt * (hash_b + 1))) % num_buckets;
   }
 
   // TODO: Make templated
-  void insert(cstring key, cstring value) {
+  void insert(const K key, const V value) {
     const i32 load = size * 100 / capacity;
     if (load > 70)
       resize_up();
 
     u64 i = 0;
-    Item *item = new_item(key, value);
     u64 index = get_hash_index(key, capacity, i);
 
-    Item *current_item = items[index];
-    while (current_item != nullptr) {
-      if (current_item != &s_deleted_item) {
-        if (strcmp(current_item->key, key) == 0) {
-          delete_item(current_item);
-          items[index] = item;
-          return;
-        }
+    const Item<K, V> *current_item = &items[index];
+    Item<K, V> new_item = {key, value, EntryState::OCCUPIED};
+    while (current_item->state != EntryState::EMPTY) {
+      if (current_item->state == EntryState::OCCUPIED &&
+          current_item->key == key) {
+        items[index] = new_item;
+        return;
       }
       ++i;
-      index = get_hash_index(item->key, capacity, i);
-      current_item = items[index];
+      index = get_hash_index(new_item.key, capacity, i);
+      current_item = &items[index];
     }
 
-    items[index] = item;
+    items[index] = new_item;
     ++size;
 
     if (i > 0) {
@@ -114,45 +104,42 @@ struct HashMap {
     }
   }
 
-  // TODO: Make templated
-  char *search(cstring key) {
+  const V *search(const K &key) {
     u64 i = 0;
     u64 index = get_hash_index(key, capacity, i);
 
-    Item *item = items[index];
-    while (item != nullptr) {
-      if (item != &s_deleted_item) {
-        if (strcmp(item->key, key) == 0) {
-          return item->value;
-        }
+    const Item<K, V> *item = &items[index];
+    while (item->state != EntryState::EMPTY) {
+      if (item->state == EntryState::OCCUPIED && item->key == key) {
+        return &item->value;
       }
       ++i;
       index = get_hash_index(key, capacity, i);
-      item = items[index];
+      item = &items[index];
     }
 
     return nullptr;
   }
 
-  // TODO: Make templated
-  void remove_item(cstring key) {
+  void remove_item(const K &key) {
     const i32 load = size * 100 / capacity;
     if (load < 10)
       resize_down();
     u64 i = 0;
     u64 index = get_hash_index(key, capacity, i);
-    Item *item = items[index];
-    while (item != nullptr) {
-      if (item != &s_deleted_item) {
-        if (strcmp(item->key, key) == 0) {
-          delete_item(item);
-          items[index] = &s_deleted_item;
-          break;
-        }
+    const Item<K, V> *item = &items[index];
+    while (item->state != EntryState::EMPTY) {
+      // Item already
+      if (item->state == EntryState::DELETED)
+        return;
+
+      if (item->state == EntryState::OCCUPIED) {
+        items[index].state = EntryState::DELETED;
+        break;
       }
       i++;
       index = get_hash_index(key, size, i);
-      item = items[index];
+      item = &items[index];
     }
     --size;
   }
@@ -164,19 +151,14 @@ private:
       return;
 
     u64 new_capacity = next_prime(static_cast<i32>(base_capacity));
-    Item **old_items = items;
-    items = static_cast<Item **>(
-        calloc(static_cast<size_t>(new_capacity), sizeof(Item *)));
+    Item<K, V> *old_items = items;
+    items = static_cast<Item<K, V> *>(
+        halloca(sizeof(Item<K, V>) * new_capacity, allocator));
+    memset(items, 0, sizeof(Item<K, V>) * new_capacity);
 
-    for (u64 i = 0; i < capacity; ++i) {
-      Item *item = old_items[i];
-      if (item != nullptr && item != &s_deleted_item) {
-        insert(item->key, item->value);
-        delete_item(item);
-      }
-    }
+    memcpy(items, old_items, capacity * sizeof(Item<K, V>));
 
-    free(old_items);
+    allocator->deallocate(old_items);
     base_capacity = new_base_capacity;
     capacity = new_capacity;
   }
@@ -192,10 +174,12 @@ private:
   }
 
 public:
-  u64 size = 0;
-  u64 capacity = 0;
-  u64 base_capacity = s_initial_base_capacity;
-  Item **items = nullptr;
+  u64 size{0};
+  u64 capacity{0};
+  u64 base_capacity{s_initial_base_capacity};
+  Item<K, V> *items{nullptr};
+  HashFunction hash_function{nullptr};
+  Allocator *allocator{nullptr};
 };
 
 } // namespace Helix
