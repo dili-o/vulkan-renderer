@@ -156,7 +156,12 @@ private:
         halloca(sizeof(Item<K, V>) * new_capacity, allocator));
     memset(items, 0, sizeof(Item<K, V>) * new_capacity);
 
-    memcpy(items, old_items, capacity * sizeof(Item<K, V>));
+    for (u64 i = 0; i < capacity; ++i) {
+      const Item<K, V> &item = old_items[i];
+      if (item.state != EntryState::EMPTY) {
+        insert(item.key, item.value);
+      }
+    }
 
     allocator->deallocate(old_items);
     base_capacity = new_base_capacity;
