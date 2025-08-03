@@ -192,4 +192,15 @@ void StringBuffer::clear() {
   current_size = 0;
   data[0] = 0;
 }
+
+bool StringView::operator==(const StringView &other) const {
+  return ((length == other.length) && (strcmp(data, other.data) == 0));
+}
+
+u64 StringView::hash(const void *string, size_t len, u64 seed) {
+  // We ignore len
+  const StringView *string_view = static_cast<const StringView *>(string);
+
+  return rapidhash_withSeed(string_view->data, strlen(string_view->data), seed);
+}
 } // namespace Helix

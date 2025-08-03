@@ -3,7 +3,7 @@
 #include "Core/Log.hpp"
 #include "Platform/File.hpp"
 // Vendor
-#include <FileWatch.hpp>
+#include <Vendor/FileWatch.hpp>
 
 namespace Helix {
 std::wstring to_wstring(const char *str) {

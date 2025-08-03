@@ -38,7 +38,6 @@ add_library(${PROJECT_NAME} STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tiny_obj_loader.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/stb_image.h" 
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/mikktspace.c" 
-    "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/rapidhash/rapidhash.h" 
     ${EXTRA_SOURCE_LIST}
 )
 
@@ -48,7 +47,9 @@ if(WIN32)
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC "Src/")
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${PROJECT_NAME} PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR})
+# Include the vendor folder
+target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Vendor")
 
 # Find Vulkan SDK
 find_package(Vulkan REQUIRED)
@@ -82,20 +83,20 @@ target_link_libraries(${PROJECT_NAME} PUBLIC volk_headers)
 set(GLM_BUILD_TESTS OFF CACHE BOOL "Disable GLM tests" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Use static GLM library" FORCE)
 add_subdirectory(Vendor/glm)
-target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
+target_link_libraries(${PROJECT_NAME} PUBLIC glm::glm)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/glm)
 # SPIRV-REFLECT
 set(SPIRV_REFLECT_EXECUTABLE OFF CACHE BOOL "" FORCE)
 set(SPIRV_REFLECT_STATIC_LIB ON CACHE BOOL "" FORCE)
 add_subdirectory(Vendor/SPIRV-Reflect)
-target_link_libraries(${PROJECT_NAME} PRIVATE spirv-reflect-static)
+target_link_libraries(${PROJECT_NAME} PUBLIC spirv-reflect-static)
 target_include_directories(${PROJECT_NAME} PUBLIC Vendor/SPIRV-Reflect)
 # VMA
 add_definitions(-DVMA_STATIC_VULKAN_FUNCTIONS=0 -DVMA_DYNAMIC_VULKAN_FUNCTIONS=0)
 add_subdirectory(Vendor/VMA)
 target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
 # Dear Imgui
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui")
+target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/imgui")
 #Tracy
 if(HELIX_WITH_TRACY)
   option(TRACY_ENABLE "" ON)
@@ -119,8 +120,6 @@ endif()
 # FastGlTF
 add_subdirectory(Vendor/fastgltf)
 target_link_libraries(${PROJECT_NAME} PUBLIC fastgltf::fastgltf)
-# Include the vendor folder
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/")
 
 # Set output directory to Bin/Engine
 set_target_properties(${PROJECT_NAME} PROPERTIES

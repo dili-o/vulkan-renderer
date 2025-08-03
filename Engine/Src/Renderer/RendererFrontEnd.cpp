@@ -1,8 +1,10 @@
 #include "Renderer/RendererFrontEnd.hpp"
+#include "Containers/HashMap.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
+#include "Core/String.hpp"
 #include "Game.hpp"
 #include "Platform/File.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
@@ -36,7 +38,7 @@ void RendererFrontEnd::init(void *_config) {
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   size_t stack_marker = stack_allocator->get_marker();
 
-  pipelines.init(allocator, 20);
+  pipelines_map.init(allocator, 10, string_hash);
 
   config->max_frames_in_flight = max_frames_in_flight;
 
@@ -135,7 +137,7 @@ void RendererFrontEnd::init(void *_config) {
   depth_prepass = create_render_pass(pass_creation);
   {
     PipelineCreation creation;
-    creation.name = "PbrPipeline";
+    creation.name = PBR_PIPELINE_NAME;
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
     creation.shader_create_infos[0] = {"Shader.vert", ShaderStage::Vertex};
@@ -150,12 +152,12 @@ void RendererFrontEnd::init(void *_config) {
     creation.enable_depth_test = true;
     creation.render_pass = backend->get_swapchain_pass();
 
-    pbr_pipeline = create_pipeline(creation);
+    PipelineHandle pbr_pipeline = create_pipeline(creation);
 
     set_pipeline_binding_set(pbr_pipeline, bindless_set, 0);
     set_pipeline_binding_set(pbr_pipeline, scene_sets[0], 1);
 
-    creation.name = "DepthPrepassPipeline";
+    creation.name = DEPTH_PREPASS_PIPELINE_NAME;
     creation.shader_create_infos =
         (ShaderCreateInfo *)halloca(sizeof(ShaderCreateInfo), stack_allocator);
     creation.shader_create_infos[0] = {"DepthPrepass.vert",
@@ -168,7 +170,8 @@ void RendererFrontEnd::init(void *_config) {
     creation.enable_depth_write = true;
     creation.enable_depth_test = true;
     creation.render_pass = depth_prepass;
-    depth_prepass_pipeline = create_pipeline(creation);
+
+    PipelineHandle depth_prepass_pipeline = create_pipeline(creation);
     set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
   }
   // Create default textures
@@ -222,8 +225,6 @@ void RendererFrontEnd::init(void *_config) {
 }
 
 void RendererFrontEnd::shutdown() {
-  destroy_pipeline(depth_prepass_pipeline);
-  destroy_pipeline(pbr_pipeline);
   destroy_texture(default_albedo_texture);
   destroy_texture(default_normal_texture);
 
@@ -242,7 +243,15 @@ void RendererFrontEnd::shutdown() {
 
   destroy_render_pass(depth_prepass);
 
-  pipelines.shutdown();
+  // TODO: Implement an Iterator for HashMap
+  for (u32 i = 0; i < pipelines_map.capacity; ++i) {
+    const Item<StringView, PipelineHandle> item = pipelines_map.items[i];
+    if (item.state == EntryState::OCCUPIED) {
+      backend->destroy_pipeline(item.value);
+    }
+  }
+
+  pipelines_map.shutdown();
 
   backend->shutdown();
   hfree(backend, &MemoryService::instance()->system_allocator);
@@ -296,7 +305,7 @@ BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
 
 PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
   PipelineHandle handle = backend->create_pipeline(creation);
-  pipelines.push(handle);
+  pipelines_map.insert({creation.name, strlen(creation.name)}, handle);
   return handle;
 }
 
@@ -354,6 +363,8 @@ void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
   }
 
   // TODO: Delete the handle from pipelines
+  PipelineInfo info = backend->access_pipeline_view(handle);
+  pipelines_map.remove_item({info.name, strlen(info.name)});
   backend->destroy_pipeline(handle);
 }
 

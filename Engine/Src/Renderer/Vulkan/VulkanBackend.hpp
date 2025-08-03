@@ -78,6 +78,10 @@ struct VulkanBackend : public RendererBackend {
   VulkanSampler *access_sampler(SamplerHandle handle);
   RenderPass *access_render_pass(RenderPassHandle handle);
 
+  virtual BufferInfo access_buffer_view(BufferHandle handle) override;
+  virtual TextureInfo access_texture_view(TextureHandle handle) override;
+  virtual PipelineInfo access_pipeline_view(PipelineHandle handle) override;
+
   virtual void destroy_buffer(BufferHandle handle) override;
   virtual void destroy_pipeline(PipelineHandle handle) override;
   virtual void destroy_texture(TextureHandle handle) override;

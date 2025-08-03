@@ -1,4 +1,6 @@
+#ifdef _GLSL
 #extension GL_EXT_buffer_reference : require
+#endif
 
 struct IndexedDrawCommand{
   uint indexCount;
@@ -23,6 +25,7 @@ struct PBRMaterial {
   uint occlusionTextureIndex;
 };
 
+#ifdef _GLSL
 layout(std430, buffer_reference) readonly buffer Vertices{
     Vertex vertices[];
 };
@@ -30,3 +33,4 @@ layout(std430, buffer_reference) readonly buffer Vertices{
 layout(std430, buffer_reference) readonly buffer PBRMaterials{
     PBRMaterial materials[];
 };
+#endif

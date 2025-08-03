@@ -9,8 +9,8 @@
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 // Vendor
 #define IMGUI_IMPL_VULKAN_USE_VOLK
-#include <imgui/backends/imgui_impl_sdl3.h>
-#include <imgui/backends/imgui_impl_vulkan.h>
+#include <Vendor/imgui/backends/imgui_impl_sdl3.h>
+// #include <Vendor/imgui/backends/imgui_impl_vulkan.h>
 
 namespace Helix {
 static uint32_t s_vb_size = 665536, s_ib_size = 665536;
@@ -88,7 +88,7 @@ void VulkanImguiBackend::init(void *configuration) {
   // Create Pipeline /////////////////////////////////////////////////////////
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
   PipelineCreation pipeline_creation;
-  pipeline_creation.name = "ImGui_Pipeline";
+  pipeline_creation.name = IMGUI_PIPELINE_NAME;
   pipeline_creation.shader_create_infos = (ShaderCreateInfo *)halloca(
       sizeof(ShaderCreateInfo) * 2, stack_allocator);
   pipeline_creation.shader_create_infos[0] = {"ImguiBindless.vert",
@@ -105,7 +105,7 @@ void VulkanImguiBackend::init(void *configuration) {
   pipeline_creation.enable_depth_write = false;
   pipeline_creation.enable_depth_test = false;
 
-  pipeline = backend->create_pipeline(pipeline_creation);
+  pipeline = RendererFrontEnd::instance()->create_pipeline(pipeline_creation);
 
   RendererFrontEnd::instance()->set_pipeline_binding_set(
       pipeline, RendererFrontEnd::instance()->bindless_set, 0);

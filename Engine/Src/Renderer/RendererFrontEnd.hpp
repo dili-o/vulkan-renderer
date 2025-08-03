@@ -1,10 +1,16 @@
 #pragma once
 
+#include "Containers/HashMap.hpp"
 #include "Core/Service.hpp"
 #include "Core/String.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "RendererTypes.hpp"
+
+// Pipeline Names
+#define PBR_PIPELINE_NAME "Pbr_Pipeline"
+#define DEPTH_PREPASS_PIPELINE_NAME "Depth_Prepass_Pipeline"
+#define IMGUI_PIPELINE_NAME "ImGui_Pipeline"
 
 namespace Helix {
 
@@ -68,8 +74,8 @@ struct RendererFrontEnd : public Service {
 
   BufferHandle uniform_buffers[max_frames_in_flight];
 
-  PipelineHandle pbr_pipeline{};
-  PipelineHandle depth_prepass_pipeline{};
+  // PipelineHandle pbr_pipeline{};
+  // PipelineHandle depth_prepass_pipeline{};
 
   TextureHandle default_albedo_texture;
   TextureHandle default_normal_texture;
@@ -87,7 +93,7 @@ struct RendererFrontEnd : public Service {
   UnifiedBuffer<glm::mat4> unified_transform_buffer{};
   UnifiedBuffer<GPUPBRMaterial> unified_material_buffer{};
   // Caches the handles of the created pipelines
-  Array<PipelineHandle> pipelines;
+  HashMap<StringView, PipelineHandle> pipelines_map{};
 };
 
 } // namespace Helix

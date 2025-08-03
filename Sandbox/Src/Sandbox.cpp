@@ -1,6 +1,7 @@
 #include "Sandbox.hpp"
 #include "Core/Application.hpp"
 #include "Core/Engine.hpp"
+#include "Core/Log.hpp"
 #include "Platform/Process.hpp"
 #include <tracy/Tracy.hpp>
 
@@ -95,7 +96,6 @@ void Sandbox::render_frame(f32 dt) {
 
             MemoryService::instance()->system_allocator.deallocate(file_name);
             MemoryService::instance()->system_allocator.deallocate(file_path);
-            // model_loaded = true;
           }
         }
       }

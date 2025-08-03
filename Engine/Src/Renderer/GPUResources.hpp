@@ -136,7 +136,9 @@ struct BufferInfo {
 struct TextureInfo {};
 
 // TODO: Expand
-struct PipelineInfo {};
+struct PipelineInfo {
+  cstring name;
+};
 
 #define MAX_BINDING_PER_SET 16
 
@@ -202,7 +204,7 @@ struct BindingSetCreation {
   }
 };
 
-struct AttachmentOps {
+struct AttachmentInfo {
   LoadOp::Enum load_op;
   StoreOp::Enum store_op;
   TextureFormat::Enum format = TextureFormat::Undefined;
@@ -211,9 +213,9 @@ struct AttachmentOps {
 #define MAX_COLOR_ATTACHMENTS 8
 
 struct RenderPassCreation {
-  AttachmentOps colour_attachments[MAX_COLOR_ATTACHMENTS];
+  AttachmentInfo colour_attachments[MAX_COLOR_ATTACHMENTS];
   u32 num_colour_attachments{0};
-  AttachmentOps depth_attachment{};
+  AttachmentInfo depth_attachment{};
 
   RenderPassCreation &add_color_attachment(LoadOp::Enum load_op,
                                            StoreOp::Enum store_op,
@@ -236,9 +238,9 @@ struct RenderPassCreation {
 };
 
 struct RenderPass {
-  AttachmentOps colour_attachments[MAX_COLOR_ATTACHMENTS];
+  AttachmentInfo colour_attachments[MAX_COLOR_ATTACHMENTS];
   u32 num_colour_attachments;
-  AttachmentOps depth_attachment;
+  AttachmentInfo depth_attachment;
 };
 
 } // namespace Helix

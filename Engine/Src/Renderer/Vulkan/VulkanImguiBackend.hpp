@@ -2,7 +2,7 @@
 
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/ImguiFrontend.hpp"
-#include <imgui/imgui.h>
+#include <Vendor/imgui/imgui.h>
 
 namespace Helix {
 

@@ -895,9 +895,13 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
   command_buffer->bind_renderpass(swapchain_pass, main_color_attachments,
                                   depth_images[current_frame]);
 
-  VulkanPipeline *pipeline =
-      access_pipeline(RendererFrontEnd::instance()->pbr_pipeline);
-  command_buffer->bind_pipeline(RendererFrontEnd::instance()->pbr_pipeline);
+  PipelineHandle pbr_pipeline_handle =
+      *RendererFrontEnd::instance()->pipelines_map.search(
+          {PBR_PIPELINE_NAME, strlen(PBR_PIPELINE_NAME)});
+  VulkanPipeline *pipeline = access_pipeline(pbr_pipeline_handle);
+
+  command_buffer->bind_pipeline(pbr_pipeline_handle);
+
   VkDescriptorSet vk_bindless_descriptor_set =
       access_descriptor_set(RendererFrontEnd::instance()->bindless_set)
           ->vk_handle;
@@ -1058,6 +1062,26 @@ RenderPass *VulkanBackend::access_render_pass(RenderPassHandle handle) {
   return render_passes.obtain(handle);
 }
 
+// TODO: Expand
+BufferInfo VulkanBackend::access_buffer_view(BufferHandle handle) {
+  BufferInfo info{};
+  return info;
+}
+
+// TODO: Expand
+TextureInfo VulkanBackend::access_texture_view(TextureHandle handle) {
+  TextureInfo info{};
+  return info;
+}
+
+// TODO: Expand
+PipelineInfo VulkanBackend::access_pipeline_view(PipelineHandle handle) {
+  PipelineInfo info{};
+  VulkanPipeline *pipeline = access_pipeline(handle);
+  info.name = pipeline->name;
+  return info;
+}
+
 void VulkanBackend::vk_create_buffer(VkDeviceSize size,
                                      VkBufferUsageFlags usage,
                                      VkMemoryPropertyFlags properties,
@@ -1192,7 +1216,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
     cstring shader_args = temp_string_buffer.append_use_f(
-        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.3 %s",
+        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.3 %s -D_GLSL",
         to_compiler_stage(shader.stage), shader.filename, shader.filename,
         compiler_debug);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
@@ -1874,6 +1898,8 @@ void VulkanBackend::destroy_pipeline(PipelineHandle handle) {
     destroy_descriptor_set(pipeline->sets[i]);
   }
 
+  pipeline->set_count = 0;
+
   ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle, pipeline->name};
   resource_deletion_queue.push(q_object);
 }
@@ -1965,6 +1991,9 @@ void VulkanBackend::destroy_buffer_instant(BufferHandle handle) {
     return;
   }
   VulkanBuffer *buffer = access_buffer(handle);
+  if (!buffer)
+    return;
+
   VmaAllocationInfo alloc_info{};
   alloc_info.pMappedData = nullptr;
   vmaGetAllocationInfo(vma_allocator, buffer->vma_allocation, &alloc_info);
@@ -1988,6 +2017,8 @@ void VulkanBackend::destroy_pipeline_instant(PipelineHandle handle) {
   }
 
   VulkanPipeline *pipeline = access_pipeline(handle);
+  if (!pipeline)
+    return;
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   hfree(pipeline->sets, allocator);
@@ -2007,6 +2038,8 @@ void VulkanBackend::destroy_descriptor_set_layout_instant(
     return;
   }
   VulkanDescriptorSetLayout *layout = access_descriptor_set_layout(handle);
+  if (!layout)
+    return;
   vkDestroyDescriptorSetLayout(vk_device, layout->vk_handle,
                                vk_allocation_callbacks);
 
@@ -2029,6 +2062,9 @@ void VulkanBackend::destroy_image_instant(TextureHandle handle) {
     return;
   }
   VulkanImage *image = images.obtain(handle);
+  if (!image)
+    return;
+
   vmaDestroyImage(vma_allocator, image->vk_handle, image->vma_allocation);
   images.release(handle);
 }
@@ -2039,6 +2075,9 @@ void VulkanBackend::destroy_image_view_instant(TextureHandle handle) {
     return;
   }
   VulkanImageView *image_view = image_views.obtain(handle);
+  if (!image_view)
+    return;
+
   if (image_view) {
     vkDestroyImageView(vk_device, image_view->vk_handle,
                        vk_allocation_callbacks);
@@ -2052,6 +2091,9 @@ void VulkanBackend::destroy_sampler_instant(SamplerHandle handle) {
     return;
   }
   VulkanSampler *sampler = samplers.obtain(handle);
+  if (!sampler)
+    return;
+
   vkDestroySampler(vk_device, sampler->vk_handle, vk_allocation_callbacks);
   samplers.release(handle);
 }
@@ -2270,7 +2312,7 @@ VulkanBackend::create_render_pass(RenderPassCreation &creation) {
   pass->depth_attachment = creation.depth_attachment;
   pass->num_colour_attachments = creation.num_colour_attachments;
   memcpy(pass->colour_attachments, creation.colour_attachments,
-         sizeof(AttachmentOps) * creation.num_colour_attachments);
+         sizeof(AttachmentInfo) * creation.num_colour_attachments);
 
   return handle;
 }

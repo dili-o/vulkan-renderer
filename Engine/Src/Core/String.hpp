@@ -48,4 +48,12 @@ struct StringBuffer {
 private:
   char *data = nullptr;
 };
+
+struct StringView {
+  cstring data;
+  size_t length;
+
+  bool operator==(const StringView &other) const;
+  static u64 hash(const void *string, size_t len, u64 seed);
+};
 } // namespace Helix

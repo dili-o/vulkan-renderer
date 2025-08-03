@@ -35,7 +35,7 @@ using HashFunction = u64 (*)(const void *, size_t, u64);
 template <typename K, typename V> struct HashMap {
 
   // TODO: Use Allocator and maybe a custom hashing function
-  void init(u64 base_capacity_, Allocator *allocator_,
+  void init(Allocator *allocator_, u64 base_capacity_,
             HashFunction hash_function_ = nullptr) {
     if (items) {
       HERROR("HashTable already initialized!");

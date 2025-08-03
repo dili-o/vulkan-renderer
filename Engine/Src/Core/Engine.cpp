@@ -1,5 +1,7 @@
 #include "Engine.hpp"
+#include "Containers/HashMap.hpp"
 #include "Core/Log.hpp"
+#include "Core/String.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererTypes.hpp"
 
@@ -63,6 +65,32 @@ void Engine::init(Game *game) {
   imgui_frontend_service.init(&imgui_config);
 
   application_service.init(game);
+
+  // Random Stuff
+  // TODO: Remove
+  HashMap<cstring, cstring> my_map{};
+  my_map.init(&memory_service.system_allocator, 2, string_hash);
+
+  cstring my_key1 = "Dili";
+  cstring my_key2 = "Daniel";
+  cstring my_key3 = "Chinenye";
+  cstring my_key4 = "Chinenye";
+
+  cstring my_val1 = "Okoli";
+  cstring my_val2 = "Onyemelukwe";
+
+  my_map.insert(my_key1, my_val1);
+  my_map.insert(my_key2, my_val1);
+  my_map.insert(my_key3, my_val1);
+
+  HDEBUG("Key: {}, Value: {}", my_key1, *my_map.search(my_key1));
+  HDEBUG("Key: {}, Value: {}", my_key2, *my_map.search(my_key2));
+  HDEBUG("Key: {}, Value: {}", my_key3, *my_map.search(my_key3));
+
+  my_map.insert(my_key3, my_val2);
+  HDEBUG("Key: {}, Value: {}", my_key3, *my_map.search(my_key3));
+
+  my_map.shutdown();
 
   application_service.run();
 }
