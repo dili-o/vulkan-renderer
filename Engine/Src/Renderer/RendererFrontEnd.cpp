@@ -304,6 +304,12 @@ BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
 }
 
 PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
+  StringView name_view = {creation.name, strlen(creation.name)};
+  if (pipelines_map.search(name_view)) {
+    HERROR("Failed to create Pipeline: PipelineCreation.name already exists");
+    return {k_invalid_index, 0};
+  }
+
   PipelineHandle handle = backend->create_pipeline(creation);
   pipelines_map.insert({creation.name, strlen(creation.name)}, handle);
   return handle;
