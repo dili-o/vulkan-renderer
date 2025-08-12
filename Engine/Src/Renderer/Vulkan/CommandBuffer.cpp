@@ -278,7 +278,7 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
   VulkanImage *image = backend->access_image(dst_image);
   transition_image(
       image, image->current_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
+      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
 
   VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
   region.bufferOffset = 0;
@@ -301,6 +301,11 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
 
   vkCmdCopyBufferToImage2(vk_handle, &buffer_image_info);
 
+  // Blit stage
+  transition_image(image, image->current_layout,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_PIPELINE_STAGE_2_COPY_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT);
+
   if (generate_mips) {
     VkImageMemoryBarrier2 image_barrier{
         VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -317,7 +322,7 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
     VkImageAspectFlags aspect_mask = has_depth_or_stencil(image->format)
                                          ? VK_IMAGE_ASPECT_DEPTH_BIT
                                          : VK_IMAGE_ASPECT_COLOR_BIT;
-    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
 
     for (u32 i = 1; i < image->mip_count; ++i) {
       // Transition blit src to transfer src layout

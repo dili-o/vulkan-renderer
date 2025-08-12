@@ -401,6 +401,9 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                               ? texture_name
                               : renderer_frontend->string_buffer.append_use_f(
                                     "texture_%d", scene->pbr_materials.size);
+  texture_creation.usage =
+      TextureUsage::Enum(TextureUsage::TransferSrc |
+                         TextureUsage::TransferDest | TextureUsage::Sampled);
   TextureHandle texture_handle{k_invalid_index};
   std::visit(
       fastgltf::visitor{
@@ -424,8 +427,6 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
 
             texture_creation.width = texture_width;
             texture_creation.height = texture_height;
-            texture_creation.usage = TextureUsage::Enum(
-                TextureUsage::TransferDest | TextureUsage::Sampled);
             texture_creation.format = (attribute == MaterialAttribute_Albedo)
                                           ? TextureFormat::R8G8B8A8_SRGB
                                           : TextureFormat::R8G8B8A8_UNORM;
@@ -490,8 +491,6 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
 
             texture_creation.width = texture_width;
             texture_creation.height = texture_height;
-            texture_creation.usage = TextureUsage::Enum(
-                TextureUsage::TransferDest | TextureUsage::Sampled);
             texture_creation.format = (attribute == MaterialAttribute_Albedo)
                                           ? TextureFormat::R8G8B8A8_SRGB
                                           : TextureFormat::R8G8B8A8_UNORM;
@@ -550,8 +549,6 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
 
                       texture_creation.width = texture_width;
                       texture_creation.height = texture_height;
-                      texture_creation.usage = TextureUsage::Enum(
-                          TextureUsage::TransferDest | TextureUsage::Sampled);
                       texture_creation.format =
                           (attribute == MaterialAttribute_Albedo)
                               ? TextureFormat::R8G8B8A8_SRGB
@@ -609,8 +606,6 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
 
                       texture_creation.width = texture_width;
                       texture_creation.height = texture_height;
-                      texture_creation.usage = TextureUsage::Enum(
-                          TextureUsage::TransferDest | TextureUsage::Sampled);
                       texture_creation.format =
                           (attribute == MaterialAttribute_Albedo)
                               ? TextureFormat::R8G8B8A8_SRGB
