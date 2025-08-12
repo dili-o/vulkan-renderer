@@ -21,6 +21,9 @@ struct Platform : public Service {
   void handle_os_messages();
   f64 get_absolute_time_s();
   f64 get_absolute_time_ms();
+
+  void get_mouse_position(f32 *mouseX, f32 *mouseY);
+
   void sleep(u64 ms);
 
   void set_title(cstring title);

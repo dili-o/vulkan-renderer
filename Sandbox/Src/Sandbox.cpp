@@ -40,6 +40,41 @@ void Sandbox::shutdown() {
   HINFO("Game Shutdown");
 }
 
+glm::vec4 normalize_plane(glm::vec4 plane) {
+  glm::vec3 normal(plane.x, plane.y, plane.z);
+  return (plane / glm::length(normal));
+}
+
+glm::vec3 get_frustum_corner(const glm::mat4 &inv_proj_view, float x, float y,
+                             float z) {
+  glm::vec4 ndc_point(x, y, z, 1.0f);
+  glm::vec4 world_point = inv_proj_view * ndc_point;
+  return glm::vec3(world_point) / world_point.w;
+}
+
+// The intersect_three_planes function adapted for glm::vec4 planes
+glm::vec3 intersect_three_planes(const glm::vec4 &p1, const glm::vec4 &p2,
+                                 const glm::vec4 &p3) {
+  // Create matrix A from the normal vectors (first 3 components of each plane)
+  glm::mat3 A(glm::vec3(p1.x, p1.y, p1.z), // First row: normal of plane 1
+              glm::vec3(p2.x, p2.y, p2.z), // Second row: normal of plane 2
+              glm::vec3(p3.x, p3.y, p3.z)  // Third row: normal of plane 3
+  );
+
+  // Create vector b from the distance components (negated w components)
+  glm::vec3 b(-p1.w, -p2.w, -p3.w);
+
+  // Check if planes are nearly parallel (determinant close to zero)
+  float det = glm::determinant(A);
+  if (abs(det) < 1e-6f) {
+    // Planes are nearly parallel, return origin as fallback
+    return glm::vec3(0.0f);
+  }
+
+  // Solve the system: A * x = b  =>  x = A^(-1) * b
+  return glm::inverse(A) * b;
+}
+
 void Sandbox::update(RenderPacket *packet) {
   ZoneScopedN("Game::update");
 
@@ -47,11 +82,52 @@ void Sandbox::update(RenderPacket *packet) {
   packet->game = this;
 
   camera.update(packet->delta_time);
+
+  packet->freeze_camera = freeze_camera;
+
+  if (!freeze_camera) {
+    packet->inv_previous_view_proj =
+        glm::inverse(camera.get_projection() * camera.get_view());
+  }
+
+  // glm::mat4 projection_transpose =
+  //     glm::transpose(camera.get_projection() * camera.get_view());
+  //
+  // glm::vec4 left_plane = normalize_plane(
+  //     projection_transpose[3] + projection_transpose[0]); // x + w  < 0;
+  // glm::vec4 right_plane = normalize_plane(
+  //     projection_transpose[3] - projection_transpose[0]); // x - w  < 0;
+  // glm::vec4 top_plane = normalize_plane(projection_transpose[3] +
+  //                                       projection_transpose[1]); // y + w  <
+  //                                       0;
+  // glm::vec4 bottom_plane = normalize_plane(
+  //     projection_transpose[3] - projection_transpose[1]); // y - w  < 0;
+  // glm::vec4 near_plane = normalize_plane(
+  //     projection_transpose[3] + projection_transpose[2]); // z + w  < 0;
+  // glm::vec4 far_plane = normalize_plane(projection_transpose[3] -
+  //                                       projection_transpose[2]); // z - w  <
+  //                                       0;
+  //                                                                 //
+  // glm::mat4 inv_proj_view =
+  //     glm::inverse(camera.get_projection() * camera.get_view());
+  // glm::vec3 near_left_top = get_frustum_corner(inv_proj_view, -1.f, -1.f,
+  // -1.f); glm::vec3 near_left_bottom =
+  //     get_frustum_corner(inv_proj_view, -1.f, 1.f, -1.f);
+  // glm::vec3 near_right_top = get_frustum_corner(inv_proj_view, 1.f, -1.f,
+  // -1.f); glm::vec3 near_right_bottom =
+  //     get_frustum_corner(inv_proj_view, 1.f, 1.f, -1.f);
+  // glm::vec3 far_left_top = get_frustum_corner(inv_proj_view, -1.f,
+  // -1.f, 1.f); glm::vec3 far_left_bottom = get_frustum_corner(inv_proj_view,
+  // -1.f, 1.f, 1.f); glm::vec3 far_right_top =
+  // get_frustum_corner(inv_proj_view, 1.f, -1.f, 1.f); glm::vec3
+  // far_right_bottom = get_frustum_corner(inv_proj_view, 1.f, 1.f, 1.f);
+
   scene.update(packet);
 }
 
 void Sandbox::render_frame(f32 dt) {
   ZoneScoped;
+
   ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
                            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
   ImGui::SetNextWindowBgAlpha(0.25f);
@@ -61,6 +137,7 @@ void Sandbox::render_frame(f32 dt) {
     ImGui::Text("Frame time: %.3f ms",
                 Application::instance()->get_delta_time() * 1000.f);
     ImGui::Checkbox("Limit Frames", &Application::instance()->limit_frames);
+    ImGui::Checkbox("Freeze Camera", &freeze_camera);
     ImGui::End();
   }
 

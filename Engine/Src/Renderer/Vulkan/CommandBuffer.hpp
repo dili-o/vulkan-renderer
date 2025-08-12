@@ -63,6 +63,8 @@ struct VulkanCommandBuffer {
 
   void draw_indexed(u32 index_count, u32 instance_count, u32 first_index,
                     i32 vertex_offset, u32 first_instance);
+  void draw(u32 vertex_count, u32 instance_count, u32 first_vertex,
+            u32 first_instance);
 
   // TODO: Right now each call always submits and waits for the queue to be idle
   // This should be able to record any upload commands
@@ -76,7 +78,7 @@ struct VulkanCommandBuffer {
   // VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL but doesn't transition it back to it's
   // previous state
   void copy_buffer_to_image(TextureHandle dst_image, VkBuffer src_buffer,
-                            u32 size, VkQueue vk_queue);
+                            u32 size, VkQueue vk_queue, bool generate_mips);
 
   void push_marker(cstring name);
   void insert_marker(cstring name);

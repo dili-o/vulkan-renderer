@@ -244,6 +244,8 @@ void NodeHierarchy::update(u32 node_index) {
       glm::mat4 new_transform_matrix =
           parent_world_transform.get_mat4() * local_transform.get_mat4();
 
+      f32 scale = glm::length(new_transform_matrix[0]);
+
       world_transforms[current_node_index].set_transform(new_transform_matrix);
     } else {
       world_transforms[current_node_index] =

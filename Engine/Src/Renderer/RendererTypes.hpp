@@ -100,6 +100,8 @@ struct RenderPacket {
   f32 delta_time;
   u32 current_frame;
   Camera *camera{nullptr};
+  glm::mat4 inv_previous_view_proj;
+  bool freeze_camera = false;
   BufferHandle scene_data_buffer;
   Mesh *meshes{nullptr};
   u32 mesh_count{0};

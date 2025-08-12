@@ -113,6 +113,10 @@ f64 Platform::get_absolute_time_s() {
 
 f64 Platform::get_absolute_time_ms() { return get_absolute_time_s() * 1000.0; }
 
+void Platform::get_mouse_position(f32 *mouseX, f32 *mouseY) {
+  SDL_GetMouseState(mouseX, mouseY);
+}
+
 u64 Platform::get_current_processor_id() {
   return (u64)GetCurrentProcessorNumber();
 }

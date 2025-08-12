@@ -28,6 +28,11 @@ VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout);
 
 VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode);
 
+VkPrimitiveTopology
+to_vk_primitive_topology(PrimitiveType::Enum primitive_type);
+
+VkCompareOp to_vk_compare_op(CompareOp::Enum compare_op);
+
 VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type);
 
 cstring to_compiler_stage(ShaderStage::Enum stage);

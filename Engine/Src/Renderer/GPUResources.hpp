@@ -44,22 +44,49 @@ enum Enum {
 }
 
 namespace TextureFormat {
-enum Enum { Undefined, D32, B8G8R8A8_UNORM, R8G8B8A8_SRGB, R8G8B8A8_UNORM };
+enum Enum {
+  Undefined,
+  D32,
+  B8G8R8A8_UNORM,
+  R8G8B8A8_SRGB,
+  R8G8B8A8_UNORM,
+  R32_UINT,
+  R32_SINT,
+  R32_SFLOAT,
+};
 }
 
 namespace TextureUsage {
 enum Enum {
-  RenderTarget = 0,
-  Compute = 1 << 0,
-  TransferSrc = 1 << 1,
-  TransferDest = 1 << 2,
-  Depth = 1 << 3,
-  Sampled = 1 << 4
+  Undefined = 0,
+  RenderTarget = 1 << 0,
+  Compute = 1 << 1,
+  TransferSrc = 1 << 2,
+  TransferDest = 1 << 3,
+  Depth = 1 << 4,
+  Sampled = 1 << 5
 };
 }
 
 namespace CullMode {
 enum Enum { None, Front, Back, FrontAndBack };
+}
+
+namespace PrimitiveType {
+enum Enum { Triangle, Line };
+}
+
+namespace CompareOp {
+enum Enum {
+  Never,
+  Less,
+  Equal,
+  LessOrEqual,
+  Greater,
+  GreaterOrEqual,
+  NotEqual,
+  Always
+};
 }
 
 namespace LoadOp {
@@ -94,12 +121,14 @@ struct PipelineCreation {
   cstring name;
 
   CullMode::Enum cull_mode = CullMode::Back;
+  PrimitiveType::Enum primitive_type = PrimitiveType::Triangle;
   BindingSetLayoutHandle set_layouts[5]; // TODO: Remove magic number
   u32 set_layout_count = 0;
 
   RenderPassHandle render_pass;
   bool enable_depth_write = true;
   bool enable_depth_test = true;
+  CompareOp::Enum compare_op = CompareOp::Never;
 
   PipelineCreation &reset();
 };

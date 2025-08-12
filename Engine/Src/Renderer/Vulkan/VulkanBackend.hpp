@@ -107,6 +107,7 @@ struct VulkanBackend : public RendererBackend {
 
   virtual void upload_buffer_data(void *data, BufferHandle dst_buffer, u64 size,
                                   u64 offset) override;
+  virtual void upload_to_image(void *data, TextureHandle dst_image) override;
 
   void update_uniform_buffer(RenderPacket *packet);
 
@@ -152,6 +153,7 @@ struct VulkanBackend : public RendererBackend {
 
   TextureHandle depth_images[max_frames_in_flight];
   SamplerHandle default_sampler{};
+  SamplerHandle default_u32_sampler{};
   RenderPassHandle swapchain_pass{};
 
   ResourcePool<VulkanBuffer> buffers{};

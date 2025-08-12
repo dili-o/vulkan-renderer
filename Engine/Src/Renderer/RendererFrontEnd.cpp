@@ -7,6 +7,7 @@
 #include "Core/String.hpp"
 #include "Game.hpp"
 #include "Platform/File.hpp"
+#include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/ImguiFrontend.hpp"
@@ -35,8 +36,8 @@ void RendererFrontEnd::init(void *_config) {
     return;
   }
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
 
   pipelines_map.init(allocator, 10, string_hash);
 
@@ -129,50 +130,83 @@ void RendererFrontEnd::init(void *_config) {
     creation.name = "UnifiedMaterialBuffer";
     unified_material_buffer.handle = create_buffer(creation);
     unified_material_buffer.current_size = 0;
+
+    // TODO: unified_bounding_sphere_buffer
   }
   // Depth prepass
   RenderPassCreation pass_creation{};
-  pass_creation.add_depth_attachment(LoadOp::Clear, StoreOp::Store,
-                                     TextureFormat::D32);
+  pass_creation
+      .add_depth_attachment(LoadOp::Clear, StoreOp::Store, TextureFormat::D32)
+      .add_color_attachment(LoadOp::Clear, StoreOp::Store,
+                            TextureFormat::R32_UINT);
   depth_prepass = create_render_pass(pass_creation);
   {
-    PipelineCreation creation;
-    creation.name = PBR_PIPELINE_NAME;
-    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
-        sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"Shader.vert", ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"Shader.frag", ShaderStage::Fragment};
-    creation.shader_count = 2;
-    creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::None;
-    creation.set_layouts[0] = bindless_set_layout;
-    creation.set_layouts[1] = scene_set_layout;
-    creation.set_layout_count = 2;
-    creation.enable_depth_write = true;
-    creation.enable_depth_test = true;
-    creation.render_pass = backend->get_swapchain_pass();
+    {
+      PipelineCreation creation;
+      creation.name = PBR_PIPELINE_NAME;
+      creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+          sizeof(ShaderCreateInfo) * 2, stack_allocator);
+      creation.shader_create_infos[0] = {"Shader.vert", ShaderStage::Vertex};
+      creation.shader_create_infos[1] = {"Shader.frag", ShaderStage::Fragment};
+      creation.shader_count = 2;
+      creation.pipeline_type = PipelineType::Graphics;
+      creation.cull_mode = CullMode::None;
+      creation.set_layouts[0] = bindless_set_layout;
+      creation.set_layouts[1] = scene_set_layout;
+      creation.set_layout_count = 2;
+      creation.enable_depth_write = false;
+      creation.enable_depth_test = true;
+      creation.compare_op = CompareOp::Equal;
+      creation.render_pass = backend->get_swapchain_pass();
 
-    PipelineHandle pbr_pipeline = create_pipeline(creation);
+      PipelineHandle pbr_pipeline = create_pipeline(creation);
 
-    set_pipeline_binding_set(pbr_pipeline, bindless_set, 0);
-    set_pipeline_binding_set(pbr_pipeline, scene_sets[0], 1);
+      set_pipeline_binding_set(pbr_pipeline, bindless_set, 0);
+      set_pipeline_binding_set(pbr_pipeline, scene_sets[0], 1);
+    }
 
-    creation.name = DEPTH_PREPASS_PIPELINE_NAME;
-    creation.shader_create_infos =
-        (ShaderCreateInfo *)halloca(sizeof(ShaderCreateInfo), stack_allocator);
-    creation.shader_create_infos[0] = {"DepthPrepass.vert",
-                                       ShaderStage::Vertex};
-    creation.shader_count = 1;
-    creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::None;
-    creation.set_layouts[0] = scene_set_layout;
-    creation.set_layout_count = 1;
-    creation.enable_depth_write = true;
-    creation.enable_depth_test = true;
-    creation.render_pass = depth_prepass;
+    {
+      // Create
+      PipelineCreation creation;
+      creation.name = FRUSTUM_PIPELINE_NAME;
+      creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+          sizeof(ShaderCreateInfo) * 2, stack_allocator);
+      creation.shader_create_infos[0] = {"Frustum.vert", ShaderStage::Vertex};
+      creation.shader_create_infos[1] = {"Frustum.frag", ShaderStage::Fragment};
+      creation.shader_count = 2;
+      creation.pipeline_type = PipelineType::Graphics;
+      creation.cull_mode = CullMode::None;
+      creation.set_layout_count = 0;
+      creation.enable_depth_write = false;
+      creation.enable_depth_test = false;
+      creation.compare_op = CompareOp::Never;
+      creation.primitive_type = PrimitiveType::Line;
+      creation.render_pass = backend->get_swapchain_pass();
+      create_pipeline(creation);
+    }
 
-    PipelineHandle depth_prepass_pipeline = create_pipeline(creation);
-    set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
+    {
+      PipelineCreation creation;
+      creation.name = DEPTH_PREPASS_PIPELINE_NAME;
+      creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+          sizeof(ShaderCreateInfo) * 2, stack_allocator);
+      creation.shader_create_infos[0] = {"DepthPrepass.vert",
+                                         ShaderStage::Vertex};
+      creation.shader_create_infos[1] = {"DepthPrepass.frag",
+                                         ShaderStage::Fragment};
+      creation.shader_count = 2;
+      creation.pipeline_type = PipelineType::Graphics;
+      creation.cull_mode = CullMode::None;
+      creation.set_layouts[0] = scene_set_layout;
+      creation.set_layout_count = 1;
+      creation.enable_depth_write = true;
+      creation.enable_depth_test = true;
+      creation.compare_op = CompareOp::Less;
+      creation.render_pass = depth_prepass;
+
+      PipelineHandle depth_prepass_pipeline = create_pipeline(creation);
+      set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
+    }
   }
   // Create default textures
   TextureCreation tex_creation{};
@@ -221,12 +255,21 @@ void RendererFrontEnd::init(void *_config) {
   tex_creation.height = 1;
   default_normal_texture = create_texture(tex_creation);
 
-  stack_allocator->free_marker(stack_marker);
+  tex_creation = {};
+  tex_creation.width = config->platform->width;
+  tex_creation.height = config->platform->height;
+  tex_creation.usage =
+      TextureUsage::Enum(TextureUsage::RenderTarget | TextureUsage::Sampled);
+  tex_creation.format = TextureFormat::R32_UINT;
+  tex_creation.type = TextureType::Texture2D;
+  tex_creation.name = "VisibilityBuffer";
+  visibility_buffer = create_texture(tex_creation);
 }
 
 void RendererFrontEnd::shutdown() {
   destroy_texture(default_albedo_texture);
   destroy_texture(default_normal_texture);
+  destroy_texture(visibility_buffer);
 
   for (u32 i = 0; i < max_frames_in_flight - 1; ++i) {
     destroy_binding_set(scene_sets[i + 1]);
@@ -243,9 +286,8 @@ void RendererFrontEnd::shutdown() {
 
   destroy_render_pass(depth_prepass);
 
-  // TODO: Implement an Iterator for HashMap
   for (u32 i = 0; i < pipelines_map.capacity; ++i) {
-    const Item<StringView, PipelineHandle> item = pipelines_map.items[i];
+    const Item<StringView, PipelineHandle> &item = pipelines_map.items[i];
     if (item.state == EntryState::OCCUPIED) {
       backend->destroy_pipeline(item.value);
     }
@@ -368,9 +410,9 @@ void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
     return;
   }
 
-  // TODO: Delete the handle from pipelines
   PipelineInfo info = backend->access_pipeline_view(handle);
   pipelines_map.remove_item({info.name, strlen(info.name)});
+
   backend->destroy_pipeline(handle);
 }
 
@@ -409,6 +451,10 @@ void RendererFrontEnd::set_pipeline_binding_set(PipelineHandle pipeline,
 void RendererFrontEnd::upload_buffer_data(void *data, BufferHandle dst_buffer,
                                           u64 size, u64 offset) {
   backend->upload_buffer_data(data, dst_buffer, size, offset);
+}
+
+void RendererFrontEnd::upload_to_image(void *data, TextureHandle dst_image) {
+  backend->upload_to_image(data, dst_image);
 }
 
 void RendererFrontEnd::update_draw_commands(Scene *scene) {

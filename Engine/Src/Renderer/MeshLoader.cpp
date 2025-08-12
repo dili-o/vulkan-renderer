@@ -99,6 +99,7 @@ template <> struct hash<Helix::Vertex> {
 
 namespace Helix {
 
+// TODO: Swap with the actual format of the texture
 enum MaterialAttribute { MaterialAttribute_Albedo, MaterialAttribute_Normal };
 
 struct TextureLoadRequest {
@@ -106,29 +107,26 @@ struct TextureLoadRequest {
   FileReadResult read_result;
 };
 
-struct TextureLoadSuccess {
-  TextureCreation tex_creation{};
-  void *texture_data{nullptr};
-  u32 material_to_update_index{0};
-  MaterialAttribute attribute_to_update;
-  Scene *scene{nullptr};
-  // Array<PBRMaterial> *pbr_materials{nullptr};
+struct TextureLoadResult {
+  TextureHandle texture_to_update{};
+  u8 *data = nullptr;
 };
 
 // TODO: Specify the image component type
 bool load_texture_data(void *entry_data, void *result_data) {
   HELIX_PROFILER_FUNCTION_COLOR(0xFF00FF);
   TextureLoadRequest *request = (TextureLoadRequest *)entry_data;
-  TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
+  TextureLoadResult *result = (TextureLoadResult *)result_data;
 
   // Only load the file if it is not already loaded
-  if (request->read_result.size == 0)
+  if (request->read_result.size == 0) {
     if (!FileService::open_read_file_binary(
             request->file_path, &request->read_result,
             &MemoryService::instance()->system_allocator)) {
       HERROR("Failed to open file: {}", request->file_path);
       return false;
     }
+  }
 
   i32 width;
   i32 height;
@@ -141,270 +139,243 @@ bool load_texture_data(void *entry_data, void *result_data) {
       request->read_result.data);
   MemoryService::instance()->system_allocator.deallocate(request->file_path);
   if (!texture_data) {
-    HERROR("Unable to load texture data: {}, Reason: {}",
-           res->tex_creation.name, stbi_failure_reason());
+    HERROR("Unable to load texture data: {}, Reason: {}", request->file_path,
+           stbi_failure_reason());
     return false;
   }
 
-  res->tex_creation.initial_data = texture_data;
-  res->tex_creation.width = width;
-  res->tex_creation.height = height;
+  result->data = texture_data;
 
   return true;
 }
 
 bool load_texture_success(void *result_data) {
-  TextureLoadSuccess *res = (TextureLoadSuccess *)result_data;
-
-  res->tex_creation.depth = 1;
-  res->tex_creation.array_layer_count = 1;
-  res->tex_creation.array_base_level = 0;
-  res->tex_creation.mip_base_level = 0;
-  res->tex_creation.usage =
-      TextureUsage::Enum(TextureUsage::TransferDest | TextureUsage::Sampled |
-                         TextureUsage::TransferSrc);
-  res->tex_creation.type = TextureType::Texture2D;
-
-  u32 w = res->tex_creation.width;
-  u32 h = res->tex_creation.height;
-  u32 mip_levels = 1;
-
-  while (w > 1 && h > 1) {
-    w /= 2;
-    h /= 2;
-
-    ++mip_levels;
-  }
-  res->tex_creation.mip_level_count = mip_levels;
+  TextureLoadResult *result = (TextureLoadResult *)result_data;
 
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
 
-  switch (res->attribute_to_update) {
-  case MaterialAttribute_Albedo: {
-    res->tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
-    TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
-    (*res->scene)
-        .pbr_materials[res->material_to_update_index]
-        .albedo_texture_handle = handle;
-  } break;
-  case MaterialAttribute_Normal: {
-    res->tex_creation.format = TextureFormat::R8G8B8A8_UNORM;
-    TextureHandle handle = renderer_frontend->create_texture(res->tex_creation);
-    (*res->scene)
-        .pbr_materials[res->material_to_update_index]
-        .normal_texture_handle = handle;
-  } break;
-  }
+  renderer_frontend->upload_to_image(result->data, result->texture_to_update);
 
-  free(res->tex_creation.initial_data);
+  free(result->data);
   return true;
 }
 
 // TODO: Add tangent calculation
-bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
-  RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
-  Directory dir{};
-  FileService::current_directory(&dir);
-  FileService::change_directory(path);
+// bool load_obj_mesh(Scene *scene, cstring path, cstring model) {
+//   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
+//   Directory dir{};
+//   FileService::current_directory(&dir);
+//   FileService::change_directory(path);
+//
+//   tinyobj::attrib_t attrib;
+//   std::vector<tinyobj::shape_t> shapes;
+//   std::vector<tinyobj::material_t> materials;
+//   std::string warn, err;
+//
+//   bool res =
+//       tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model,
+//       path);
+//   if (!warn.empty()) {
+//     HWARN("TINYOBJLOADER: {}", warn);
+//   }
+//   if (!err.empty()) {
+//     HERROR("TINYOBJLOADER: {}", err);
+//   }
+//   if (!res) {
+//     HERROR("TINYOBJLOADER: Failed to load .obj");
+//   }
+//
+//   HDEBUG("# of vertices = {}", attrib.vertices.size() / 3);
+//   HDEBUG("# of normals = {}", attrib.normals.size() / 3);
+//   HDEBUG("# of texcoords = {}", attrib.texcoords.size() / 2);
+//   HINFO("# of materials = {}", materials.size());
+//   HDEBUG("# of shapes = {}", shapes.size());
+//   HDEBUG("# of indices in shape[0]: {}", shapes[0].mesh.indices.size());
+//   HDEBUG("# of materials in shape[0]: {}",
+//   shapes[0].mesh.material_ids.size()); HDEBUG("# of faces in shape[0]: {}",
+//   shapes[0].mesh.num_face_vertices.size());
+//
+//   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+//   StackAllocator *stack_allocator =
+//   &MemoryService::instance()->stack_allocator; size_t stack_marker =
+//   stack_allocator->get_marker();
+//
+//   u32 previous_material_size = scene->pbr_materials.size;
+//   for (u32 i = 0; i < materials.size(); ++i) {
+//     PBRMaterial &pbr_material = scene->pbr_materials.push_use();
+//     tinyobj::material_t &material = materials[i];
+//     if (!material.diffuse_texname.empty()) {
+//
+//       pbr_material.albedo_texture_handle =
+//           renderer_frontend->default_albedo_texture;
+//       char *file_full_path =
+//           string_concat(path, material.diffuse_texname.c_str(), allocator);
+//       TextureLoadRequest load_request{};
+//       load_request.file_path = file_full_path;
+//
+//       JobInfo info = create_job_info(
+//           load_texture_data, load_texture_success, nullptr, &load_request,
+//           sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
+//           JobType::General, JobPriority::Medium);
+//
+//       TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
+//       res_data->tex_creation.name =
+//       renderer_frontend->string_buffer.append_use(
+//           FileService::get_file_from_path(file_full_path));
+//       res_data->scene = scene;
+//       res_data->material_to_update_index = scene->pbr_materials.size - 1;
+//       JobService::instance()->submit(info);
+//     } else {
+//       u8 def_colour[4];
+//       def_colour[0] =
+//           static_cast<u8>(std::clamp(material.diffuse[0], 0.0f, 1.0f) *
+//           255.0f);
+//       def_colour[1] =
+//           static_cast<u8>(std::clamp(material.diffuse[1], 0.0f, 1.0f) *
+//           255.0f);
+//       def_colour[2] =
+//           static_cast<u8>(std::clamp(material.diffuse[2], 0.0f, 1.0f) *
+//           255.0f);
+//       def_colour[3] =
+//           static_cast<u8>(std::clamp(material.dissolve, 0.0f, 1.0f) *
+//           255.0f);
+//
+//       TextureCreation tex_creation{};
+//       tex_creation.initial_data = def_colour;
+//
+//       tex_creation.usage = TextureUsage::Enum(TextureUsage::TransferDest |
+//                                               TextureUsage::Sampled);
+//       tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
+//       tex_creation.type = TextureType::Texture2D;
+//       tex_creation.name =
+//           scene->string_buffer.append_use_f("%s", material.name.c_str());
+//
+//       pbr_material.albedo_texture_handle =
+//           renderer_frontend->create_texture(tex_creation);
+//     }
+//   }
+//
+//   FileService::change_directory(dir.path);
+//
+//   Mesh &mesh = scene->meshes.push_use();
+//   mesh.draws.init(allocator, shapes.size(), shapes.size());
+//
+//   cstring model_name = renderer_frontend->string_buffer.append_use(
+//       FileService::get_file_from_path(model));
+//
+//   u32 node_hierarchy_index =
+//       scene->node_hierarchy.add_node(model_name, INVALID_NODE_ID, true);
+//
+//   std::unordered_map<Vertex, uint32_t> unique_vertices{};
+//   Array<Vertex> vertices{};
+//   vertices.init(stack_allocator, attrib.vertices.size() / 3);
+//   Array<u32> indices{};
+//   indices.init(stack_allocator, vertices.capacity / 2);
+//
+//   // Used for mesh sorting
+//   u32 opaque_index = 0;
+//   u32 transparent_index = mesh.draws.size - 1;
+//   for (u32 i = 0; i < shapes.size(); ++i) {
+//     const auto &shape = shapes[i];
+//     cstring primitive_name =
+//         scene->string_buffer.append_use_f("%s", shape.name.c_str());
+//
+//     scene->node_hierarchy.add_node(primitive_name, node_hierarchy_index);
+//
+//     for (const auto &index : shape.mesh.indices) {
+//       Vertex vertex{};
+//
+//       vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
+//                     attrib.vertices[3 * index.vertex_index + 1],
+//                     attrib.vertices[3 * index.vertex_index + 2], 0.f};
+//
+//       if (index.texcoord_index != -1) {
+//         // vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index +
+//         0],
+//         //                     1.0f -
+//         //                         attrib.texcoords[2 * index.texcoord_index
+//         +
+//         //                         1]};
+//       } else {
+//         HERROR("No Texcoords");
+//         // vertex.tex_coord = {0.f, 0.f};
+//       }
+//       if (index.normal_index != -1) {
+//         // vertex.normal = {attrib.normals[3 * index.normal_index + 0],
+//         //                  attrib.normals[3 * index.normal_index + 1],
+//         //                  attrib.normals[3 * index.normal_index + 2]};
+//       } else {
+//         HERROR("No normals");
+//       }
+//
+//       if (unique_vertices.count(vertex) == 0) {
+//         unique_vertices[vertex] = static_cast<u32>(vertices.size);
+//         vertices.push(vertex);
+//       }
+//       indices.push(unique_vertices[vertex]);
+//     }
+//
+//     u32 mesh_index;
+//     u32 material_index = shape.mesh.material_ids[0] + previous_material_size;
+//
+//     // Arrange meshes based on transparency
+//     if ((shape.mesh.material_ids[0] != -1)) {
+//       if (!materials[shape.mesh.material_ids[0]].diffuse_texname.empty()) {
+//
+//         if (materials[shape.mesh.material_ids[0]].dissolve > 0.f) {
+//           mesh_index = transparent_index--;
+//         } else {
+//           mesh_index = opaque_index++;
+//         }
+//       } else {
+//         mesh_index = opaque_index++;
+//       }
+//     } else {
+//       mesh_index = opaque_index++;
+//     }
+//
+//     BufferCreation creation{};
+//     creation.usage_flags =
+//         (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
+//     creation.memory_state_flags = MemoryState::Static;
+//     creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+//     creation.size = sizeof(u32) * indices.size;
+//     creation.initial_data = indices.data;
+//     creation.name = renderer_frontend->string_buffer.append_use_f(
+//         "%s_IndexBuffer", primitive_name);
+//
+//     BufferHandle index_buffer_handle =
+//         renderer_frontend->create_buffer(creation);
+//
+//     MeshDraw &mesh_draw = mesh.draws[mesh_index];
+//     mesh_draw.primitive_count = shape.mesh.indices.size();
+//     // mesh_draw.index_buffer = index_buffer_handle;
+//     mesh_draw.material_index = material_index;
+//     indices.clear();
+//   }
+//
+//   BufferCreation creation{};
+//   creation.usage_flags =
+//       (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest);
+//   creation.memory_state_flags = MemoryState::Static;
+//   creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+//   creation.size = sizeof(Vertex) * vertices.size;
+//   creation.initial_data = vertices.data;
+//   creation.name = "Model_Vertex_Buffer";
+//
+//   // mesh.vertex_buffer = renderer_frontend->create_buffer(creation);
+//
+//   // HDEBUG("Vertex size = {}", vertices.size);
+//   vertices.shutdown();
+//   stack_allocator->free_marker(stack_marker);
+//
+//   return true;
+// }
 
-  tinyobj::attrib_t attrib;
-  std::vector<tinyobj::shape_t> shapes;
-  std::vector<tinyobj::material_t> materials;
-  std::string warn, err;
-
-  bool res =
-      tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model, path);
-  if (!warn.empty()) {
-    HWARN("TINYOBJLOADER: {}", warn);
-  }
-  if (!err.empty()) {
-    HERROR("TINYOBJLOADER: {}", err);
-  }
-  if (!res) {
-    HERROR("TINYOBJLOADER: Failed to load .obj");
-  }
-
-  HDEBUG("# of vertices = {}", attrib.vertices.size() / 3);
-  HDEBUG("# of normals = {}", attrib.normals.size() / 3);
-  HDEBUG("# of texcoords = {}", attrib.texcoords.size() / 2);
-  HINFO("# of materials = {}", materials.size());
-  HDEBUG("# of shapes = {}", shapes.size());
-  HDEBUG("# of indices in shape[0]: {}", shapes[0].mesh.indices.size());
-  HDEBUG("# of materials in shape[0]: {}", shapes[0].mesh.material_ids.size());
-  HDEBUG("# of faces in shape[0]: {}", shapes[0].mesh.num_face_vertices.size());
-
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
-
-  u32 previous_material_size = scene->pbr_materials.size;
-  for (u32 i = 0; i < materials.size(); ++i) {
-    PBRMaterial &pbr_material = scene->pbr_materials.push_use();
-    tinyobj::material_t &material = materials[i];
-    if (!material.diffuse_texname.empty()) {
-
-      pbr_material.albedo_texture_handle =
-          renderer_frontend->default_albedo_texture;
-      char *file_full_path =
-          string_concat(path, material.diffuse_texname.c_str(), allocator);
-      TextureLoadRequest load_request{};
-      load_request.file_path = file_full_path;
-
-      JobInfo info = create_job_info(
-          load_texture_data, load_texture_success, nullptr, &load_request,
-          sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
-          JobType::General, JobPriority::Medium);
-
-      TextureLoadSuccess *res_data = (TextureLoadSuccess *)info.result_data;
-      res_data->tex_creation.name = renderer_frontend->string_buffer.append_use(
-          FileService::get_file_from_path(file_full_path));
-      res_data->scene = scene;
-      res_data->material_to_update_index = scene->pbr_materials.size - 1;
-      JobService::instance()->submit(info);
-    } else {
-      u8 def_colour[4];
-      def_colour[0] =
-          static_cast<u8>(std::clamp(material.diffuse[0], 0.0f, 1.0f) * 255.0f);
-      def_colour[1] =
-          static_cast<u8>(std::clamp(material.diffuse[1], 0.0f, 1.0f) * 255.0f);
-      def_colour[2] =
-          static_cast<u8>(std::clamp(material.diffuse[2], 0.0f, 1.0f) * 255.0f);
-      def_colour[3] =
-          static_cast<u8>(std::clamp(material.dissolve, 0.0f, 1.0f) * 255.0f);
-
-      TextureCreation tex_creation{};
-      tex_creation.initial_data = def_colour;
-
-      tex_creation.usage = TextureUsage::Enum(TextureUsage::TransferDest |
-                                              TextureUsage::Sampled);
-      tex_creation.format = TextureFormat::R8G8B8A8_SRGB;
-      tex_creation.type = TextureType::Texture2D;
-      tex_creation.name =
-          scene->string_buffer.append_use_f("%s", material.name.c_str());
-
-      pbr_material.albedo_texture_handle =
-          renderer_frontend->create_texture(tex_creation);
-    }
-  }
-
-  FileService::change_directory(dir.path);
-
-  Mesh &mesh = scene->meshes.push_use();
-  mesh.draws.init(allocator, shapes.size(), shapes.size());
-
-  cstring model_name = renderer_frontend->string_buffer.append_use(
-      FileService::get_file_from_path(model));
-
-  u32 node_hierarchy_index =
-      scene->node_hierarchy.add_node(model_name, INVALID_NODE_ID, true);
-
-  std::unordered_map<Vertex, uint32_t> unique_vertices{};
-  Array<Vertex> vertices{};
-  vertices.init(stack_allocator, attrib.vertices.size() / 3);
-  Array<u32> indices{};
-  indices.init(stack_allocator, vertices.capacity / 2);
-
-  // Used for mesh sorting
-  u32 opaque_index = 0;
-  u32 transparent_index = mesh.draws.size - 1;
-  for (u32 i = 0; i < shapes.size(); ++i) {
-    const auto &shape = shapes[i];
-    cstring primitive_name =
-        scene->string_buffer.append_use_f("%s", shape.name.c_str());
-
-    scene->node_hierarchy.add_node(primitive_name, node_hierarchy_index);
-
-    for (const auto &index : shape.mesh.indices) {
-      Vertex vertex{};
-
-      vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2], 0.f};
-
-      if (index.texcoord_index != -1) {
-        // vertex.tex_coord = {attrib.texcoords[2 * index.texcoord_index + 0],
-        //                     1.0f -
-        //                         attrib.texcoords[2 * index.texcoord_index +
-        //                         1]};
-      } else {
-        HERROR("No Texcoords");
-        // vertex.tex_coord = {0.f, 0.f};
-      }
-      if (index.normal_index != -1) {
-        // vertex.normal = {attrib.normals[3 * index.normal_index + 0],
-        //                  attrib.normals[3 * index.normal_index + 1],
-        //                  attrib.normals[3 * index.normal_index + 2]};
-      } else {
-        HERROR("No normals");
-      }
-
-      if (unique_vertices.count(vertex) == 0) {
-        unique_vertices[vertex] = static_cast<u32>(vertices.size);
-        vertices.push(vertex);
-      }
-      indices.push(unique_vertices[vertex]);
-    }
-
-    u32 mesh_index;
-    u32 material_index = shape.mesh.material_ids[0] + previous_material_size;
-
-    // Arrange meshes based on transparency
-    if ((shape.mesh.material_ids[0] != -1)) {
-      if (!materials[shape.mesh.material_ids[0]].diffuse_texname.empty()) {
-
-        if (materials[shape.mesh.material_ids[0]].dissolve > 0.f) {
-          mesh_index = transparent_index--;
-        } else {
-          mesh_index = opaque_index++;
-        }
-      } else {
-        mesh_index = opaque_index++;
-      }
-    } else {
-      mesh_index = opaque_index++;
-    }
-
-    BufferCreation creation{};
-    creation.usage_flags =
-        (BufferUsage::Enum)(BufferUsage::Index | BufferUsage::TransferDest);
-    creation.memory_state_flags = MemoryState::Static;
-    creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-    creation.size = sizeof(u32) * indices.size;
-    creation.initial_data = indices.data;
-    creation.name = renderer_frontend->string_buffer.append_use_f(
-        "%s_IndexBuffer", primitive_name);
-
-    BufferHandle index_buffer_handle =
-        renderer_frontend->create_buffer(creation);
-
-    MeshDraw &mesh_draw = mesh.draws[mesh_index];
-    mesh_draw.primitive_count = shape.mesh.indices.size();
-    // mesh_draw.index_buffer = index_buffer_handle;
-    mesh_draw.material_index = material_index;
-    indices.clear();
-  }
-
-  BufferCreation creation{};
-  creation.usage_flags =
-      (BufferUsage::Enum)(BufferUsage::Vertex | BufferUsage::TransferDest);
-  creation.memory_state_flags = MemoryState::Static;
-  creation.memory_access_flags = MemoryAccess::GPU_ONLY;
-  creation.size = sizeof(Vertex) * vertices.size;
-  creation.initial_data = vertices.data;
-  creation.name = "Model_Vertex_Buffer";
-
-  // mesh.vertex_buffer = renderer_frontend->create_buffer(creation);
-
-  // HDEBUG("Vertex size = {}", vertices.size);
-  vertices.shutdown();
-  stack_allocator->free_marker(stack_marker);
-
-  return true;
-}
-
-void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
-                           fastgltf::Texture &texture, cstring texture_path,
-                           MaterialAttribute attribute) {
+TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
+                                    fastgltf::Texture &texture,
+                                    cstring texture_path,
+                                    MaterialAttribute attribute) {
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
 
@@ -419,13 +390,58 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
     texture_name =
         renderer_frontend->string_buffer.append_use(image.name.c_str());
   }
+  TextureCreation texture_creation{};
+  texture_creation.depth = 1;
+  texture_creation.initial_data = nullptr;
+  texture_creation.array_layer_count = 1;
+  texture_creation.array_base_level = 0;
+  texture_creation.mip_base_level = 0;
+  texture_creation.type = TextureType::Texture2D;
+  texture_creation.name = texture_name
+                              ? texture_name
+                              : renderer_frontend->string_buffer.append_use_f(
+                                    "texture_%d", scene->pbr_materials.size);
+  TextureHandle texture_handle{k_invalid_index};
   std::visit(
       fastgltf::visitor{
-          [](auto &arg) {
+          [&](auto &arg) {
             HERROR("Current image type: {} is not yet supported",
                    typeid(arg).name());
           },
           [&](fastgltf::sources::Array &array) {
+            i32 texture_width, texture_height;
+            i32 channel_count;
+
+            if (!stbi_info_from_memory(
+                    reinterpret_cast<stbi_uc *>(array.bytes.data()),
+                    array.bytes.size(), &texture_width, &texture_height,
+                    &channel_count)) {
+              HERROR("gltf_load_pbr_texture::stbi_info_from_memory::fastgltf::"
+                     "sources::Array failed to "
+                     "load texture info, Reason: {}",
+                     stbi_failure_reason());
+            }
+
+            texture_creation.width = texture_width;
+            texture_creation.height = texture_height;
+            texture_creation.usage = TextureUsage::Enum(
+                TextureUsage::TransferDest | TextureUsage::Sampled);
+            texture_creation.format = (attribute == MaterialAttribute_Albedo)
+                                          ? TextureFormat::R8G8B8A8_SRGB
+                                          : TextureFormat::R8G8B8A8_UNORM;
+
+            texture_creation.mip_level_count = 1;
+            while (texture_width > 1 && texture_height > 1) {
+              texture_width /= 2;
+              texture_height /= 2;
+
+              ++texture_creation.mip_level_count;
+            }
+
+            texture_handle =
+                RendererFrontEnd::instance()->create_texture(texture_creation);
+
+            // No need to load the texture from disk
             TextureLoadRequest load_request{};
             load_request.file_path = nullptr;
             load_request.read_result.size = array.bytes.size();
@@ -436,19 +452,13 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
 
             JobInfo info = create_job_info(
                 load_texture_data, load_texture_success, nullptr, &load_request,
-                sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
+                sizeof(TextureLoadRequest), sizeof(TextureLoadResult),
                 JobType::General, JobPriority::Medium);
 
-            TextureLoadSuccess *res_data =
-                (TextureLoadSuccess *)info.result_data;
-            // TODO: Name after asset
-            res_data->tex_creation.name =
-                texture_name ? texture_name
-                             : renderer_frontend->string_buffer.append_use_f(
-                                   "texture_%d", scene->pbr_materials.size);
-            res_data->attribute_to_update = attribute;
-            res_data->scene = scene;
-            res_data->material_to_update_index = scene->pbr_materials.size - 1;
+            TextureLoadResult *load_result =
+                (TextureLoadResult *)info.result_data;
+            load_result->data = nullptr;
+            load_result->texture_to_update = texture_handle;
 
             JobService::instance()->submit(info);
           },
@@ -467,23 +477,48 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
             load_request.file_path =
                 string_concat(texture_path, filePath.uri.c_str(), allocator);
 
+            i32 texture_width, texture_height;
+            i32 channel_count;
+
+            if (!stbi_info(load_request.file_path, &texture_width,
+                           &texture_height, &channel_count)) {
+              HERROR("gltf_load_pbr_texture::stbi_info::fastgltf::sources::URI "
+                     "failed to "
+                     "load texture info, Reason: {}",
+                     stbi_failure_reason());
+            }
+
+            texture_creation.width = texture_width;
+            texture_creation.height = texture_height;
+            texture_creation.usage = TextureUsage::Enum(
+                TextureUsage::TransferDest | TextureUsage::Sampled);
+            texture_creation.format = (attribute == MaterialAttribute_Albedo)
+                                          ? TextureFormat::R8G8B8A8_SRGB
+                                          : TextureFormat::R8G8B8A8_UNORM;
+
+            texture_creation.mip_level_count = 1;
+            while (texture_width > 1 && texture_height > 1) {
+              texture_width /= 2;
+              texture_height /= 2;
+
+              ++texture_creation.mip_level_count;
+            }
+
+            texture_handle =
+                RendererFrontEnd::instance()->create_texture(texture_creation);
+
             JobInfo info = create_job_info(
                 load_texture_data, load_texture_success, nullptr, &load_request,
-                sizeof(TextureLoadRequest), sizeof(TextureLoadSuccess),
+                sizeof(TextureLoadRequest), sizeof(TextureLoadResult),
                 JobType::General, JobPriority::Medium);
 
-            TextureLoadSuccess *res_data =
-                (TextureLoadSuccess *)info.result_data;
-            res_data->tex_creation.name =
-                texture_name ? texture_name
-                             : renderer_frontend->string_buffer.append_use(
-                                   filePath.uri.c_str());
-            res_data->attribute_to_update = attribute;
-            res_data->scene = scene;
-            res_data->material_to_update_index = scene->pbr_materials.size - 1;
+            TextureLoadResult *load_result =
+                (TextureLoadResult *)info.result_data;
+            load_result->data = nullptr;
+            load_result->texture_to_update = texture_handle;
+
             JobService::instance()->submit(info);
           },
-
           [&](fastgltf::sources::BufferView &view) {
             auto &bufferView = asset.bufferViews[view.bufferViewIndex];
             auto &buffer = asset.buffers[bufferView.bufferIndex];
@@ -498,6 +533,42 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                              typeid(arg).name());
                     },
                     [&](fastgltf::sources::Array &array) {
+                      i32 texture_width, texture_height;
+                      i32 channel_count;
+
+                      if (!stbi_info_from_memory(
+                              reinterpret_cast<stbi_uc *>(
+                                  array.bytes.data() + bufferView.byteOffset),
+                              array.bytes.size(), &texture_width,
+                              &texture_height, &channel_count)) {
+                        HERROR("gltf_load_pbr_texture::stbi_info_from_"
+                               "memoryfastgltf::sources::BufferView::Array "
+                               "failed to "
+                               "load texture info, Reason: {}",
+                               stbi_failure_reason());
+                      }
+
+                      texture_creation.width = texture_width;
+                      texture_creation.height = texture_height;
+                      texture_creation.usage = TextureUsage::Enum(
+                          TextureUsage::TransferDest | TextureUsage::Sampled);
+                      texture_creation.format =
+                          (attribute == MaterialAttribute_Albedo)
+                              ? TextureFormat::R8G8B8A8_SRGB
+                              : TextureFormat::R8G8B8A8_UNORM;
+
+                      texture_creation.mip_level_count = 1;
+                      while (texture_width > 1 && texture_height > 1) {
+                        texture_width /= 2;
+                        texture_height /= 2;
+
+                        ++texture_creation.mip_level_count;
+                      }
+
+                      texture_handle =
+                          RendererFrontEnd::instance()->create_texture(
+                              texture_creation);
+
                       TextureLoadRequest load_request{};
                       load_request.file_path = nullptr;
                       load_request.read_result.size = bufferView.byteLength;
@@ -510,24 +581,53 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                       JobInfo info = create_job_info(
                           load_texture_data, load_texture_success, nullptr,
                           &load_request, sizeof(TextureLoadRequest),
-                          sizeof(TextureLoadSuccess), JobType::General,
+                          sizeof(TextureLoadResult), JobType::General,
                           JobPriority::Medium);
 
-                      TextureLoadSuccess *res_data =
-                          (TextureLoadSuccess *)info.result_data;
-                      // TODO: Name after asset
-                      res_data->tex_creation.name =
-                          texture_name
-                              ? texture_name
-                              : renderer_frontend->string_buffer.append_use_f(
-                                    "texture_%d", scene->pbr_materials.size);
-                      res_data->attribute_to_update = attribute;
-                      res_data->scene = scene;
-                      res_data->material_to_update_index =
-                          scene->pbr_materials.size - 1;
+                      TextureLoadResult *load_result =
+                          (TextureLoadResult *)info.result_data;
+                      load_result->data = nullptr;
+                      load_result->texture_to_update = texture_handle;
+
                       JobService::instance()->submit(info);
                     },
                     [&](fastgltf::sources::Vector &vector) {
+                      i32 texture_width, texture_height;
+                      i32 channel_count;
+
+                      if (!stbi_info_from_memory(
+                              reinterpret_cast<stbi_uc *>(
+                                  vector.bytes.data() + bufferView.byteOffset),
+                              bufferView.byteLength, &texture_width,
+                              &texture_height, &channel_count)) {
+                        HERROR("gltf_load_pbr_texture::stbi_info_from_"
+                               "memory::fastgltf::sources::BufferView::Vector "
+                               "failed to "
+                               "load texture info, Reason: {}",
+                               stbi_failure_reason());
+                      }
+
+                      texture_creation.width = texture_width;
+                      texture_creation.height = texture_height;
+                      texture_creation.usage = TextureUsage::Enum(
+                          TextureUsage::TransferDest | TextureUsage::Sampled);
+                      texture_creation.format =
+                          (attribute == MaterialAttribute_Albedo)
+                              ? TextureFormat::R8G8B8A8_SRGB
+                              : TextureFormat::R8G8B8A8_UNORM;
+
+                      texture_creation.mip_level_count = 1;
+                      while (texture_width > 1 && texture_height > 1) {
+                        texture_width /= 2;
+                        texture_height /= 2;
+
+                        ++texture_creation.mip_level_count;
+                      }
+
+                      texture_handle =
+                          RendererFrontEnd::instance()->create_texture(
+                              texture_creation);
+
                       TextureLoadRequest load_request{};
                       load_request.file_path = nullptr;
                       load_request.read_result.size = bufferView.byteLength;
@@ -540,27 +640,23 @@ void gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                       JobInfo info = create_job_info(
                           load_texture_data, load_texture_success, nullptr,
                           &load_request, sizeof(TextureLoadRequest),
-                          sizeof(TextureLoadSuccess), JobType::General,
+                          sizeof(TextureLoadResult), JobType::General,
                           JobPriority::Medium);
 
-                      TextureLoadSuccess *res_data =
-                          (TextureLoadSuccess *)info.result_data;
+                      TextureLoadResult *load_result =
+                          (TextureLoadResult *)info.result_data;
                       // TODO: Name after asset
-                      res_data->tex_creation.name =
-                          texture_name
-                              ? texture_name
-                              : renderer_frontend->string_buffer.append_use_f(
-                                    "texture_%d", scene->pbr_materials.size);
-                      res_data->attribute_to_update = attribute;
-                      res_data->scene = scene;
-                      res_data->material_to_update_index =
-                          scene->pbr_materials.size - 1;
+                      load_result->data = nullptr;
+                      load_result->texture_to_update = texture_handle;
+
                       JobService::instance()->submit(info);
                     }},
                 buffer.data);
           },
       },
       image.data);
+
+  return texture_handle;
 }
 
 void gltf_set_vec2(glm::vec2 &glm_vec, const fastgltf::math::fvec2 &f_vec) {
@@ -641,15 +737,11 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
 
     if (material.pbrData.baseColorTexture.has_value()) {
 
-      gltf_load_pbr_texture(
+      pbr_material.albedo_texture_handle = gltf_load_pbr_texture(
           scene, asset.get(),
           asset->textures[material.pbrData.baseColorTexture.value()
                               .textureIndex],
           path, MaterialAttribute_Albedo);
-
-      pbr_material.albedo_texture_handle =
-          renderer_frontend->default_albedo_texture;
-
     } else {
       u8 def_colour[4];
       f32 *albedo_colour = material.pbrData.baseColorFactor.data();
@@ -681,7 +773,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
         renderer_frontend->default_normal_texture;
     if (material.normalTexture.has_value()) {
 
-      gltf_load_pbr_texture(
+      pbr_material.normal_texture_handle = gltf_load_pbr_texture(
           scene, asset.get(),
           asset->textures[material.normalTexture.value().textureIndex], path,
           MaterialAttribute_Normal);

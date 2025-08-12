@@ -49,6 +49,8 @@ void Application::run() {
   last_time = clock.get_elapsed_time_s();
   f64 target_frame_seconds_ms = 1000.0 / 60.0;
 
+  RenderPacket packet{};
+
   while (!platform->requested_exit) {
     platform->handle_os_messages();
 
@@ -61,7 +63,7 @@ void Application::run() {
 
       JobService::instance()->update();
 
-      RenderPacket packet{(f32)delta_time};
+      packet.delta_time = (f32)delta_time;
 
       game->update(&packet);
 

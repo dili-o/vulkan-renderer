@@ -45,6 +45,7 @@ struct RendererBackend {
                                         u32 set_index) = 0;
   virtual void upload_buffer_data(void *data, BufferHandle dst_buffer, u64 size,
                                   u64 offset) = 0;
+  virtual void upload_to_image(void *data, TextureHandle dst_image) = 0;
 
   virtual void update_draw_commands(Scene *scene) = 0;
   virtual void print_gpu_stats() = 0;

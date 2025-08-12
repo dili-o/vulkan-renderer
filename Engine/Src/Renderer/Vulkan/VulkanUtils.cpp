@@ -2,7 +2,6 @@
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "vk_mem_alloc.h"
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 
@@ -84,11 +83,21 @@ VkFormat to_vk_format(TextureFormat::Enum format) {
     return VK_FORMAT_R8G8B8A8_SRGB;
   case TextureFormat::R8G8B8A8_UNORM:
     return VK_FORMAT_R8G8B8A8_UNORM;
+  case TextureFormat::R32_UINT:
+    return VK_FORMAT_R32_UINT;
+  case TextureFormat::R32_SINT:
+    return VK_FORMAT_R32_SINT;
+  case TextureFormat::R32_SFLOAT:
+    return VK_FORMAT_R32_SFLOAT;
   }
 }
 
 VkImageUsageFlags to_vk_image_usage_flags(TextureUsage::Enum _usage) {
   VkImageUsageFlags usage = 0;
+
+  HASSERT_MSG(_usage != TextureUsage::Undefined,
+              "to_vk_image_usage_flags(): _usage is TextureUsage::Undefined!");
+
   if (_usage & TextureUsage::Compute)
     usage |= VK_IMAGE_USAGE_STORAGE_BIT;
 
@@ -110,32 +119,6 @@ VkImageUsageFlags to_vk_image_usage_flags(TextureUsage::Enum _usage) {
   return usage;
 }
 
-VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
-  switch (layout) {
-  case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_UNDEFINED:
-    return VK_ACCESS_2_NONE;
-  case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-    return VK_ACCESS_2_TRANSFER_WRITE_BIT;
-  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-    return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-    return VK_ACCESS_2_NONE;
-  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
-    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-  default:
-    HERROR("Unknown layout");
-    return VK_ACCESS_2_NONE;
-  }
-}
-
 VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode) {
   switch (cull_mode) {
   case CullMode::None:
@@ -146,6 +129,37 @@ VkCullModeFlags to_vk_cull_mode_flags(CullMode::Enum cull_mode) {
     return VK_CULL_MODE_BACK_BIT;
   case CullMode::FrontAndBack:
     return VK_CULL_MODE_FRONT_AND_BACK;
+  }
+}
+
+VkPrimitiveTopology
+to_vk_primitive_topology(PrimitiveType::Enum primitive_type) {
+  switch (primitive_type) {
+  case PrimitiveType::Triangle:
+    return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  case PrimitiveType::Line:
+    return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+  }
+}
+
+VkCompareOp to_vk_compare_op(CompareOp::Enum compare_op) {
+  switch (compare_op) {
+  case CompareOp::Never:
+    return VK_COMPARE_OP_NEVER;
+  case CompareOp::Less:
+    return VK_COMPARE_OP_LESS;
+  case CompareOp::Equal:
+    return VK_COMPARE_OP_EQUAL;
+  case CompareOp::LessOrEqual:
+    return VK_COMPARE_OP_LESS_OR_EQUAL;
+  case CompareOp::Greater:
+    return VK_COMPARE_OP_GREATER;
+  case CompareOp::NotEqual:
+    return VK_COMPARE_OP_NOT_EQUAL;
+  case CompareOp::GreaterOrEqual:
+    return VK_COMPARE_OP_GREATER_OR_EQUAL;
+  case CompareOp::Always:
+    return VK_COMPARE_OP_ALWAYS;
   }
 }
 
@@ -188,6 +202,34 @@ VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage_) {
   return stage;
 }
 
+VkAccessFlags2 to_vk_src_access_flags(VkImageLayout layout) {
+  switch (layout) {
+  case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_UNDEFINED:
+    return VK_ACCESS_2_NONE;
+  case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+    return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+    return VK_ACCESS_2_TRANSFER_READ_BIT;
+  case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+  case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+    return VK_ACCESS_2_NONE;
+  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+  case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+    return VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+  default:
+    HERROR("Unknown layout");
+    return VK_ACCESS_2_NONE;
+  }
+}
+
 VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
   switch (layout) {
   case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
@@ -202,6 +244,8 @@ VkAccessFlags2 to_vk_dst_access_flags(VkImageLayout layout) {
     return VK_ACCESS_2_NONE;
   case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
     return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+  case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+    return VK_ACCESS_2_TRANSFER_READ_BIT;
   case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
     return VK_ACCESS_2_NONE;
   case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:

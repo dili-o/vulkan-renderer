@@ -30,7 +30,7 @@ layout(location = 2) out mat3 outTBN;
 // Vertex shader pushes the mesh info index to the fragment shader
 
 void main() {
-  gl_Position = ubo.viewProj * model * vec4(inPosition.xyz, 1.0);
+  gl_Position = ubo.proj * ubo.view * model * vec4(inPosition.xyz, 1.0);
 
   outTexCoords = inTexCoord.xy;
   outFragPos = vec3(model * vec4(inPosition.xyz, 1.0f));

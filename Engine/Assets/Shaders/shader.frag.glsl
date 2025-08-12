@@ -16,6 +16,9 @@ layout(push_constant) uniform constants
   mat4 model; // 64B
   uint albedoIndex; // 4B
   uint normalIndex; // 4B
+  uint objectID;
+  uint visibilityBufferIndex;
+  float mouseX, mouseY;
 };
 
 uint hash(uint a)
@@ -38,6 +41,13 @@ void main() {
   color *= 1.25f;
   outColor = vec4(color, 1.0f) ;
 #else
+  uint currentObjectID = texture(globalSamplersU32[nonuniformEXT(visibilityBufferIndex)], vec2(mouseX, mouseY)).r;
+
+  if(objectID == currentObjectID){
+    outColor = vec4(1.f);
+    return;
+  }
+
   vec4 albedo = texture(globalSamplers[nonuniformEXT(albedoIndex)], inTexCoords); 
   // ambient
   outColor = albedo;
@@ -54,9 +64,7 @@ void main() {
 
   vec3 result = ambient + diffuse;
 
-  // float gamma = 2.2;
-  // result = pow(result, vec3(1.0/gamma)); 
-
-  outColor = vec4(result, albedo.a);
+  // outColor = vec4(result, albedo.a);
+  outColor = albedo;
 #endif // RANDOM
 }

@@ -225,6 +225,12 @@ void VulkanCommandBuffer::draw_indexed(u32 index_count, u32 instance_count,
                    vertex_offset, first_instance);
 }
 
+void VulkanCommandBuffer::draw(u32 vertex_count, u32 instance_count,
+                               u32 first_vertex, u32 first_instance) {
+  vkCmdDraw(vk_handle, vertex_count, instance_count, first_vertex,
+            first_instance);
+}
+
 void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
                                                 u32 dst_offset,
                                                 VkBuffer src_buffer,
@@ -263,12 +269,16 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
 
 void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
                                                VkBuffer src_buffer, u32 size,
-                                               VkQueue vk_queue) {
-  // Tranisiton image
+                                               VkQueue vk_queue,
+                                               bool generate_mips) {
+
+  begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+  // Tranisiton image (including mip levels) to transfer dst
   VulkanImage *image = backend->access_image(dst_image);
   transition_image(
       image, image->current_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
+      VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
 
   VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
   region.bufferOffset = 0;
@@ -290,6 +300,110 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
   buffer_image_info.pRegions = &region;
 
   vkCmdCopyBufferToImage2(vk_handle, &buffer_image_info);
+
+  if (generate_mips) {
+    VkImageMemoryBarrier2 image_barrier{
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    image_barrier.image = image->vk_handle;
+    image_barrier.subresourceRange.aspectMask =
+        has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                            : VK_IMAGE_ASPECT_COLOR_BIT;
+    image_barrier.subresourceRange.levelCount = 1;
+    image_barrier.subresourceRange.baseArrayLayer = 0;
+    image_barrier.subresourceRange.layerCount = 1;
+
+    i32 image_width = image->vk_extents.width;
+    i32 image_height = image->vk_extents.height;
+    VkImageAspectFlags aspect_mask = has_depth_or_stencil(image->format)
+                                         ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                         : VK_IMAGE_ASPECT_COLOR_BIT;
+    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+
+    for (u32 i = 1; i < image->mip_count; ++i) {
+      // Transition blit src to transfer src layout
+      image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      image_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+      image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+      image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      image_barrier.subresourceRange.baseMipLevel = i - 1;
+      pipeline_barrier(&image_barrier, 1);
+
+      VkImageBlit2 blit_region{VK_STRUCTURE_TYPE_IMAGE_BLIT_2};
+      blit_region.srcSubresource.aspectMask = aspect_mask;
+      blit_region.srcSubresource.mipLevel = i - 1;
+      blit_region.srcSubresource.baseArrayLayer = 0;
+      blit_region.srcSubresource.layerCount = 1;
+      blit_region.srcOffsets[0] = {0, 0, 0};
+      blit_region.srcOffsets[1] = {image_width, image_height, 1};
+
+      blit_region.dstSubresource.aspectMask = aspect_mask;
+      blit_region.dstSubresource.mipLevel = i;
+      blit_region.dstSubresource.baseArrayLayer = 0;
+      blit_region.dstSubresource.layerCount = 1;
+      blit_region.dstOffsets[0] = {0, 0, 0};
+      blit_region.dstOffsets[1] = {image_width > 1 ? image_width / 2 : 1,
+                                   image_height > 1 ? image_height / 2 : 1, 1};
+
+      VkBlitImageInfo2 blit2{VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2};
+      blit2.srcImage = image->vk_handle;
+      blit2.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      blit2.dstImage = image->vk_handle;
+      blit2.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      blit2.regionCount = 1;
+      blit2.pRegions = &blit_region;
+      blit2.filter = VK_FILTER_LINEAR;
+
+      vkCmdBlitImage2(vk_handle, &blit2);
+
+      // Transition blit src to shader optimal
+      image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+      image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+      image_barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+      image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+
+      pipeline_barrier(&image_barrier, 1);
+      image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+
+      if (image_width > 1)
+        image_width /= 2;
+      if (image_height > 1)
+        image_height /= 2;
+    }
+
+    // Transition final mip to shader optimal
+    image_barrier.subresourceRange.baseMipLevel = image->mip_count - 1;
+    image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+    image_barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+
+    pipeline_barrier(&image_barrier, 1);
+
+  } else {
+    transition_image(
+        image, image->current_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+  }
+
+  end();
+
+  image->current_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+  VkCommandBufferSubmitInfo command_submit_info{
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  command_submit_info.commandBuffer = vk_handle;
+
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &command_submit_info;
+
+  vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(vk_queue);
 }
 
 void VulkanCommandBuffer::push_marker(cstring name) {

@@ -6,8 +6,11 @@ struct IndexedDrawCommand{
   uint indexCount;
   uint instanceCount;
   uint firstIndex;
-  int  vertexOffset;
+  uint vertexOffset;
   uint firstInstance;
+
+  uint objectID;
+  uint albedoTextureIndex;
 };
 
 // TODO: Use pos.w and normal.w as the texCoord x and y
@@ -26,11 +29,16 @@ struct PBRMaterial {
 };
 
 #ifdef _GLSL
+// Buffer Device Addresses
 layout(std430, buffer_reference) readonly buffer Vertices{
     Vertex vertices[];
 };
 
 layout(std430, buffer_reference) readonly buffer PBRMaterials{
     PBRMaterial materials[];
+};
+
+layout(std430, buffer_reference) buffer MeshData{
+  IndexedDrawCommand drawCommands[];
 };
 #endif

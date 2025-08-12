@@ -12,6 +12,7 @@ namespace Helix {
 
 #define MAX_SWAPCHAIN_IMAGES 3
 
+// TODO: Add Vk
 using DescriptorSetLayoutHandle = ResourceHandle;
 using DescriptorSetHandle = ResourceHandle;
 using ImageViewHandle = ResourceHandle;

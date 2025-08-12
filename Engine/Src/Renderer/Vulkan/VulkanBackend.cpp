@@ -386,6 +386,7 @@ bool VulkanBackend::init(void *_config) {
     HASSERT(pfnCmdEndDebugUtilsLabelEXT);
   }
 
+  // TODO: Check to see if vk_graphics_queue also contains compute capabilities
   vkGetDeviceQueue(vk_device, queue_family_indices.graphics_family_index, 0,
                    &vk_graphics_queue);
   set_resource_name(VK_OBJECT_TYPE_QUEUE, (u64)vk_graphics_queue,
@@ -431,16 +432,26 @@ bool VulkanBackend::init(void *_config) {
   pass_creation
       .add_color_attachment(LoadOp::Clear, StoreOp::Store,
                             TextureFormat::B8G8R8A8_UNORM)
-      .add_depth_attachment(LoadOp::Clear, StoreOp::Store, TextureFormat::D32);
+      .add_depth_attachment(LoadOp::Load, StoreOp::Store, TextureFormat::D32);
 
   swapchain_pass = create_render_pass(pass_creation);
 
   create_sync_objects(swapchain.image_count);
   create_descriptor_pool(config->max_frames_in_flight);
+
   {
     SamplerCreation sampler_creation{};
-    sampler_creation.name = "default_sampler";
+    sampler_creation.name = "DefaultSampler";
     default_sampler = create_sampler(sampler_creation);
+
+    sampler_creation.name = "DefaultU32Sampler";
+    sampler_creation.min_filter = VK_FILTER_NEAREST;
+    sampler_creation.mag_filter = VK_FILTER_NEAREST;
+    sampler_creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler_creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_creation.address_mode_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    default_u32_sampler = create_sampler(sampler_creation);
   }
 
   {
@@ -482,6 +493,7 @@ bool VulkanBackend::shutdown() {
   }
   destroy_render_pass(swapchain_pass);
   destroy_sampler(default_sampler);
+  destroy_sampler(default_u32_sampler);
   destroy_buffer(indirect_draw_buffer);
   free_queued_resources();
   resource_deletion_queue.shutdown();
@@ -620,6 +632,8 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
       TextureHandle texture_to_update = bindless_textures_to_update[it];
       {
         VulkanImageView *texture = access_image_view(texture_to_update);
+        VulkanImage *image = access_image(texture->image);
+
         VkWriteDescriptorSet &descriptor_write =
             bindless_descriptor_writes[current_write_index];
         descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -631,11 +645,16 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
         descriptor_write.dstBinding = 0;
 
         VulkanSampler *vk_default_sampler = access_sampler(default_sampler);
+        VulkanSampler *vk_default_u32_sampler =
+            access_sampler(default_u32_sampler);
         VkDescriptorImageInfo &descriptor_image_info =
             bindless_image_info[current_write_index];
 
         // TODO: Texture( Views ) should have samplers
-        descriptor_image_info.sampler = vk_default_sampler->vk_handle;
+        descriptor_image_info.sampler =
+            (image->format == VK_FORMAT_R32_UINT)
+                ? vk_default_u32_sampler->vk_handle
+                : vk_default_sampler->vk_handle; // HardCoded
 
         descriptor_image_info.imageView = texture->vk_handle;
         descriptor_image_info.imageLayout =
@@ -694,7 +713,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
       ArraySize(signal_semaphore_submit_infos);
   submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
 
-  VkSemaphore signal_semaphores[] = {
+  VkSemaphore wait_semaphores[] = {
       render_finished_semaphores[swapchain.current_image_index]};
 
   VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
@@ -702,7 +721,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
   VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
 
   present_info.waitSemaphoreCount = 1;
-  present_info.pWaitSemaphores = signal_semaphores;
+  present_info.pWaitSemaphores = wait_semaphores;
 
   VkSwapchainKHR swapchains[] = {swapchain.vk_handle};
   present_info.swapchainCount = 1;
@@ -753,7 +772,8 @@ void VulkanBackend::create_swapchain() {
   VK_CHECK(vkCreateSwapchainKHR(vk_device, &create_info,
                                 vk_allocation_callbacks, &swapchain.vk_handle));
 
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
   HASSERT(swapchain.image_count <= MAX_SWAPCHAIN_IMAGES);
   vkGetSwapchainImagesKHR(vk_device, swapchain.vk_handle,
                           &swapchain.image_count, nullptr);
@@ -864,22 +884,11 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   VulkanDescriptorSet *scene_set = access_descriptor_set(
       RendererFrontEnd::instance()->scene_sets[current_frame]);
+
   VulkanImage *swapchain_image =
       access_image(swapchain.images[swapchain.current_image_index]);
-  command_buffer->transition_image(
-      swapchain.images[swapchain.current_image_index],
-      VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
-  VulkanImageView *depth_view = image_views.obtain(depth_images[current_frame]);
-  VulkanImage *depth_image = images.obtain(depth_view->image);
-  command_buffer->transition_image(
-      depth_view->image, depth_image->current_layout,
-      VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT);
-
+  // Setup view_port and scissor
   command_buffer->bind_viewport(
       {swapchain_image->vk_extents.width, swapchain_image->vk_extents.height});
 
@@ -889,68 +898,194 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                  swapchain_image->vk_extents.height};
   command_buffer->bind_scissors(rect);
 
-  command_buffer->push_marker("Main Pass");
-  TextureHandle main_color_attachments[] = {
-      swapchain.images[swapchain.current_image_index]};
-  command_buffer->bind_renderpass(swapchain_pass, main_color_attachments,
-                                  depth_images[current_frame]);
+  // Transition Swapchain
+  command_buffer->transition_image(
+      swapchain.images[swapchain.current_image_index],
+      VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
-  PipelineHandle pbr_pipeline_handle =
-      *RendererFrontEnd::instance()->pipelines_map.search(
-          {PBR_PIPELINE_NAME, strlen(PBR_PIPELINE_NAME)});
-  VulkanPipeline *pipeline = access_pipeline(pbr_pipeline_handle);
+  // Transition Depth image
+  VulkanImageView *depth_view = image_views.obtain(depth_images[current_frame]);
+  VulkanImage *depth_image = images.obtain(depth_view->image);
+  command_buffer->transition_image(
+      depth_view->image, VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+      VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT);
 
-  command_buffer->bind_pipeline(pbr_pipeline_handle);
+  const TextureHandle visibility_buffer =
+      RendererFrontEnd::instance()->visibility_buffer;
 
-  VkDescriptorSet vk_bindless_descriptor_set =
-      access_descriptor_set(RendererFrontEnd::instance()->bindless_set)
-          ->vk_handle;
-  command_buffer->bind_descriptor_sets({0, 0}, vk_bindless_descriptor_set, 0);
-  command_buffer->bind_descriptor_sets({0, 0}, scene_set->vk_handle, 1);
-
-  RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
-  command_buffer->bind_index_buffer(
-      renderer_frontend->unified_index_buffer.handle, 0, VK_INDEX_TYPE_UINT32);
-  command_buffer->bind_vertex_buffer(
-      renderer_frontend->unified_vertex_buffer.handle, 0, 1);
+  // Transition Visibility buffer
+  command_buffer->transition_image(
+      visibility_buffer, VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
   {
-    TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Main Draws");
-    for (u32 m = 0; m < packet->mesh_count; ++m) {
+    // Depth PrePass
+    command_buffer->push_marker("Depth PrePass");
+    TextureHandle depth_prepass_color_attachments[] = {visibility_buffer};
+    command_buffer->bind_renderpass(RendererFrontEnd::instance()->depth_prepass,
+                                    depth_prepass_color_attachments,
+                                    depth_images[current_frame]);
 
-      Mesh &mesh = packet->meshes[m];
-      for (u32 d = 0; d < mesh.draws.size; ++d) {
-        MeshDraw &draw = mesh.draws[d];
+    PipelineHandle depth_prepass_pipeline_handle =
+        *RendererFrontEnd::instance()->pipelines_map.search(
+            {DEPTH_PREPASS_PIPELINE_NAME, strlen(DEPTH_PREPASS_PIPELINE_NAME)});
+    VulkanPipeline *pipeline = access_pipeline(depth_prepass_pipeline_handle);
 
-        // TODO: Maybe add a pointer to pbr_materials in RenderPacket
-        PBRMaterial &material =
-            packet->game->scene.pbr_materials[draw.material_index];
+    command_buffer->bind_pipeline(depth_prepass_pipeline_handle);
 
-        struct PushConstant {
-          glm::mat4 model;
-          u32 albedo_texture_index;
-          u32 normal_texture_index;
-        };
+    command_buffer->bind_descriptor_sets(depth_prepass_pipeline_handle,
+                                         scene_set->vk_handle, 0);
 
-        PushConstant push_constant{};
-        push_constant.model = draw.transform.get_mat4();
-        push_constant.albedo_texture_index =
-            material.albedo_texture_handle.index;
-        push_constant.normal_texture_index =
-            material.normal_texture_handle.index;
+    RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
+    command_buffer->bind_index_buffer(
+        renderer_frontend->unified_index_buffer.handle, 0,
+        VK_INDEX_TYPE_UINT32);
+    command_buffer->bind_vertex_buffer(
+        renderer_frontend->unified_vertex_buffer.handle, 0, 1);
 
-        VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+    {
+      TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
+                  "Main Draws");
+      u32 objectID = 1;
+      for (u32 m = 0; m < packet->mesh_count; ++m) {
 
-        command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
-                                       sizeof(PushConstant), &push_constant);
-        command_buffer->draw_indexed(draw.primitive_count, 1,
-                                     draw.index_buffer_offset,
-                                     draw.vertex_buffer_offset, 0);
+        Mesh &mesh = packet->meshes[m];
+        for (u32 d = 0; d < mesh.draws.size; ++d) {
+          MeshDraw &draw = mesh.draws[d];
+
+          struct PushConstant {
+            glm::mat4 model;
+            u32 objectID;
+          };
+
+          PushConstant push_constant{};
+          push_constant.model = draw.transform.get_mat4();
+          push_constant.objectID = objectID;
+
+          VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+
+          command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                         sizeof(PushConstant), &push_constant);
+          command_buffer->draw_indexed(draw.primitive_count, 1,
+                                       draw.index_buffer_offset,
+                                       draw.vertex_buffer_offset, 0);
+          ++objectID;
+        }
       }
     }
+    command_buffer->end_current_renderpass();
+    command_buffer->pop_marker();
   }
-  // NOTE: Imgui needs to use the renderpass
-  command_buffer->pop_marker();
+
+  {
+    // Main Pass
+    command_buffer->push_marker("Main Pass");
+    TextureHandle main_color_attachments[] = {
+        swapchain.images[swapchain.current_image_index],
+    };
+    command_buffer->bind_renderpass(swapchain_pass, main_color_attachments,
+                                    depth_images[current_frame]);
+
+    PipelineHandle pbr_pipeline_handle =
+        *RendererFrontEnd::instance()->pipelines_map.search(
+            {PBR_PIPELINE_NAME, strlen(PBR_PIPELINE_NAME)});
+    VulkanPipeline *pipeline = access_pipeline(pbr_pipeline_handle);
+
+    command_buffer->bind_pipeline(pbr_pipeline_handle);
+
+    VkDescriptorSet vk_bindless_descriptor_set =
+        access_descriptor_set(RendererFrontEnd::instance()->bindless_set)
+            ->vk_handle;
+    command_buffer->bind_descriptor_sets({0, 0}, vk_bindless_descriptor_set, 0);
+    command_buffer->bind_descriptor_sets({0, 0}, scene_set->vk_handle, 1);
+
+    RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
+    command_buffer->bind_index_buffer(
+        renderer_frontend->unified_index_buffer.handle, 0,
+        VK_INDEX_TYPE_UINT32);
+    command_buffer->bind_vertex_buffer(
+        renderer_frontend->unified_vertex_buffer.handle, 0, 1);
+
+    {
+      TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
+                  "Main Draws");
+      u32 objectID = 1;
+      for (u32 m = 0; m < packet->mesh_count; ++m) {
+        Mesh &mesh = packet->meshes[m];
+        for (u32 d = 0; d < mesh.draws.size; ++d) {
+          MeshDraw &draw = mesh.draws[d];
+
+          // TODO: Maybe add a pointer to pbr_materials in RenderPacket
+          PBRMaterial &material =
+              packet->game->scene.pbr_materials[draw.material_index];
+
+          struct PushConstant {
+            glm::mat4 model;
+            u32 albedo_texture_index;
+            u32 normal_texture_index;
+            u32 objectID;
+            u32 visibility_buffer;
+            f32 mouseX, mouseY;
+          };
+
+          PushConstant push_constant{};
+          push_constant.model = draw.transform.get_mat4();
+          push_constant.albedo_texture_index =
+              material.albedo_texture_handle.index;
+          push_constant.normal_texture_index =
+              material.normal_texture_handle.index;
+          push_constant.objectID = objectID;
+          push_constant.visibility_buffer =
+              RendererFrontEnd::instance()->visibility_buffer.index;
+          Platform::instance()->get_mouse_position(&push_constant.mouseX,
+                                                   &push_constant.mouseY);
+          push_constant.mouseX /= Platform::instance()->width;
+          push_constant.mouseY /= Platform::instance()->height;
+
+          VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+
+          command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                         sizeof(PushConstant), &push_constant);
+          command_buffer->draw_indexed(draw.primitive_count, 1,
+                                       draw.index_buffer_offset,
+                                       draw.vertex_buffer_offset, 0);
+          ++objectID;
+        }
+      }
+      // NOTE: Imgui needs to use the renderpass
+      command_buffer->pop_marker();
+    }
+  }
+  if (packet->freeze_camera) {
+    command_buffer->push_marker("Frustum Draw");
+    PipelineHandle pipeline_handle =
+        *RendererFrontEnd::instance()->pipelines_map.search(
+            {FRUSTUM_PIPELINE_NAME, strlen(FRUSTUM_PIPELINE_NAME)});
+    VulkanPipeline *pipeline = access_pipeline(pipeline_handle);
+
+    command_buffer->bind_pipeline(pipeline_handle);
+
+    struct PushConstant {
+      glm::mat4 view_proj;
+      glm::mat4 prev_inv_view_proj;
+    };
+
+    PushConstant push_constant{};
+    push_constant.view_proj =
+        packet->camera->get_projection() * packet->camera->get_view();
+    push_constant.prev_inv_view_proj = packet->inv_previous_view_proj;
+    VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+    command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                   sizeof(PushConstant), &push_constant);
+    command_buffer->draw(24, 1, 0, 0);
+    command_buffer->pop_marker();
+  }
 }
 
 void VulkanBackend::create_sync_objects(u32 swapchain_image_count) {
@@ -1012,9 +1147,9 @@ SamplerHandle VulkanBackend::create_sampler(SamplerCreation &creation) {
   sampler_info.addressModeV = creation.address_mode_v;
   sampler_info.addressModeW = creation.address_mode_w;
   sampler_info.mipmapMode = creation.mip_filter;
-  sampler_info.anisotropyEnable = VK_TRUE;
+  sampler_info.anisotropyEnable = VK_FALSE; // VK_TRUE;
   sampler_info.maxAnisotropy =
-      vk_physical_device_properties.limits.maxSamplerAnisotropy;
+      1.f; // vk_physical_device_properties.limits.maxSamplerAnisotropy;
   sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
   sampler_info.unnormalizedCoordinates = VK_FALSE;
   sampler_info.compareEnable = VK_FALSE;
@@ -1180,8 +1315,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   pipeline->vk_handle = VK_NULL_HANDLE;
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
 
   // Parse shaders
   StringBuffer temp_string_buffer{};
@@ -1290,7 +1425,7 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   // Input Assembly
   VkPipelineInputAssemblyStateCreateInfo input_assembly{
       VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  input_assembly.topology = to_vk_primitive_topology(creation.primitive_type);
   input_assembly.primitiveRestartEnable = VK_FALSE;
 
   // Viewport
@@ -1347,33 +1482,42 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
       creation.enable_depth_test ? VK_TRUE : VK_FALSE;
   depth_stencil.depthWriteEnable =
       creation.enable_depth_write ? VK_TRUE : VK_FALSE;
-  depth_stencil.depthCompareOp =
-      creation.enable_depth_write ? VK_COMPARE_OP_LESS : VK_COMPARE_OP_NEVER;
+  depth_stencil.depthCompareOp = to_vk_compare_op(creation.compare_op);
   depth_stencil.depthBoundsTestEnable = VK_FALSE;
   depth_stencil.minDepthBounds = 0.0f;
   depth_stencil.maxDepthBounds = 1.0f;
+  depth_stencil.stencilTestEnable = VK_FALSE;
 
   // Color Blend State
   // TODO: Make configurable
-  VkPipelineColorBlendAttachmentState color_blend_attachment{};
-  color_blend_attachment.colorWriteMask =
-      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-  color_blend_attachment.blendEnable = VK_TRUE;
-  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-  color_blend_attachment.dstColorBlendFactor =
-      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-  color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+  RenderPass *render_pass = access_render_pass(creation.render_pass);
+  Array<VkPipelineColorBlendAttachmentState> color_blend_attachments = {};
+  color_blend_attachments.init(stack_allocator,
+                               render_pass->num_colour_attachments,
+                               render_pass->num_colour_attachments);
+  for (u32 i = 0; i < render_pass->num_colour_attachments; ++i) {
+    color_blend_attachments[i].colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    color_blend_attachments[i].blendEnable =
+        (render_pass->colour_attachments[i].format == TextureFormat::R32_UINT)
+            ? VK_FALSE
+            : VK_TRUE; // TODO: Hard coded
+    color_blend_attachments[i].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    color_blend_attachments[i].dstColorBlendFactor =
+        VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    color_blend_attachments[i].colorBlendOp = VK_BLEND_OP_ADD;
+    color_blend_attachments[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    color_blend_attachments[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    color_blend_attachments[i].alphaBlendOp = VK_BLEND_OP_ADD;
+  }
 
   VkPipelineColorBlendStateCreateInfo color_blending{
       VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
   color_blending.logicOpEnable = VK_FALSE;
   color_blending.logicOp = VK_LOGIC_OP_CLEAR;
-  color_blending.attachmentCount = 1;
-  color_blending.pAttachments = &color_blend_attachment;
+  color_blending.attachmentCount = color_blend_attachments.size;
+  color_blending.pAttachments = color_blend_attachments.data;
   color_blending.blendConstants[0] = 0.0f; // Optional
   color_blending.blendConstants[1] = 0.0f; // Optional
   color_blending.blendConstants[2] = 0.0f; // Optional
@@ -1414,7 +1558,6 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
                                   vk_allocation_callbacks,
                                   &pipeline->vk_layout));
   // Dynamic Rendering
-  RenderPass *render_pass = access_render_pass(creation.render_pass);
   VkFormat color_formats[MAX_COLOR_ATTACHMENTS];
   for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
     color_formats[i] = to_vk_format(render_pass->colour_attachments[i].format);
@@ -1518,7 +1661,6 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
                     creation.name);
 
   FileService::change_directory(dir.path);
-  stack_allocator->free_marker(stack_marker);
   return handle;
 }
 
@@ -1596,238 +1738,28 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                          vk_physical_device);
 
-    do {
-      VkResult result_ =
-          vkAllocateMemory(vk_device, &alloc_info, vk_allocation_callbacks,
-                           &staging_device_memory);
-      {
-        if (result_ == VK_SUCCESS) {
-        } else {
-          LogService::GetCoreLogger()->critical(
-              "Assertion Failure: {}, message: "
-              "Error code: {}"
-              " , in file: {}, line: {}",
-              "result_ == VK_SUCCESS", (u32)result_,
-              "D:\\vulkan-renderer-"
-              "v1\\Engine\\Src\\Renderer\\Vulkan\\VulkanBackend.cpp",
-              1570);
-          __debugbreak();
-          ;
-          __debugbreak();
-          ;
-        }
-      };
-    } while (0);
+    VK_CHECK(vkAllocateMemory(vk_device, &alloc_info, vk_allocation_callbacks,
+                              &staging_device_memory));
     vkBindBufferMemory(vk_device, staging_buffer, staging_device_memory, 0);
 
     // TODO: Make more configurable for different image formats right now it
     // assumes a 4 component format
-
-    // vk_create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-    //                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-    //                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    //                  staging_buffer);
 
     void *data;
     vkMapMemory(vk_device, staging_device_memory, 0, buffer_size, 0, &data);
     memcpy(data, creation.initial_data, (size_t)buffer_size);
     vkUnmapMemory(vk_device, staging_device_memory);
 
-    VulkanCommandBuffer *transfer_command_buffer =
-        transfer_command_buffer_manager.get_command_buffer(
-            0, Platform::get_current_processor_id(), true);
-    transfer_command_buffer->copy_buffer_to_image(
-        handle, staging_buffer, buffer_size, vk_transfer_queue);
-
-    VkSemaphore transfer_finish_semaphore;
-    VkSemaphoreCreateInfo semaphore_info{};
-    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    vkCreateSemaphore(vk_device, &semaphore_info, nullptr,
-                      &transfer_finish_semaphore);
-
-    // Release Ownership to graphics queue
-    transfer_command_buffer->transition_image(
-        handle, image->current_layout, image->current_layout,
-        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        queue_family_indices.transfer_family_index,
-        queue_family_indices.graphics_family_index);
-
-    transfer_command_buffer->end();
-
-    {
-      VkCommandBufferSubmitInfo command_submit_info{
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-      command_submit_info.commandBuffer = transfer_command_buffer->vk_handle;
-
-      VkSemaphoreSubmitInfo semaphore_submit_info{
-          VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-      semaphore_submit_info.semaphore = transfer_finish_semaphore;
-      semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-
-      VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-      submit_info.commandBufferInfoCount = 1;
-      submit_info.pCommandBufferInfos = &command_submit_info;
-      submit_info.signalSemaphoreInfoCount = 1;
-      submit_info.pSignalSemaphoreInfos = &semaphore_submit_info;
-      vkQueueSubmit2(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
-    }
-
-    u64 wait_value = frame_number < max_frames_in_flight ? 0 : frame_number;
-    VkSemaphoreWaitInfo wait_info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
-    wait_info.semaphoreCount = 1;
-    wait_info.pSemaphores = &vk_timeline_graphics_semaphore;
-    wait_info.pValues = &wait_value;
-    vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
-
-    // TODO: Right now I'm just using the second thread only to avoid getting
-    // the main command buffers when they are still recording
+    vkQueueWaitIdle(vk_graphics_queue);
     VulkanCommandBuffer *graphics_command_buffer =
         command_buffer_manager.get_command_buffer(
-            frame_number % max_frames_in_flight, 1, true);
+            frame_number % max_frames_in_flight, 1, false);
+    graphics_command_buffer->copy_buffer_to_image(
+        handle, staging_buffer, buffer_size, vk_graphics_queue,
+        creation.mip_level_count > 1);
 
-    // Generate mipmaps
-    if (creation.mip_level_count > 1) {
-      // Check if image format supports linear blitting
-      VkFormatProperties format_properties;
-      vkGetPhysicalDeviceFormatProperties(vk_physical_device,
-                                          to_vk_format(creation.format),
-                                          &format_properties);
-
-      HASSERT_MSG((format_properties.optimalTilingFeatures &
-                   VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT),
-                  "Image format does not support linear filtering");
-      // Acquire ownerhip to graphics queue
-      graphics_command_buffer->transition_image(
-          handle, image->current_layout, image->current_layout,
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-          queue_family_indices.transfer_family_index,
-          queue_family_indices.graphics_family_index);
-
-      VkImageMemoryBarrier2 image_barrier{
-          VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-      image_barrier.image = image->vk_handle;
-      image_barrier.subresourceRange.aspectMask =
-          has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                              : VK_IMAGE_ASPECT_COLOR_BIT;
-      image_barrier.subresourceRange.levelCount = 1;
-      image_barrier.subresourceRange.baseArrayLayer = 0;
-      image_barrier.subresourceRange.layerCount = 1;
-      // Ownership should have been transfered to the graphics queue by now
-      image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      // Initlal stage src and dest mask
-      image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-      image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-
-      i32 mip_width = creation.width;
-      i32 mip_height = creation.height;
-
-      for (u32 i = 1; i < creation.mip_level_count; ++i) {
-
-        // Transition src image miplevel to transfer src optmimal
-        image_barrier.subresourceRange.baseMipLevel = i - 1;
-        image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        image_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-
-        graphics_command_buffer->pipeline_barrier(&image_barrier, 1);
-
-        // TODO: Move to VulkanCommandBuffer or make a util function
-        VkImageBlit2 blit_region{VK_STRUCTURE_TYPE_IMAGE_BLIT_2};
-        blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit_region.srcSubresource.mipLevel = i - 1;
-        blit_region.srcSubresource.baseArrayLayer = 0;
-        blit_region.srcSubresource.layerCount = 1;
-        blit_region.srcOffsets[0] = {0, 0, 0};
-        blit_region.srcOffsets[1] = {mip_width, mip_height, 1};
-
-        blit_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit_region.dstSubresource.mipLevel = i;
-        blit_region.dstSubresource.baseArrayLayer = 0;
-        blit_region.dstSubresource.layerCount = 1;
-        blit_region.dstOffsets[0] = {0, 0, 0};
-        blit_region.dstOffsets[1] = {mip_width > 1 ? mip_width / 2 : 1,
-                                     mip_height > 1 ? mip_height / 2 : 1, 1};
-
-        VkBlitImageInfo2 blit2{VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2};
-        blit2.srcImage = image->vk_handle;
-        blit2.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        blit2.dstImage = image->vk_handle;
-        blit2.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        blit2.regionCount = 1;
-        blit2.pRegions = &blit_region;
-        blit2.filter = VK_FILTER_LINEAR;
-
-        vkCmdBlitImage2(graphics_command_buffer->vk_handle, &blit2);
-
-        // Transition src image mip to shader read layout
-        image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        image_barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-        image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-        image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-
-        graphics_command_buffer->pipeline_barrier(&image_barrier, 1);
-
-        if (mip_width > 1)
-          mip_width /= 2;
-        if (mip_height > 1)
-          mip_height /= 2;
-
-        // Rest of the mips use these mask
-        image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-        image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-      }
-
-      // Transition the last mip level to shader read layout
-      image_barrier.subresourceRange.baseMipLevel =
-          creation.mip_level_count - 1;
-      image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-      image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-      image_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-      image_barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-      image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-      image_barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-
-      graphics_command_buffer->pipeline_barrier(&image_barrier, 1);
-    } else {
-      // Acquire ownerhip to graphics queue
-      graphics_command_buffer->transition_image(
-          handle, image->current_layout,
-          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-          VK_PIPELINE_STAGE_2_COPY_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-          queue_family_indices.transfer_family_index,
-          queue_family_indices.graphics_family_index);
-    }
-
-    graphics_command_buffer->end();
-
-    {
-      VkCommandBufferSubmitInfo command_submit_info{
-          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-      command_submit_info.commandBuffer = graphics_command_buffer->vk_handle;
-
-      VkSemaphoreSubmitInfo semaphore_submit_info{
-          VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-      semaphore_submit_info.semaphore = transfer_finish_semaphore;
-      semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-
-      VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-      submit_info.commandBufferInfoCount = 1;
-      submit_info.pCommandBufferInfos = &command_submit_info;
-      submit_info.waitSemaphoreInfoCount = 1;
-      submit_info.pWaitSemaphoreInfos = &semaphore_submit_info;
-      vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
-    }
-    vkQueueWaitIdle(vk_transfer_queue);
     vkQueueWaitIdle(vk_graphics_queue);
 
-    vkDestroySemaphore(vk_device, transfer_finish_semaphore,
-                       vk_allocation_callbacks);
-
-    transfer_command_buffer->reset();
     graphics_command_buffer->reset();
 
     vkDestroyBuffer(vk_device, staging_buffer, vk_allocation_callbacks);
@@ -1869,7 +1801,8 @@ TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
   view->image = creation.alias_image;
   ++vk_image->views_count;
 
-  bindless_textures_to_update.push(handle);
+  if (creation.usage & TextureUsage::Sampled)
+    bindless_textures_to_update.push(handle);
 
   view->name = creation.name;
 
@@ -2334,6 +2267,9 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
       vk_device, &pool_info, vk_allocation_callbacks, &vk_descriptor_pool));
 
   // Bindless
+  // TODO: Either use push descriptors and get rid of descriptor pools or also
+  // include other types of descriptor types for textures besides
+  // VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
   VkDescriptorPoolSize bindless_poolsize{};
   bindless_poolsize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   bindless_poolsize.descriptorCount = MAX_TEXTURES;
@@ -2455,8 +2391,6 @@ void VulkanBackend::upload_buffer_data(void *data, BufferHandle buffer_handle,
     memcpy(staging_buffer.mapped_data, data, (size_t)size);
     vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
 
-    VmaAllocationInfo alloc_info;
-    vmaGetAllocationInfo(vma_allocator, buffer->vma_allocation, &alloc_info);
     VulkanCommandBuffer *command_buffer =
         transfer_command_buffer_manager.get_command_buffer(0, 0, false);
     command_buffer->copy_buffer_to_buffer(buffer->vk_handle, offset,
@@ -2477,6 +2411,34 @@ void VulkanBackend::upload_buffer_data(void *data, BufferHandle buffer_handle,
       vmaUnmapMemory(vma_allocator, buffer->vma_allocation);
     }
   }
+}
+
+void VulkanBackend::upload_to_image(void *data, TextureHandle dst_image) {
+  vkQueueWaitIdle(vk_graphics_queue);
+
+  VulkanImage *image = access_image(dst_image);
+
+  VkDeviceSize size = image->vk_extents.width * image->vk_extents.height * 4;
+
+  VulkanBuffer staging_buffer{};
+  vk_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   staging_buffer);
+
+  vmaMapMemory(vma_allocator, staging_buffer.vma_allocation,
+               &staging_buffer.mapped_data);
+  memcpy(staging_buffer.mapped_data, data, (size_t)size);
+  vmaUnmapMemory(vma_allocator, staging_buffer.vma_allocation);
+
+  VulkanCommandBuffer *command_buffer =
+      command_buffer_manager.get_command_buffer(0, 0, false);
+  command_buffer->copy_buffer_to_image(dst_image, staging_buffer.vk_handle,
+                                       size, vk_graphics_queue,
+                                       image->mip_count > 1);
+
+  vmaDestroyBuffer(vma_allocator, staging_buffer.vk_handle,
+                   staging_buffer.vma_allocation);
 }
 
 void VulkanBackend::set_resource_name(VkObjectType type, u64 handle,
@@ -2526,8 +2488,8 @@ select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
     return false;
   }
 
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-  size_t stack_marker = stack_allocator->get_marker();
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
 
   Array<VkPhysicalDevice> physical_devices{};
   physical_devices.init(stack_allocator, physical_device_count,
@@ -2609,7 +2571,6 @@ select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
       break;
     }
   }
-  stack_allocator->free_marker(stack_marker);
   return found_suitable_device;
 }
 
@@ -2619,7 +2580,7 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
                                     VkExtent2D &swapchain_extents) {
   ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
   StackAllocator *stack_allocator = scope_allocator.allocator;
-  // size_t stack_marker = stack_allocator->get_marker();
+
   VkSurfaceCapabilitiesKHR capabilities{};
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface,
                                             &capabilities);

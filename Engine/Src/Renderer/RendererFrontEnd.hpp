@@ -11,6 +11,7 @@
 #define PBR_PIPELINE_NAME "Pbr_Pipeline"
 #define DEPTH_PREPASS_PIPELINE_NAME "Depth_Prepass_Pipeline"
 #define IMGUI_PIPELINE_NAME "ImGui_Pipeline"
+#define FRUSTUM_PIPELINE_NAME "Frustum_Pipeline"
 
 namespace Helix {
 
@@ -64,6 +65,7 @@ struct RendererFrontEnd : public Service {
 
   void upload_buffer_data(void *data, BufferHandle dst_buffer, u64 size,
                           u64 offset);
+  void upload_to_image(void *data, TextureHandle dst_image);
   void update_draw_commands(Scene *scene);
   void print_gpu_stats();
 
@@ -76,6 +78,7 @@ struct RendererFrontEnd : public Service {
 
   TextureHandle default_albedo_texture;
   TextureHandle default_normal_texture;
+  TextureHandle visibility_buffer;
 
   BindingSetLayoutHandle scene_set_layout{};
   BindingSetHandle scene_sets[max_frames_in_flight];
@@ -89,6 +92,7 @@ struct RendererFrontEnd : public Service {
   UnifiedBuffer<u32> unified_index_buffer{};
   UnifiedBuffer<glm::mat4> unified_transform_buffer{};
   UnifiedBuffer<GPUPBRMaterial> unified_material_buffer{};
+  UnifiedBuffer<glm::vec4> unified_bounding_sphere_buffer{};
   // Caches the handles of the created pipelines
   HashMap<StringView, PipelineHandle> pipelines_map{};
 };
