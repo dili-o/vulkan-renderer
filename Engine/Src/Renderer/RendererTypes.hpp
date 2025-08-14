@@ -49,6 +49,16 @@ struct GPUPBRMaterial {
   u32 occlusion_texture_index;
 };
 
+struct GPUIndexedDrawCommand {
+  u32 index_count;
+  u32 instance_count;
+  u32 first_index;
+  u32 vertex_offset;
+  u32 first_instance;
+
+  u32 mesh_id;
+};
+
 struct Transform {
   glm::vec3 position{0.f};
   glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -83,11 +93,18 @@ template <typename T> struct UnifiedBuffer {
 };
 
 struct MeshDraw {
-  u64 vertex_buffer_offset;
-  u64 index_buffer_offset;
-  u32 material_index;
   u32 primitive_count;
+  u32 index_buffer_offset;
+  u32 vertex_buffer_offset;
+
+  u32 material_index;
   Transform transform;
+};
+
+struct GPUMeshDraw {
+  u32 primitive_count;
+  u32 index_buffer_offset;
+  u32 vertex_buffer_offset;
 };
 
 struct Mesh {
@@ -101,6 +118,8 @@ struct RenderPacket {
   u32 current_frame;
   Camera *camera{nullptr};
   glm::mat4 inv_previous_view_proj;
+  glm::mat4 previous_view;
+  glm::mat4 previous_proj;
   bool freeze_camera = false;
   BufferHandle scene_data_buffer;
   Mesh *meshes{nullptr};
@@ -124,6 +143,8 @@ struct UniformBufferObject {
   glm::mat4 view;
   glm::mat4 proj;
   glm::mat4 view_proj;
+  glm::mat4 prev_view_matrix;
+  glm::vec4 view_frustum_planes[6];
 };
 
 } // namespace Helix

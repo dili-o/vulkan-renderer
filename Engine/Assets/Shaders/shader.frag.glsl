@@ -7,18 +7,23 @@
 
 layout(location = 0) in vec3 inFragPos;
 layout(location = 1) in vec2 inTexCoords;
-layout(location = 2) in mat3 inTBN;
+layout(location = 2) flat in uint inAlbedoTexture;
+layout(location = 3) flat in uint inNormalTexture;
+layout(location = 4) flat in uint inMeshID;
+layout(location = 5) in mat3 inTBN;
 
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant) uniform constants
 {
-  mat4 model; // 64B
-  uint albedoIndex; // 4B
-  uint normalIndex; // 4B
-  uint objectID;
+  Models models;
+  IndexedDrawCommands draw_commands;
+  PBRMaterials pbr_materials;
+  
   uint visibilityBufferIndex;
-  float mouseX, mouseY;
+  float mouseX;
+  float mouseY;
+  uint padding_;
 };
 
 uint hash(uint a)
@@ -35,36 +40,39 @@ uint hash(uint a)
 #define RANDOM 0
 
 void main() {
+  uint currentObjectID = texture(globalSamplersU32[nonuniformEXT(visibilityBufferIndex)], vec2(mouseX, mouseY)).r;
+
+  if(inMeshID == currentObjectID){
+    outColor = vec4(1.f);
+    return;
+  }
+
 #if RANDOM
   uint mhash = hash(uint(gl_PrimitiveID));
   vec3 color = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
   color *= 1.25f;
   outColor = vec4(color, 1.0f) ;
 #else
-  uint currentObjectID = texture(globalSamplersU32[nonuniformEXT(visibilityBufferIndex)], vec2(mouseX, mouseY)).r;
 
-  if(objectID == currentObjectID){
-    outColor = vec4(1.f);
-    return;
-  }
-
-  vec4 albedo = texture(globalSamplers[nonuniformEXT(albedoIndex)], inTexCoords); 
-  // ambient
+  vec4 albedo = texture(globalSamplers[nonuniformEXT(inAlbedoTexture)], inTexCoords); 
   outColor = albedo;
-  vec3 ambient = 0.25f * albedo.rgb;
-  
-  // diffuse 
-  vec3 normal = texture(globalSamplers[nonuniformEXT(normalIndex)], inTexCoords).rgb;
-  normal = normal * 2.f - 1.f;
-  normal = normalize(inTBN * normal);
-
-  vec3 lightDir = normalize(-vec3(1.f, -1.f, 0.f));  
-  float diff = max(dot(normal, lightDir), 0.0);
-  vec3 diffuse = diff * albedo.rgb;
-
-  vec3 result = ambient + diffuse;
-
-  // outColor = vec4(result, albedo.a);
-  outColor = albedo;
+  return;
+  // 
+  // // ambient
+  // vec3 ambient = 0.25f * albedo.rgb;
+  // 
+  // // diffuse 
+  // vec3 normal = texture(globalSamplers[nonuniformEXT(normalIndex)], inTexCoords).rgb;
+  // normal = normal * 2.f - 1.f;
+  // normal = normalize(inTBN * normal);
+  //
+  // vec3 lightDir = normalize(-vec3(1.f, -1.f, 0.f));  
+  // float diff = max(dot(normal, lightDir), 0.0);
+  // vec3 diffuse = diff * albedo.rgb;
+  //
+  // vec3 result = ambient + diffuse;
+  //
+  // // outColor = vec4(result, albedo.a);
+  // outColor = albedo;
 #endif // RANDOM
 }

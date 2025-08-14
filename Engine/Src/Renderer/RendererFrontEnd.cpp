@@ -57,8 +57,9 @@ void RendererFrontEnd::init(void *_config) {
 
   BindingSetLayoutCreation layout_creation{};
   layout_creation.name = "SceneGlobalSetLayout";
-  layout_creation.add_binding(0, 1, ShaderStage::Vertex,
-                              BindingType::UniformBuffer);
+  layout_creation.add_binding(
+      0, 1, (ShaderStage::Enum)(ShaderStage::Vertex | ShaderStage::Compute),
+      BindingType::UniformBuffer);
   scene_set_layout = create_binding_set_layout(layout_creation);
 
   layout_creation.reset();
@@ -119,19 +120,46 @@ void RendererFrontEnd::init(void *_config) {
 
     creation.usage_flags = (BufferUsage::Enum)(BufferUsage::TransferDest |
                                                BufferUsage::ShaderAddress);
-    creation.size = sizeof(glm::mat4) * max_draw_count;
-    creation.name = "UnifiedTransformBuffer";
-    unified_transform_buffer.handle = create_buffer(creation);
-    unified_transform_buffer.current_size = 0;
+
+    creation.size = sizeof(glm::vec4) * max_draw_count;
+    creation.name = "UnifiedBoundingSpheresBuffer";
+    unified_bounding_spheres_buffer.handle = create_buffer(creation);
+    unified_bounding_spheres_buffer.current_size = 0;
+
+    creation.size = sizeof(GPUPBRMaterial) * max_draw_count;
+    creation.name = "UnifiedPBRMaterialsBuffer";
+    unified_pbr_material_buffer.handle = create_buffer(creation);
+    unified_pbr_material_buffer.current_size = 0;
+
+    creation.size = sizeof(GPUMeshDraw) * max_draw_count;
+    creation.name = "UnifiedMeshDrawsBuffer";
+    unified_mesh_draws_buffer.handle = create_buffer(creation);
+    unified_mesh_draws_buffer.current_size = 0;
+
+    creation.usage_flags = (BufferUsage::Enum)(BufferUsage::TransferDest |
+                                               BufferUsage::ShaderAddress |
+                                               BufferUsage::IndexedIndirect);
+    creation.size = sizeof(GPUIndexedDrawCommand) * max_draw_count;
+    creation.name = "UnifiedIndexedDrawCommandsBuffer";
+    unified_indirect_draws_buffer.handle = create_buffer(creation);
+    unified_indirect_draws_buffer.current_size = 0;
 
     creation.usage_flags = (BufferUsage::Enum)(BufferUsage::TransferDest |
                                                BufferUsage::ShaderAddress);
-    creation.size = sizeof(GPUPBRMaterial) * max_draw_count;
-    creation.name = "UnifiedMaterialBuffer";
-    unified_material_buffer.handle = create_buffer(creation);
-    unified_material_buffer.current_size = 0;
+    creation.memory_state_flags = MemoryState::Mapped;
+    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
 
-    // TODO: unified_bounding_sphere_buffer
+    creation.size = sizeof(glm::mat4) * max_draw_count / 4;
+    creation.name = "UnifiedModelsBuffer";
+    unified_models_buffer.handle = create_buffer(creation);
+    unified_models_buffer.current_size = 0;
+
+    creation.usage_flags = (BufferUsage::Enum)(BufferUsage::TransferDest |
+                                               BufferUsage::ShaderAddress |
+                                               BufferUsage::IndexedIndirect);
+    creation.size = sizeof(u32);
+    creation.name = "CountBuffer";
+    count_buffer = create_buffer(creation);
   }
   // Depth prepass
   RenderPassCreation pass_creation{};
@@ -161,12 +189,13 @@ void RendererFrontEnd::init(void *_config) {
 
       PipelineHandle pbr_pipeline = create_pipeline(creation);
 
+      // TODO: Maybe make this function get automatically called in the
+      // create_pipeline
       set_pipeline_binding_set(pbr_pipeline, bindless_set, 0);
       set_pipeline_binding_set(pbr_pipeline, scene_sets[0], 1);
     }
 
     {
-      // Create
       PipelineCreation creation;
       creation.name = FRUSTUM_PIPELINE_NAME;
       creation.shader_create_infos = (ShaderCreateInfo *)halloca(
@@ -183,6 +212,23 @@ void RendererFrontEnd::init(void *_config) {
       creation.primitive_type = PrimitiveType::Line;
       creation.render_pass = backend->get_swapchain_pass();
       create_pipeline(creation);
+    }
+
+    {
+      PipelineCreation creation;
+      creation.name = CULLING_PIPELINE_NAME;
+      creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+          sizeof(ShaderCreateInfo), stack_allocator);
+      creation.shader_create_infos[0] = {"Culling.comp", ShaderStage::Compute};
+      creation.shader_count = 1;
+      creation.set_layout_count = 1;
+      creation.set_layouts[0] = scene_set_layout;
+      creation.pipeline_type = PipelineType::Compute;
+      PipelineHandle culling_pipeline = create_pipeline(creation);
+
+      // TODO: Maybe make this function get automatically called in the
+      // create_pipeline
+      set_pipeline_binding_set(culling_pipeline, scene_set_layout, 0);
     }
 
     {
@@ -205,6 +251,8 @@ void RendererFrontEnd::init(void *_config) {
       creation.render_pass = depth_prepass;
 
       PipelineHandle depth_prepass_pipeline = create_pipeline(creation);
+      // TODO: Maybe make this function get automatically called in the
+      // create_pipeline
       set_pipeline_binding_set(depth_prepass_pipeline, scene_sets[0], 0);
     }
   }
@@ -281,8 +329,12 @@ void RendererFrontEnd::shutdown() {
 
   destroy_buffer(unified_vertex_buffer.handle);
   destroy_buffer(unified_index_buffer.handle);
-  destroy_buffer(unified_material_buffer.handle);
-  destroy_buffer(unified_transform_buffer.handle);
+  destroy_buffer(unified_models_buffer.handle);
+  destroy_buffer(unified_bounding_spheres_buffer.handle);
+  destroy_buffer(unified_pbr_material_buffer.handle);
+  destroy_buffer(unified_mesh_draws_buffer.handle);
+  destroy_buffer(unified_indirect_draws_buffer.handle);
+  destroy_buffer(count_buffer);
 
   destroy_render_pass(depth_prepass);
 

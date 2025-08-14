@@ -29,13 +29,17 @@
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-#define VULKAN_EXTRA_VALIDATION
+// #define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 #define SHADER_DEBUG_SYMBOLS
 
 #define MIN_BUFFER_SIZE 4
-#define MAX_DRAW_COMMANDS 1000
+
+glm::vec4 normalize_plane(glm::vec4 plane) {
+  glm::vec3 normal(plane.x, plane.y, plane.z);
+  return (plane / glm::length(normal));
+}
 
 namespace Helix {
 
@@ -296,6 +300,10 @@ bool VulkanBackend::init(void *_config) {
   device_create_info.enabledExtensionCount = device_extensions.size;
   device_create_info.ppEnabledExtensionNames = device_extensions.data;
 
+  // TODO: Check if all these features are enabled
+  VkPhysicalDeviceVulkan11Features features11 = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+  features11.shaderDrawParameters = VK_TRUE;
   // Enable Bindless descriptors, Buffer Device Address, Timeline Semaphore
   VkPhysicalDeviceVulkan12Features features12 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -305,7 +313,9 @@ bool VulkanBackend::init(void *_config) {
   features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
   features12.descriptorBindingPartiallyBound = VK_TRUE;
   features12.timelineSemaphore = VK_TRUE;
+  features12.drawIndirectCount = VK_TRUE;
   // features12.descriptorBindingVariableDescriptorCount   = VK_TRUE;
+  features12.pNext = &features11;
 
   // Enable Dynamic Rendering and Synchronization 2
   VkPhysicalDeviceVulkan13Features features13 = {
@@ -881,6 +891,152 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                           RenderPacket *packet,
                                           u32 current_frame) {
   TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle, "Graphics CB");
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
+
+  u32 total_draw_count = 0;
+  // Culling Pass
+  if (packet->mesh_count) {
+    command_buffer->push_marker("Culling Pass");
+    struct PushConstant {
+      VkDeviceAddress bounding_volumes_buffer_address;
+      VkDeviceAddress models_buffer_address;
+      VkDeviceAddress draw_commands_buffer_address;
+      VkDeviceAddress mesh_draws_buffer_address;
+      VkDeviceAddress count_buffer_address;
+
+      u32 total_draw_count;
+      bool freeze_camera;
+    };
+
+    RendererFrontEnd *frontend = RendererFrontEnd::instance();
+    PushConstant push_constant{};
+
+    push_constant.bounding_volumes_buffer_address =
+        access_buffer(frontend->unified_bounding_spheres_buffer.handle)
+            ->device_address;
+    push_constant.models_buffer_address =
+        access_buffer(frontend->unified_models_buffer.handle)->device_address;
+    push_constant.draw_commands_buffer_address =
+        access_buffer(frontend->unified_indirect_draws_buffer.handle)
+            ->device_address;
+    push_constant.mesh_draws_buffer_address =
+        access_buffer(frontend->unified_mesh_draws_buffer.handle)
+            ->device_address;
+    push_constant.count_buffer_address =
+        access_buffer(frontend->count_buffer)->device_address;
+    push_constant.freeze_camera = packet->freeze_camera;
+    push_constant.total_draw_count = 0;
+
+    // Update models buffer
+    Array<glm::mat4> models{};
+    models.init(stack_allocator, 4);
+
+    for (u32 m = 0; m < packet->mesh_count; ++m) {
+      Mesh &mesh = packet->meshes[m];
+      for (u32 d = 0; d < mesh.draws.size; ++d) {
+        MeshDraw &draw = mesh.draws[d];
+        models.push(draw.transform.get_mat4());
+        ++total_draw_count;
+      }
+    }
+    push_constant.total_draw_count = total_draw_count;
+
+    // Update the models buffer
+    upload_buffer_data(models.data, frontend->unified_models_buffer.handle,
+                       frontend->unified_models_buffer.size_in_bytes(), 0);
+    frontend->unified_models_buffer.current_size = models.size;
+
+    // Wait for any reads or write to the draw_commands buffer in the previous
+    // frame
+    VkBufferMemoryBarrier2 buffer_barrier{
+        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+    buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
+                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    buffer_barrier.srcAccessMask =
+        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    buffer_barrier.buffer =
+        access_buffer(frontend->unified_indirect_draws_buffer.handle)
+            ->vk_handle;
+    buffer_barrier.offset = 0;
+    frontend->unified_indirect_draws_buffer.current_size = total_draw_count;
+    buffer_barrier.size =
+        frontend->unified_indirect_draws_buffer.size_in_bytes();
+
+    VkDependencyInfo dep_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dep_info.bufferMemoryBarrierCount = 1,
+    dep_info.pBufferMemoryBarriers = &buffer_barrier;
+
+    vkCmdPipelineBarrier2(command_buffer->vk_handle, &dep_info);
+
+    // Wait for any reads or write to the count buffer in the previous
+    // frame
+    buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
+                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    buffer_barrier.srcAccessMask =
+        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    buffer_barrier.buffer = access_buffer(frontend->count_buffer)->vk_handle;
+    buffer_barrier.offset = 0;
+    buffer_barrier.size = sizeof(u32);
+
+    vkCmdPipelineBarrier2(command_buffer->vk_handle, &dep_info);
+
+    // Zero the buffer
+    vkCmdFillBuffer(command_buffer->vk_handle,
+                    access_buffer(frontend->count_buffer)->vk_handle, 0,
+                    VK_WHOLE_SIZE, 0);
+
+    // Wait for the vkCmdFillBuffer
+    buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    buffer_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+
+    vkCmdPipelineBarrier2(command_buffer->vk_handle, &dep_info);
+
+    PipelineHandle pipeline_handle = *frontend->pipelines_map.search(
+        {CULLING_PIPELINE_NAME, strlen(CULLING_PIPELINE_NAME)});
+    command_buffer->bind_pipeline(pipeline_handle);
+
+    VulkanDescriptorSet *scene_set = access_descriptor_set(
+        RendererFrontEnd::instance()->scene_sets[current_frame]);
+    command_buffer->bind_descriptor_sets(pipeline_handle, scene_set->vk_handle,
+                                         0);
+
+    VulkanPipeline *culling_pipeline = access_pipeline(pipeline_handle);
+    command_buffer->push_constants(culling_pipeline->vk_layout,
+                                   VK_SHADER_STAGE_ALL, 0, sizeof(PushConstant),
+                                   &push_constant);
+
+    u32 group_x = std::ceil(push_constant.total_draw_count / 32.f);
+    command_buffer->dispatch(group_x, 1, 1);
+
+    // Wait for the compute writes before Using in Draw Indirect
+    buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    buffer_barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    buffer_barrier.buffer = access_buffer(frontend->count_buffer)->vk_handle;
+    buffer_barrier.offset = 0;
+    buffer_barrier.size = sizeof(u32);
+
+    vkCmdPipelineBarrier2(command_buffer->vk_handle, &dep_info);
+
+    buffer_barrier.buffer =
+        access_buffer(frontend->unified_indirect_draws_buffer.handle)
+            ->vk_handle;
+    buffer_barrier.offset = 0;
+    buffer_barrier.size =
+        frontend->unified_indirect_draws_buffer.size_in_bytes();
+
+    vkCmdPipelineBarrier2(command_buffer->vk_handle, &dep_info);
+
+    command_buffer->pop_marker();
+  }
 
   VulkanDescriptorSet *scene_set = access_descriptor_set(
       RendererFrontEnd::instance()->scene_sets[current_frame]);
@@ -907,7 +1063,6 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
   // Transition Depth image
   VulkanImageView *depth_view = image_views.obtain(depth_images[current_frame]);
-  VulkanImage *depth_image = images.obtain(depth_view->image);
   command_buffer->transition_image(
       depth_view->image, VK_IMAGE_LAYOUT_UNDEFINED,
       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
@@ -932,51 +1087,51 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
                                     depth_prepass_color_attachments,
                                     depth_images[current_frame]);
 
-    PipelineHandle depth_prepass_pipeline_handle =
-        *RendererFrontEnd::instance()->pipelines_map.search(
-            {DEPTH_PREPASS_PIPELINE_NAME, strlen(DEPTH_PREPASS_PIPELINE_NAME)});
-    VulkanPipeline *pipeline = access_pipeline(depth_prepass_pipeline_handle);
+    if (packet->mesh_count) {
+      PipelineHandle depth_prepass_pipeline_handle =
+          *RendererFrontEnd::instance()->pipelines_map.search(
+              {DEPTH_PREPASS_PIPELINE_NAME,
+               strlen(DEPTH_PREPASS_PIPELINE_NAME)});
+      VulkanPipeline *pipeline = access_pipeline(depth_prepass_pipeline_handle);
 
-    command_buffer->bind_pipeline(depth_prepass_pipeline_handle);
+      command_buffer->bind_pipeline(depth_prepass_pipeline_handle);
 
-    command_buffer->bind_descriptor_sets(depth_prepass_pipeline_handle,
-                                         scene_set->vk_handle, 0);
+      command_buffer->bind_descriptor_sets(depth_prepass_pipeline_handle,
+                                           scene_set->vk_handle, 0);
 
-    RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
-    command_buffer->bind_index_buffer(
-        renderer_frontend->unified_index_buffer.handle, 0,
-        VK_INDEX_TYPE_UINT32);
-    command_buffer->bind_vertex_buffer(
-        renderer_frontend->unified_vertex_buffer.handle, 0, 1);
+      RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
+      command_buffer->bind_index_buffer(
+          renderer_frontend->unified_index_buffer.handle, 0,
+          VK_INDEX_TYPE_UINT32);
+      command_buffer->bind_vertex_buffer(
+          renderer_frontend->unified_vertex_buffer.handle, 0, 1);
 
-    {
-      TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
-                  "Main Draws");
-      u32 objectID = 1;
-      for (u32 m = 0; m < packet->mesh_count; ++m) {
+      struct PushConstant {
+        VkDeviceSize models_buffer_address;
+        VkDeviceSize draw_commands_buffer_address;
+      };
+      VulkanBuffer *models_buffer =
+          access_buffer(renderer_frontend->unified_models_buffer.handle);
+      VulkanBuffer *indirect_draw_buffer = access_buffer(
+          renderer_frontend->unified_indirect_draws_buffer.handle);
+      VulkanBuffer *count_buffer =
+          access_buffer(renderer_frontend->count_buffer);
 
-        Mesh &mesh = packet->meshes[m];
-        for (u32 d = 0; d < mesh.draws.size; ++d) {
-          MeshDraw &draw = mesh.draws[d];
+      PushConstant push_constant{};
+      push_constant.models_buffer_address = models_buffer->device_address;
+      push_constant.draw_commands_buffer_address =
+          indirect_draw_buffer->device_address;
 
-          struct PushConstant {
-            glm::mat4 model;
-            u32 objectID;
-          };
+      VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+      command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                     sizeof(PushConstant), &push_constant);
 
-          PushConstant push_constant{};
-          push_constant.model = draw.transform.get_mat4();
-          push_constant.objectID = objectID;
-
-          VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
-
-          command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
-                                         sizeof(PushConstant), &push_constant);
-          command_buffer->draw_indexed(draw.primitive_count, 1,
-                                       draw.index_buffer_offset,
-                                       draw.vertex_buffer_offset, 0);
-          ++objectID;
-        }
+      {
+        TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
+                    "Depth pre Draws");
+        command_buffer->draw_indexed_indirect_count(
+            indirect_draw_buffer->vk_handle, 0, count_buffer->vk_handle, 0,
+            total_draw_count, sizeof(GPUIndexedDrawCommand));
       }
     }
     command_buffer->end_current_renderpass();
@@ -995,7 +1150,6 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     PipelineHandle pbr_pipeline_handle =
         *RendererFrontEnd::instance()->pipelines_map.search(
             {PBR_PIPELINE_NAME, strlen(PBR_PIPELINE_NAME)});
-    VulkanPipeline *pipeline = access_pipeline(pbr_pipeline_handle);
 
     command_buffer->bind_pipeline(pbr_pipeline_handle);
 
@@ -1012,55 +1166,52 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     command_buffer->bind_vertex_buffer(
         renderer_frontend->unified_vertex_buffer.handle, 0, 1);
 
-    {
+    if (packet->mesh_count) {
       TracyVkZone(graphics_queue_tracer, command_buffer->vk_handle,
                   "Main Draws");
-      u32 objectID = 1;
-      for (u32 m = 0; m < packet->mesh_count; ++m) {
-        Mesh &mesh = packet->meshes[m];
-        for (u32 d = 0; d < mesh.draws.size; ++d) {
-          MeshDraw &draw = mesh.draws[d];
+      struct PushConstant {
+        VkDeviceSize models_buffer_address;
+        VkDeviceSize draw_commands_buffer_address;
+        VkDeviceSize pbr_materials_buffer_address;
 
-          // TODO: Maybe add a pointer to pbr_materials in RenderPacket
-          PBRMaterial &material =
-              packet->game->scene.pbr_materials[draw.material_index];
+        u32 visibility_buffer_index;
+        f32 mouse_x;
+        f32 mouse_y;
+        u32 padding_;
+      };
 
-          struct PushConstant {
-            glm::mat4 model;
-            u32 albedo_texture_index;
-            u32 normal_texture_index;
-            u32 objectID;
-            u32 visibility_buffer;
-            f32 mouseX, mouseY;
-          };
+      RendererFrontEnd *frontend = RendererFrontEnd::instance();
+      PushConstant push_constant{};
+      push_constant.models_buffer_address =
+          access_buffer(frontend->unified_models_buffer.handle)->device_address;
+      push_constant.draw_commands_buffer_address =
+          access_buffer(frontend->unified_indirect_draws_buffer.handle)
+              ->device_address;
+      push_constant.pbr_materials_buffer_address =
+          access_buffer(frontend->unified_pbr_material_buffer.handle)
+              ->device_address;
+      push_constant.visibility_buffer_index =
+          RendererFrontEnd::instance()->visibility_buffer.index;
+      Platform::instance()->get_mouse_position(&push_constant.mouse_x,
+                                               &push_constant.mouse_y);
+      push_constant.mouse_x /= Platform::instance()->width;
+      push_constant.mouse_y /= Platform::instance()->height;
 
-          PushConstant push_constant{};
-          push_constant.model = draw.transform.get_mat4();
-          push_constant.albedo_texture_index =
-              material.albedo_texture_handle.index;
-          push_constant.normal_texture_index =
-              material.normal_texture_handle.index;
-          push_constant.objectID = objectID;
-          push_constant.visibility_buffer =
-              RendererFrontEnd::instance()->visibility_buffer.index;
-          Platform::instance()->get_mouse_position(&push_constant.mouseX,
-                                                   &push_constant.mouseY);
-          push_constant.mouseX /= Platform::instance()->width;
-          push_constant.mouseY /= Platform::instance()->height;
+      VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
+      VulkanPipeline *pipeline = access_pipeline(pbr_pipeline_handle);
+      command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
+                                     sizeof(PushConstant), &push_constant);
 
-          VkShaderStageFlagBits shader_stage = VK_SHADER_STAGE_ALL;
-
-          command_buffer->push_constants(pipeline->vk_layout, shader_stage, 0,
-                                         sizeof(PushConstant), &push_constant);
-          command_buffer->draw_indexed(draw.primitive_count, 1,
-                                       draw.index_buffer_offset,
-                                       draw.vertex_buffer_offset, 0);
-          ++objectID;
-        }
-      }
+      VulkanBuffer *indirect_draw_buffer = access_buffer(
+          renderer_frontend->unified_indirect_draws_buffer.handle);
+      VulkanBuffer *count_buffer =
+          access_buffer(renderer_frontend->count_buffer);
+      command_buffer->draw_indexed_indirect_count(
+          indirect_draw_buffer->vk_handle, 0, count_buffer->vk_handle, 0,
+          total_draw_count, sizeof(GPUIndexedDrawCommand));
       // NOTE: Imgui needs to use the renderpass
-      command_buffer->pop_marker();
     }
+    command_buffer->pop_marker();
   }
   if (packet->freeze_camera) {
     command_buffer->push_marker("Frustum Draw");
@@ -1260,8 +1411,8 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
                           : VMA_MEMORY_USAGE_AUTO;
   memory_info.requiredFlags =
       to_vk_mem_property_flags(creation.memory_access_flags);
-  // Note to self: VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT for buffers that
-  // change a lot in a frame,
+  // Note to self: VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT for buffers
+  // that change a lot in a frame,
   // VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT for buffers that
   // change only once per frame
   memory_info.flags =
@@ -1400,129 +1551,6 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
   temp_string_buffer.clear();
 
-  // Dynamic State
-  VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                     VK_DYNAMIC_STATE_SCISSOR};
-
-  VkPipelineDynamicStateCreateInfo dynamic_state{
-      VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-  dynamic_state.dynamicStateCount = ArraySize(dynamic_states);
-  dynamic_state.pDynamicStates = dynamic_states;
-
-  // Vertex Input State
-  VkPipelineVertexInputStateCreateInfo vertex_input_state{
-      VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-  vertex_input_state.vertexBindingDescriptionCount =
-      parse_result.vertex_attribute_count
-          ? 1
-          : 0; // TODO: For now assume only one vertex binding
-  vertex_input_state.pVertexBindingDescriptions = &parse_result.vertex_binding;
-  vertex_input_state.vertexAttributeDescriptionCount =
-      parse_result.vertex_attribute_count;
-  vertex_input_state.pVertexAttributeDescriptions =
-      parse_result.vertex_attributes;
-
-  // Input Assembly
-  VkPipelineInputAssemblyStateCreateInfo input_assembly{
-      VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-  input_assembly.topology = to_vk_primitive_topology(creation.primitive_type);
-  input_assembly.primitiveRestartEnable = VK_FALSE;
-
-  // Viewport
-  VkViewport viewport{};
-  viewport.x = 0.0f;
-  viewport.y = 0.0f;
-  // viewport.width = (f32)swapchain.vk_extents.width;
-  // viewport.height = (f32)swapchain.vk_extents.height;
-  viewport.minDepth = 0.0f;
-  viewport.maxDepth = 1.0f;
-
-  // Scissor
-  VkRect2D scissor{};
-  scissor.offset = {0, 0};
-  // scissor.extent = swapchain.vk_extents;
-
-  VkPipelineViewportStateCreateInfo viewport_state{
-      VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-  viewport_state.viewportCount = 1;
-  viewport_state.scissorCount = 1;
-  viewport_state.pScissors = &scissor;
-  viewport_state.pViewports = &viewport;
-
-  // Rasterizer State
-  VkPipelineRasterizationStateCreateInfo rasterizer{
-      VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-  rasterizer.depthClampEnable = VK_FALSE;
-  rasterizer.rasterizerDiscardEnable = VK_FALSE;
-  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-  rasterizer.lineWidth = 1.0f;
-  rasterizer.cullMode = to_vk_cull_mode_flags(creation.cull_mode);
-  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-  rasterizer.depthBiasEnable = VK_FALSE;
-  rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-  rasterizer.depthBiasClamp = 0.0f;          // Optional
-  rasterizer.depthBiasSlopeFactor = 0.0f;    // Optional
-
-  // Multisampling State
-  VkPipelineMultisampleStateCreateInfo multisampling{};
-  multisampling.sType =
-      VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-  multisampling.sampleShadingEnable = VK_FALSE;
-  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-  multisampling.minSampleShading = 1.0f;          // Optional
-  multisampling.pSampleMask = nullptr;            // Optional
-  multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-  multisampling.alphaToOneEnable = VK_FALSE;      // Optional
-
-  // Depth and Stencil State
-  VkPipelineDepthStencilStateCreateInfo depth_stencil{};
-  depth_stencil.sType =
-      VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-  depth_stencil.depthTestEnable =
-      creation.enable_depth_test ? VK_TRUE : VK_FALSE;
-  depth_stencil.depthWriteEnable =
-      creation.enable_depth_write ? VK_TRUE : VK_FALSE;
-  depth_stencil.depthCompareOp = to_vk_compare_op(creation.compare_op);
-  depth_stencil.depthBoundsTestEnable = VK_FALSE;
-  depth_stencil.minDepthBounds = 0.0f;
-  depth_stencil.maxDepthBounds = 1.0f;
-  depth_stencil.stencilTestEnable = VK_FALSE;
-
-  // Color Blend State
-  // TODO: Make configurable
-  RenderPass *render_pass = access_render_pass(creation.render_pass);
-  Array<VkPipelineColorBlendAttachmentState> color_blend_attachments = {};
-  color_blend_attachments.init(stack_allocator,
-                               render_pass->num_colour_attachments,
-                               render_pass->num_colour_attachments);
-  for (u32 i = 0; i < render_pass->num_colour_attachments; ++i) {
-    color_blend_attachments[i].colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachments[i].blendEnable =
-        (render_pass->colour_attachments[i].format == TextureFormat::R32_UINT)
-            ? VK_FALSE
-            : VK_TRUE; // TODO: Hard coded
-    color_blend_attachments[i].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    color_blend_attachments[i].dstColorBlendFactor =
-        VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    color_blend_attachments[i].colorBlendOp = VK_BLEND_OP_ADD;
-    color_blend_attachments[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    color_blend_attachments[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    color_blend_attachments[i].alphaBlendOp = VK_BLEND_OP_ADD;
-  }
-
-  VkPipelineColorBlendStateCreateInfo color_blending{
-      VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-  color_blending.logicOpEnable = VK_FALSE;
-  color_blending.logicOp = VK_LOGIC_OP_CLEAR;
-  color_blending.attachmentCount = color_blend_attachments.size;
-  color_blending.pAttachments = color_blend_attachments.data;
-  color_blending.blendConstants[0] = 0.0f; // Optional
-  color_blending.blendConstants[1] = 0.0f; // Optional
-  color_blending.blendConstants[2] = 0.0f; // Optional
-  color_blending.blendConstants[3] = 0.0f; // Optional
-
   // Descriptor Set Layouts
   // TODO: MAgic numbers
   VkDescriptorSetLayout layouts[5];
@@ -1533,16 +1561,6 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     layouts[i] =
         access_descriptor_set_layout(creation.set_layouts[i])->vk_handle;
   }
-
-  // Sort by set_index in ascending order
-  // if (pipeline->set_layout_count) {
-  //  std::sort(&parse_result.set_layouts[0],
-  //            &parse_result.set_layouts[0] + parse_result.set_layouts.size,
-  //            [](const VulkanDescriptorSetLayout &a,
-  //               const VulkanDescriptorSetLayout &b) {
-  //              return a.set_index < b.set_index;
-  //            });
-  //}
 
   // Pipeline Layout
   VkPipelineLayoutCreateInfo pipeline_layout_info{
@@ -1557,21 +1575,6 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   VK_CHECK(vkCreatePipelineLayout(vk_device, &pipeline_layout_info,
                                   vk_allocation_callbacks,
                                   &pipeline->vk_layout));
-  // Dynamic Rendering
-  VkFormat color_formats[MAX_COLOR_ATTACHMENTS];
-  for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
-    color_formats[i] = to_vk_format(render_pass->colour_attachments[i].format);
-  }
-
-  VkPipelineRenderingCreateInfo pipeline_rendering_create{
-      VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
-  pipeline_rendering_create.pNext = VK_NULL_HANDLE;
-  pipeline_rendering_create.colorAttachmentCount =
-      render_pass->num_colour_attachments;
-  pipeline_rendering_create.pColorAttachmentFormats = color_formats;
-  pipeline_rendering_create.depthAttachmentFormat =
-      to_vk_format(render_pass->depth_attachment.format);
-  pipeline_rendering_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
   // Pipeline Cache
   VkPipelineCache pipeline_cache{VK_NULL_HANDLE};
@@ -1610,7 +1613,147 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
   }
 
   if (creation.pipeline_type == PipelineType::Graphics) {
-    pipeline->bind_point = to_vk_bind_point(creation.pipeline_type);
+
+    // Dynamic State
+    VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                       VK_DYNAMIC_STATE_SCISSOR};
+
+    VkPipelineDynamicStateCreateInfo dynamic_state{
+        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamic_state.dynamicStateCount = ArraySize(dynamic_states);
+    dynamic_state.pDynamicStates = dynamic_states;
+
+    // Vertex Input State
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vertex_input_state.vertexBindingDescriptionCount =
+        parse_result.vertex_attribute_count
+            ? 1
+            : 0; // TODO: For now assume only one vertex binding
+    vertex_input_state.pVertexBindingDescriptions =
+        &parse_result.vertex_binding;
+    vertex_input_state.vertexAttributeDescriptionCount =
+        parse_result.vertex_attribute_count;
+    vertex_input_state.pVertexAttributeDescriptions =
+        parse_result.vertex_attributes;
+
+    // Input Assembly
+    VkPipelineInputAssemblyStateCreateInfo input_assembly{
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    input_assembly.topology = to_vk_primitive_topology(creation.primitive_type);
+    input_assembly.primitiveRestartEnable = VK_FALSE;
+
+    // Viewport
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    // viewport.width = (f32)swapchain.vk_extents.width;
+    // viewport.height = (f32)swapchain.vk_extents.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    // Scissor
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    // scissor.extent = swapchain.vk_extents;
+
+    VkPipelineViewportStateCreateInfo viewport_state{
+        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    viewport_state.viewportCount = 1;
+    viewport_state.scissorCount = 1;
+    viewport_state.pScissors = &scissor;
+    viewport_state.pViewports = &viewport;
+
+    // Rasterizer State
+    VkPipelineRasterizationStateCreateInfo rasterizer{
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = to_vk_cull_mode_flags(creation.cull_mode);
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.depthBiasConstantFactor = 0.0f; // Optional
+    rasterizer.depthBiasClamp = 0.0f;          // Optional
+    rasterizer.depthBiasSlopeFactor = 0.0f;    // Optional
+
+    // Multisampling State
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.minSampleShading = 1.0f;          // Optional
+    multisampling.pSampleMask = nullptr;            // Optional
+    multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
+    multisampling.alphaToOneEnable = VK_FALSE;      // Optional
+
+    // Depth and Stencil State
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+    depth_stencil.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil.depthTestEnable =
+        creation.enable_depth_test ? VK_TRUE : VK_FALSE;
+    depth_stencil.depthWriteEnable =
+        creation.enable_depth_write ? VK_TRUE : VK_FALSE;
+    depth_stencil.depthCompareOp = to_vk_compare_op(creation.compare_op);
+    depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil.minDepthBounds = 0.0f;
+    depth_stencil.maxDepthBounds = 1.0f;
+    depth_stencil.stencilTestEnable = VK_FALSE;
+
+    // Color Blend State
+    // TODO: Make configurable
+    RenderPass *render_pass = access_render_pass(creation.render_pass);
+    Array<VkPipelineColorBlendAttachmentState> color_blend_attachments = {};
+    color_blend_attachments.init(stack_allocator,
+                                 render_pass->num_colour_attachments,
+                                 render_pass->num_colour_attachments);
+    for (u32 i = 0; i < render_pass->num_colour_attachments; ++i) {
+      color_blend_attachments[i].colorWriteMask =
+          VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+      color_blend_attachments[i].blendEnable =
+          (render_pass->colour_attachments[i].format == TextureFormat::R32_UINT)
+              ? VK_FALSE
+              : VK_TRUE; // TODO: Hard coded
+      color_blend_attachments[i].srcColorBlendFactor =
+          VK_BLEND_FACTOR_SRC_ALPHA;
+      color_blend_attachments[i].dstColorBlendFactor =
+          VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      color_blend_attachments[i].colorBlendOp = VK_BLEND_OP_ADD;
+      color_blend_attachments[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      color_blend_attachments[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+      color_blend_attachments[i].alphaBlendOp = VK_BLEND_OP_ADD;
+    }
+
+    VkPipelineColorBlendStateCreateInfo color_blending{
+        VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    color_blending.logicOpEnable = VK_FALSE;
+    color_blending.logicOp = VK_LOGIC_OP_CLEAR;
+    color_blending.attachmentCount = color_blend_attachments.size;
+    color_blending.pAttachments = color_blend_attachments.data;
+    color_blending.blendConstants[0] = 0.0f; // Optional
+    color_blending.blendConstants[1] = 0.0f; // Optional
+    color_blending.blendConstants[2] = 0.0f; // Optional
+    color_blending.blendConstants[3] = 0.0f; // Optional
+    // Dynamic Rendering
+    VkFormat color_formats[MAX_COLOR_ATTACHMENTS];
+    for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
+      color_formats[i] =
+          to_vk_format(render_pass->colour_attachments[i].format);
+    }
+
+    VkPipelineRenderingCreateInfo pipeline_rendering_create{
+        VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
+    pipeline_rendering_create.pNext = VK_NULL_HANDLE;
+    pipeline_rendering_create.colorAttachmentCount =
+        render_pass->num_colour_attachments;
+    pipeline_rendering_create.pColorAttachmentFormats = color_formats;
+    pipeline_rendering_create.depthAttachmentFormat =
+        to_vk_format(render_pass->depth_attachment.format);
+    pipeline_rendering_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipeline_info{
         VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -1630,10 +1773,19 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
 
     (vkCreateGraphicsPipelines(vk_device, pipeline_cache, 1, &pipeline_info,
                                vk_allocation_callbacks, &pipeline->vk_handle));
+  } else if (creation.pipeline_type == PipelineType::Compute) {
+    VkComputePipelineCreateInfo pipeline_info{
+        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    pipeline_info.layout = pipeline->vk_layout;
+    pipeline_info.stage = vk_shader_stages[0];
+
+    vkCreateComputePipelines(vk_device, pipeline_cache, 1, &pipeline_info,
+                             vk_allocation_callbacks, &pipeline->vk_handle);
   } else {
     HASSERT_MSG(false, "Unknown pipeline type");
   }
 
+  pipeline->bind_point = to_vk_bind_point(creation.pipeline_type);
   // Update Pipeline Cache
   if (!cache_exists) {
     size_t cache_data_size = 0;
@@ -1858,8 +2010,8 @@ void VulkanBackend::destroy_image(TextureHandle handle) {
   VulkanImage *image = images.obtain(handle);
 
   if (image->views_count != 0) {
-    HWARN(
-        "Attempting to free a VulkanImage that is still used by a VulkanView");
+    HWARN("Attempting to free a VulkanImage that is still used by a "
+          "VulkanView");
     return;
   }
 
@@ -2153,8 +2305,8 @@ VulkanBackend::create_descriptor_set(BindingSetCreation &creation) {
   return handle;
 }
 
-// TODO: VkWriteDescriptorSet only holds MAX_BINDING_PER_SET, this breaks if you
-// try to update the bindless set
+// TODO: VkWriteDescriptorSet only holds MAX_BINDING_PER_SET, this breaks if
+// you try to update the bindless set
 bool VulkanBackend::update_binding_set(BindingSetHandle set,
                                        BindingSetUpdateInfo *update_infos,
                                        u32 update_count) {
@@ -2342,6 +2494,22 @@ void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {
   ubo.view = packet->camera->get_view();
   ubo.proj = packet->camera->get_projection();
   ubo.view_proj = ubo.proj * ubo.view;
+  ubo.prev_view_matrix = packet->previous_view;
+
+  glm::mat4 projection_transpose = glm::transpose(packet->previous_proj);
+
+  ubo.view_frustum_planes[0] =
+      normalize_plane(projection_transpose[3] + projection_transpose[0]);
+  ubo.view_frustum_planes[1] =
+      normalize_plane(projection_transpose[3] - projection_transpose[0]);
+  ubo.view_frustum_planes[2] =
+      normalize_plane(projection_transpose[3] + projection_transpose[1]);
+  ubo.view_frustum_planes[3] =
+      normalize_plane(projection_transpose[3] - projection_transpose[1]);
+  ubo.view_frustum_planes[4] =
+      normalize_plane(projection_transpose[3] + projection_transpose[2]);
+  ubo.view_frustum_planes[5] =
+      normalize_plane(projection_transpose[3] - projection_transpose[2]);
 
   VulkanBuffer *uniform_buffer = access_buffer(packet->scene_data_buffer);
 

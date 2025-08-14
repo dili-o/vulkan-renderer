@@ -1,4 +1,5 @@
 #include "VulkanUtils.hpp"
+#include "Core/Assert.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "vk_mem_alloc.h"
@@ -199,6 +200,7 @@ VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage_) {
   if (stage_ & ShaderStage::Compute)
     stage |= VK_SHADER_STAGE_COMPUTE_BIT;
 
+  HASSERT(stage);
   return stage;
 }
 

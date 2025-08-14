@@ -40,11 +40,6 @@ void Sandbox::shutdown() {
   HINFO("Game Shutdown");
 }
 
-glm::vec4 normalize_plane(glm::vec4 plane) {
-  glm::vec3 normal(plane.x, plane.y, plane.z);
-  return (plane / glm::length(normal));
-}
-
 glm::vec3 get_frustum_corner(const glm::mat4 &inv_proj_view, float x, float y,
                              float z) {
   glm::vec4 ndc_point(x, y, z, 1.0f);
@@ -88,6 +83,8 @@ void Sandbox::update(RenderPacket *packet) {
   if (!freeze_camera) {
     packet->inv_previous_view_proj =
         glm::inverse(camera.get_projection() * camera.get_view());
+    packet->previous_view = camera.get_view();
+    packet->previous_proj = camera.get_projection();
   }
 
   // glm::mat4 projection_transpose =

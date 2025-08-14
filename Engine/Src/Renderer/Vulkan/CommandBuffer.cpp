@@ -118,6 +118,7 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
         to_vk_store_op(render_pass->colour_attachments[i].store_op);
 
     color_attachment_info.clearValue = {{{0.f, 0.f, 0.1f, 1.0f}}};
+    color_attachment_info.clearValue.color.uint32[0] = UINT32_MAX;
     color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
     color_attachment_info.pNext = nullptr;
     color_attachment_info.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -229,6 +230,19 @@ void VulkanCommandBuffer::draw(u32 vertex_count, u32 instance_count,
                                u32 first_vertex, u32 first_instance) {
   vkCmdDraw(vk_handle, vertex_count, instance_count, first_vertex,
             first_instance);
+}
+
+void VulkanCommandBuffer::draw_indexed_indirect_count(
+    VkBuffer indirect_buffer, VkDeviceSize indirect_buffer_offset,
+    VkBuffer count_buffer, VkDeviceSize count_buffer_offset, u32 max_draw_count,
+    u32 indirect_buffer_stride) {
+  vkCmdDrawIndexedIndirectCount(
+      vk_handle, indirect_buffer, indirect_buffer_offset, count_buffer,
+      count_buffer_offset, max_draw_count, indirect_buffer_stride);
+}
+
+void VulkanCommandBuffer::dispatch(u32 group_x, u32 group_y, u32 group_z) {
+  vkCmdDispatch(vk_handle, group_x, group_y, group_z);
 }
 
 void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,

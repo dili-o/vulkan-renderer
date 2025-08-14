@@ -8,6 +8,7 @@
 #include "Platform/File.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
+#include "Renderer/RendererTypes.hpp"
 #include "Renderer/Scene.hpp"
 // Vendors
 #include <fastgltf/core.hpp>
@@ -815,6 +816,15 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
                                        node.meshIndex.has_value());
   }
 
+  Array<glm::vec4> bounding_spheres{};
+  bounding_spheres.init(stack_allocator, 4);
+
+  Array<GPUPBRMaterial> gpu_pbr_materials{};
+  gpu_pbr_materials.init(stack_allocator, 4);
+
+  Array<GPUMeshDraw> gpu_mesh_draw{};
+  gpu_mesh_draw.init(stack_allocator, 4);
+
   while (node_queue.size) {
     u32 gltf_node_index = UINT32_MAX;
     node_queue.dequeue(&gltf_node_index);
@@ -919,6 +929,23 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
                 vertex.pos.z = v.data()[2];
                 vertices[initial_vtx + index] = vertex;
               });
+
+          // Set bounding sphere
+          auto &min_bounds = pos_accessor.min;
+          f64 *min_values = min_bounds->data<f64>();
+          auto &max_bounds = pos_accessor.max;
+          f64 *max_values = max_bounds->data<f64>();
+
+          glm::vec3 position_min = {min_values[0], min_values[1],
+                                    min_values[2]};
+          glm::vec3 position_max = {max_values[0], max_values[1],
+                                    max_values[2]};
+
+          glm::vec3 bounding_center = (position_max + position_min) / 2.f;
+          f32 radius = glm::distance(position_max, bounding_center);
+
+          bounding_spheres.push({bounding_center.x, bounding_center.y,
+                                 bounding_center.z, radius});
         }
 
         // load normal vertices
@@ -1012,7 +1039,19 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
             initial_idx + renderer_frontend->unified_index_buffer.current_size;
         mesh_draw.vertex_buffer_offset =
             renderer_frontend->unified_vertex_buffer.current_size;
+
+        // Update gpu_pbr_materials
+        gpu_pbr_materials.push(
+            {scene->pbr_materials[material_index].albedo_texture_handle.index,
+             scene->pbr_materials[material_index].normal_texture_handle.index,
+             0, 0});
+
+        // Update gpu_mesh_draw
+        gpu_mesh_draw.push({mesh_draw.primitive_count,
+                            mesh_draw.index_buffer_offset,
+                            mesh_draw.vertex_buffer_offset});
       }
+
       // TODO: Make a function in RendererFrontEnd
       u64 upload_size = sizeof(Vertex) * vertices.size;
       renderer_frontend->upload_buffer_data(
@@ -1034,6 +1073,40 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
     }
   }
 
+  u64 upload_size = sizeof(glm::vec4) * bounding_spheres.size;
+  // Upload to binding spheres
+  renderer_frontend->upload_buffer_data(
+      bounding_spheres.data,
+      renderer_frontend->unified_bounding_spheres_buffer.handle, upload_size,
+      renderer_frontend->unified_bounding_spheres_buffer.size_in_bytes());
+  renderer_frontend->unified_bounding_spheres_buffer.current_size +=
+      bounding_spheres.size;
+  HASSERT(renderer_frontend->unified_bounding_spheres_buffer.current_size <
+          max_draw_count);
+
+  // Upload to gpu_pbr_materials
+  upload_size = sizeof(GPUPBRMaterial) * gpu_pbr_materials.size;
+  renderer_frontend->upload_buffer_data(
+      gpu_pbr_materials.data,
+      renderer_frontend->unified_pbr_material_buffer.handle, upload_size,
+      renderer_frontend->unified_pbr_material_buffer.size_in_bytes());
+  renderer_frontend->unified_pbr_material_buffer.current_size +=
+      gpu_pbr_materials.size;
+  HASSERT(renderer_frontend->unified_pbr_material_buffer.current_size <
+          max_draw_count);
+
+  // Upload to gpu_mesh_draw
+  upload_size = sizeof(GPUMeshDraw) * gpu_mesh_draw.size;
+  renderer_frontend->upload_buffer_data(
+      gpu_mesh_draw.data, renderer_frontend->unified_mesh_draws_buffer.handle,
+      upload_size,
+      renderer_frontend->unified_mesh_draws_buffer.size_in_bytes());
+  renderer_frontend->unified_mesh_draws_buffer.current_size +=
+      gpu_mesh_draw.size;
+  HASSERT(renderer_frontend->unified_mesh_draws_buffer.current_size <
+          max_draw_count);
+
+  // Update node node_hierarchy
   u32 num_new_root_nodes =
       scene->node_hierarchy.root_node_indices.size - old_root_node_size;
   for (u32 i = 0; i < num_new_root_nodes; ++i) {

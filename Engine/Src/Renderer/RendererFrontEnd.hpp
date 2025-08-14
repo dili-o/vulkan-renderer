@@ -7,11 +7,14 @@
 #include "Renderer/GPUResources.hpp"
 #include "RendererTypes.hpp"
 
+#define MAX_DRAW_COMMANDS 1000
+
 // Pipeline Names
 #define PBR_PIPELINE_NAME "Pbr_Pipeline"
 #define DEPTH_PREPASS_PIPELINE_NAME "Depth_Prepass_Pipeline"
 #define IMGUI_PIPELINE_NAME "ImGui_Pipeline"
 #define FRUSTUM_PIPELINE_NAME "Frustum_Pipeline"
+#define CULLING_PIPELINE_NAME "Culling_Pipeline"
 
 namespace Helix {
 
@@ -90,9 +93,15 @@ struct RendererFrontEnd : public Service {
 
   UnifiedBuffer<Vertex> unified_vertex_buffer{};
   UnifiedBuffer<u32> unified_index_buffer{};
-  UnifiedBuffer<glm::mat4> unified_transform_buffer{};
-  UnifiedBuffer<GPUPBRMaterial> unified_material_buffer{};
-  UnifiedBuffer<glm::vec4> unified_bounding_sphere_buffer{};
+
+  UnifiedBuffer<glm::mat4> unified_models_buffer{};
+  UnifiedBuffer<glm::vec4> unified_bounding_spheres_buffer{};
+  UnifiedBuffer<GPUPBRMaterial> unified_pbr_material_buffer{};
+  UnifiedBuffer<GPUMeshDraw> unified_mesh_draws_buffer{};
+  // TODO: These might be vulkan specific
+  UnifiedBuffer<GPUIndexedDrawCommand> unified_indirect_draws_buffer{};
+  BufferHandle count_buffer{};
+
   // Caches the handles of the created pipelines
   HashMap<StringView, PipelineHandle> pipelines_map{};
 };

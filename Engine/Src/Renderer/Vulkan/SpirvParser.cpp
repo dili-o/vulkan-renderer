@@ -167,6 +167,11 @@ void parse_binary(const u32 *data, size_t data_size,
       --parse_result.vertex_attribute_count;
       continue;
     }
+    if (!strcmp(input_variable->name, "gl_DrawIDARB")) {
+      --parse_result.vertex_attribute_count;
+      continue;
+    }
+
     u32 location = input_variable->location;
     SpvReflectFormat format = input_variable->format;
 

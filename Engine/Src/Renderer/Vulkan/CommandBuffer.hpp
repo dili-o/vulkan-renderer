@@ -66,6 +66,15 @@ struct VulkanCommandBuffer {
   void draw(u32 vertex_count, u32 instance_count, u32 first_vertex,
             u32 first_instance);
 
+  void draw_indexed_indirect_count(VkBuffer indirect_buffer,
+                                   VkDeviceSize indirect_buffer_offset,
+                                   VkBuffer count_buffer,
+                                   VkDeviceSize count_buffer_offset,
+                                   u32 max_draw_count,
+                                   u32 indirect_buffer_stride);
+
+  void dispatch(u32 group_x, u32 group_y, u32 group_z);
+
   // TODO: Right now each call always submits and waits for the queue to be idle
   // This should be able to record any upload commands
   // Maybe also have a version of this function that takes in ResourceHandles
