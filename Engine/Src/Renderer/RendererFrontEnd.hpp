@@ -72,7 +72,7 @@ struct RendererFrontEnd : public Service {
   void update_draw_commands(Scene *scene);
   void print_gpu_stats();
 
-  u32 current_frame;
+  u32 current_frame_in_flight;
   RendererBackend *backend{nullptr};
 
   StringBuffer string_buffer{};

@@ -10,7 +10,6 @@
 // Vendor
 #define IMGUI_IMPL_VULKAN_USE_VOLK
 #include <Vendor/imgui/backends/imgui_impl_sdl3.h>
-// #include <Vendor/imgui/backends/imgui_impl_vulkan.h>
 
 namespace Helix {
 static uint32_t s_vb_size = 665536, s_ib_size = 665536;
@@ -63,8 +62,13 @@ void VulkanImguiBackend::init(void *configuration) {
   // Create vertex and index buffers //////////////////////////////////////////
   // u32 buffer_size = 665536;
 
-  for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  vertex_buffers.init(allocator, config->max_frame_in_flight,
+                      config->max_frame_in_flight);
+  index_buffers.init(allocator, config->max_frame_in_flight,
+                     config->max_frame_in_flight);
 
+  for (u32 i = 0; i < config->max_frame_in_flight; ++i) {
     BufferCreation creation{};
     creation.reset();
     creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Vertex);
@@ -112,10 +116,14 @@ void VulkanImguiBackend::init(void *configuration) {
 }
 
 void VulkanImguiBackend::shutdown() {
-  for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+  for (u32 i = 0; i < vertex_buffers.size; ++i) {
     backend->destroy_buffer(vertex_buffers[i]);
     backend->destroy_buffer(index_buffers[i]);
   }
+
+  vertex_buffers.shutdown();
+  index_buffers.shutdown();
+
   backend->destroy_pipeline(pipeline);
   backend->destroy_texture(font_texture);
 
@@ -154,8 +162,8 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   // TODO: Make a funtion to get command buffers from the backend
   // NOTE: Command buffer should already be recording
   VulkanCommandBuffer *command_buffer =
-      backend->command_buffer_manager.get_command_buffer(packet->current_frame,
-                                                         0, false);
+      backend->command_buffer_manager.get_command_buffer(
+          packet->current_frame_in_flight, 0, false);
 
   if (vertex_size == 0 && index_size == 0) {
     return;
@@ -166,7 +174,7 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   ImDrawIdx *idx_dst = NULL;
 
   VulkanBuffer *vtx_buf =
-      backend->access_buffer(vertex_buffers[packet->current_frame]);
+      backend->access_buffer(vertex_buffers[packet->current_frame_in_flight]);
   vtx_dst = (ImDrawVert *)vtx_buf->mapped_data;
 
   if (vtx_dst) {
@@ -179,7 +187,7 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   }
 
   VulkanBuffer *idx_buf =
-      backend->access_buffer(index_buffers[packet->current_frame]);
+      backend->access_buffer(index_buffers[packet->current_frame_in_flight]);
   idx_dst = (ImDrawIdx *)idx_buf->mapped_data;
 
   if (idx_dst) {
@@ -194,10 +202,10 @@ void VulkanImguiBackend::render_frame(RenderPacket *packet) {
   command_buffer->push_marker("ImGui");
 
   command_buffer->bind_pipeline(pipeline);
-  command_buffer->bind_vertex_buffer(vertex_buffers[packet->current_frame], 0,
-                                     1);
-  command_buffer->bind_index_buffer(index_buffers[packet->current_frame], 0,
-                                    VK_INDEX_TYPE_UINT16);
+  command_buffer->bind_vertex_buffer(
+      vertex_buffers[packet->current_frame_in_flight], 0, 1);
+  command_buffer->bind_index_buffer(
+      index_buffers[packet->current_frame_in_flight], 0, VK_INDEX_TYPE_UINT16);
 
   VkExtent2D extents{(u32)fb_width, (u32)fb_height};
 

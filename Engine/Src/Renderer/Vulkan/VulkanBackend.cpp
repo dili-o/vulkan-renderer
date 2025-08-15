@@ -568,9 +568,12 @@ bool VulkanBackend::shutdown() {
   resource_deletion_queue.shutdown();
 
   for (u32 i = 0; i < swapchain.image_count; ++i) {
-    vkDestroySemaphore(vk_device, image_available_semaphores[i],
-                       vk_allocation_callbacks);
     vkDestroySemaphore(vk_device, render_finished_semaphores[i],
+                       vk_allocation_callbacks);
+  }
+
+  for (u32 i = 0; i < max_frames_in_flight; ++i) {
+    vkDestroySemaphore(vk_device, image_available_semaphores[i],
                        vk_allocation_callbacks);
   }
 
@@ -646,10 +649,10 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
   wait_info.pValues = &wait_value;
   vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
 
-  VkResult result =
-      vkAcquireNextImageKHR(vk_device, swapchain.vk_handle, UINT64_MAX,
-                            image_available_semaphores[packet->current_frame],
-                            VK_NULL_HANDLE, &swapchain.current_image_index);
+  VkResult result = vkAcquireNextImageKHR(
+      vk_device, swapchain.vk_handle, UINT64_MAX,
+      image_available_semaphores[packet->current_frame_in_flight],
+      VK_NULL_HANDLE, &swapchain.current_image_index);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     resize_swapchain();
@@ -661,8 +664,8 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
   update_uniform_buffer(packet);
 
   VulkanCommandBuffer *command_buffer =
-      command_buffer_manager.get_command_buffer(packet->current_frame, 0,
-                                                false);
+      command_buffer_manager.get_command_buffer(packet->current_frame_in_flight,
+                                                0, false);
 
   command_buffer->reset();
   command_buffer->begin();
@@ -673,8 +676,8 @@ bool VulkanBackend::begin_frame(RenderPacket *packet) {
 bool VulkanBackend::end_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
   VulkanCommandBuffer *command_buffer =
-      command_buffer_manager.get_command_buffer(packet->current_frame, 0,
-                                                false);
+      command_buffer_manager.get_command_buffer(packet->current_frame_in_flight,
+                                                0, false);
 
   // Transition to Present
   command_buffer->transition_image(
@@ -743,7 +746,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
   VkSemaphoreSubmitInfo wait_semaphore_submit_info{
       VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
   wait_semaphore_submit_info.semaphore =
-      image_available_semaphores[packet->current_frame];
+      image_available_semaphores[packet->current_frame_in_flight];
   wait_semaphore_submit_info.stageMask =
       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1295,22 +1298,14 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 void VulkanBackend::create_sync_objects(u32 swapchain_image_count) {
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  // TODO: Only use frame_in_flight image_available_semaphores
-  image_available_semaphores.init(allocator, swapchain_image_count,
-                                  swapchain_image_count);
+  image_available_semaphores.init(allocator, max_frames_in_flight,
+                                  max_frames_in_flight);
   render_finished_semaphores.init(allocator, swapchain_image_count,
                                   swapchain_image_count);
 
   VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
   for (u32 i = 0; i < swapchain_image_count; ++i) {
-    VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
-                               vk_allocation_callbacks,
-                               &image_available_semaphores[i]));
-
-    set_resource_name(
-        VK_OBJECT_TYPE_SEMAPHORE, (u64)image_available_semaphores[i],
-        string_buffer.append_use_f("image_available_semaphore_%d", i));
 
     VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
                                vk_allocation_callbacks,
@@ -1318,6 +1313,16 @@ void VulkanBackend::create_sync_objects(u32 swapchain_image_count) {
     set_resource_name(
         VK_OBJECT_TYPE_SEMAPHORE, (u64)render_finished_semaphores[i],
         string_buffer.append_use_f("render_finished_semaphore_%d", i));
+  }
+
+  for (u32 i = 0; i < max_frames_in_flight; ++i) {
+    VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
+                               vk_allocation_callbacks,
+                               &image_available_semaphores[i]));
+
+    set_resource_name(
+        VK_OBJECT_TYPE_SEMAPHORE, (u64)image_available_semaphores[i],
+        string_buffer.append_use_f("image_available_semaphore_%d", i));
   }
 
   VkSemaphoreTypeCreateInfo timeline_create_info{
@@ -2564,10 +2569,11 @@ void VulkanBackend::create_descriptor_pool(u32 max_frames_in_flight) {
 void VulkanBackend::render_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
   VulkanCommandBuffer *command_buffer =
-      command_buffer_manager.get_command_buffer(packet->current_frame, 0,
-                                                false);
+      command_buffer_manager.get_command_buffer(packet->current_frame_in_flight,
+                                                0, false);
 
-  record_command_buffer(command_buffer, packet, packet->current_frame);
+  record_command_buffer(command_buffer, packet,
+                        packet->current_frame_in_flight);
 }
 
 void VulkanBackend::update_uniform_buffer(RenderPacket *packet) {

@@ -115,7 +115,7 @@ struct Game;
 
 struct RenderPacket {
   f32 delta_time;
-  u32 current_frame;
+  u32 current_frame_in_flight;
   Camera *camera{nullptr};
   glm::mat4 inv_previous_view_proj;
   glm::mat4 previous_view;

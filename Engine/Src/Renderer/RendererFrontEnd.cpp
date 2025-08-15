@@ -51,7 +51,7 @@ void RendererFrontEnd::init(void *_config) {
 
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
-  current_frame = 0;
+  current_frame_in_flight = 0;
 
   string_buffer.init(allocator, hmega(6));
 
@@ -382,14 +382,15 @@ bool RendererFrontEnd::render_frame(RenderPacket *packet) {
 
 bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
-  packet->current_frame = current_frame;
-  packet->scene_data_buffer = uniform_buffers[current_frame];
+  packet->current_frame_in_flight = current_frame_in_flight;
+  packet->scene_data_buffer = uniform_buffers[current_frame_in_flight];
   return backend->begin_frame(packet);
 }
 
 bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
-  current_frame = (current_frame + 1) % max_frames_in_flight;
+  current_frame_in_flight =
+      (current_frame_in_flight + 1) % max_frames_in_flight;
   return backend->end_frame(packet);
 }
 

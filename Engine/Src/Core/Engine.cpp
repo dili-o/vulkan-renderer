@@ -56,12 +56,14 @@ void Engine::init(Game *game) {
   renderer_config.backend_type = RENDERER_BACKEND_TYPE_VULKAN;
   renderer_config.application_name = "Sandbox";
   renderer_config.platform = &platform_service;
+  renderer_config.max_frames_in_flight = 2;
   renderer_frontend_service.init(&renderer_config);
 
   ImguiLayerConfiguration imgui_config{};
   imgui_config.type = RENDERER_BACKEND_TYPE_VULKAN;
   imgui_config.frontend = &renderer_frontend_service;
   imgui_config.window_handle = platform_service.platform_handle;
+  imgui_config.max_frame_in_flight = renderer_config.max_frames_in_flight;
   imgui_frontend_service.init(&imgui_config);
 
   application_service.init(game);

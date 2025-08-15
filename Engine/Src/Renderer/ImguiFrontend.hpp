@@ -24,6 +24,7 @@ struct ImguiLayerConfiguration {
   void *window_handle = nullptr;
   RendererBackendType type;
   RendererFrontEnd *frontend = nullptr;
+  u32 max_frame_in_flight = 1;
 };
 
 struct ImguiFrontend : public Service {
