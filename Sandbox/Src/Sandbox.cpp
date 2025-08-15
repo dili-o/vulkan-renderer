@@ -26,6 +26,7 @@ void Sandbox::init() {
   camera.init(config);
 
   scene.init();
+  scene.load_mesh("D:/StratusGFX/Resources/", "SponzaCurtains.glb");
 
   EventService::instance()->register_event(SDL_EVENT_KEY_DOWN, 0,
                                            sandbox_key_event);

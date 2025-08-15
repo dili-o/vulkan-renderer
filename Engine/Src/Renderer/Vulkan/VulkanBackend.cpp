@@ -29,7 +29,7 @@
 
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
-// #define VULKAN_EXTRA_VALIDATION
+#define VULKAN_EXTRA_VALIDATION
 #endif // _DEBUG
 
 #define SHADER_DEBUG_SYMBOLS
@@ -194,7 +194,7 @@ bool VulkanBackend::init(void *_config) {
       VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
       VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
       VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-      /*VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT*/};
+      VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
   VkValidationFeaturesEXT features = {};
   features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
   features.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debug_create_info;
@@ -292,6 +292,14 @@ bool VulkanBackend::init(void *_config) {
   device_features.samplerAnisotropy = VK_TRUE;
   device_features.fillModeNonSolid = VK_TRUE;
   device_features.geometryShader = VK_TRUE;
+  // TODO: Temporary Fix for the error I get on VULKAN_EXTRA_VALIDATION, might
+  // be a bug with validation layers
+  device_features.drawIndirectFirstInstance = VK_TRUE;
+#ifdef VULKAN_EXTRA_VALIDATION
+  device_features.fragmentStoresAndAtomics = VK_TRUE;
+  device_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+  device_features.shaderInt64 = VK_TRUE;
+#endif
 
   VkDeviceCreateInfo device_create_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
   device_create_info.pQueueCreateInfos = queue_create_infos.data;
@@ -314,6 +322,11 @@ bool VulkanBackend::init(void *_config) {
   features12.descriptorBindingPartiallyBound = VK_TRUE;
   features12.timelineSemaphore = VK_TRUE;
   features12.drawIndirectCount = VK_TRUE;
+#ifdef VULKAN_EXTRA_VALIDATION
+  features12.vulkanMemoryModel = VK_TRUE;
+  features12.vulkanMemoryModelDeviceScope = VK_TRUE;
+  features12.storageBuffer8BitAccess = VK_TRUE;
+#endif
   // features12.descriptorBindingVariableDescriptorCount   = VK_TRUE;
   features12.pNext = &features11;
 
@@ -994,7 +1007,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     buffer_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    buffer_barrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    buffer_barrier.dstAccessMask =
+        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
 
     vkCmdPipelineBarrier2(command_buffer->vk_handle, &dep_info);
 
@@ -1017,7 +1031,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
 
     // Wait for the compute writes before Using in Draw Indirect
     buffer_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    buffer_barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    buffer_barrier.srcAccessMask =
+        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
     buffer_barrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
     buffer_barrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
     buffer_barrier.buffer = access_buffer(frontend->count_buffer)->vk_handle;
@@ -1439,6 +1454,29 @@ BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
 
   if (creation.initial_data) {
     upload_buffer_data(creation.initial_data, handle, creation.size, 0);
+  } else {
+    if (creation.memory_state_flags & BufferUsage::TransferDest) {
+
+      // NOTE: For now we zero out the buffer
+      VulkanCommandBuffer *command_buffer =
+          transfer_command_buffer_manager.get_command_buffer(0, 0, true);
+
+      vkCmdFillBuffer(command_buffer->vk_handle, buffer->vk_handle, 0,
+                      creation.size, 0);
+
+      command_buffer->end();
+
+      VkCommandBufferSubmitInfo command_submit_info{
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+      command_submit_info.commandBuffer = command_buffer->vk_handle;
+
+      VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+      submit_info.commandBufferInfoCount = 1;
+      submit_info.pCommandBufferInfos = &command_submit_info;
+
+      vkQueueSubmit2(vk_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+      vkQueueWaitIdle(vk_transfer_queue);
+    }
   }
 
   if (creation.usage_flags & BufferUsage::ShaderAddress) {
