@@ -456,7 +456,6 @@ bool VulkanBackend::init(void *_config) {
     HASSERT(pfnCmdEndDebugUtilsLabelEXT);
   }
 
-  // TODO: Check to see if vk_graphics_queue also contains compute capabilities
   vkGetDeviceQueue(vk_device, queue_family_indices.graphics_family_index, 0,
                    &vk_graphics_queue);
   set_resource_name(VK_OBJECT_TYPE_QUEUE, (u64)vk_graphics_queue,
@@ -701,8 +700,7 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
     for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
       TextureHandle texture_to_update = bindless_textures_to_update[it];
       {
-        VulkanImageView *texture = access_image_view(texture_to_update);
-        VulkanImage *image = access_image(texture->image);
+        VulkanImageView *image_view = access_image_view(texture_to_update);
 
         VkWriteDescriptorSet &descriptor_write =
             bindless_descriptor_writes[current_write_index];
@@ -714,19 +712,13 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
         descriptor_write.dstSet = vk_bindless_descriptor_set;
         descriptor_write.dstBinding = 0;
 
-        VulkanSampler *vk_default_sampler = access_sampler(default_sampler);
-        VulkanSampler *vk_default_u32_sampler =
-            access_sampler(default_u32_sampler);
         VkDescriptorImageInfo &descriptor_image_info =
             bindless_image_info[current_write_index];
 
-        // TODO: Texture( Views ) should have samplers
-        descriptor_image_info.sampler =
-            (image->format == VK_FORMAT_R32_UINT)
-                ? vk_default_u32_sampler->vk_handle
-                : vk_default_sampler->vk_handle; // HardCoded
+        VulkanSampler *sampler = access_sampler(image_view->sampler);
+        descriptor_image_info.sampler = sampler->vk_handle;
 
-        descriptor_image_info.imageView = texture->vk_handle;
+        descriptor_image_info.imageView = image_view->vk_handle;
         descriptor_image_info.imageLayout =
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         descriptor_write.pImageInfo = &descriptor_image_info;
@@ -911,8 +903,7 @@ void VulkanBackend::create_swapchain() {
   tex_creation.array_base_level = 0;
   tex_creation.mip_level_count = 1;
   tex_creation.mip_base_level = 0;
-  tex_creation.usage =
-      TextureUsage::Enum(TextureUsage::Depth | TextureUsage::Sampled);
+  tex_creation.usage = TextureUsage::Enum(TextureUsage::Depth);
   tex_creation.alias_image = {k_invalid_index, 0};
   tex_creation.format = TextureFormat::D32;
   tex_creation.type = TextureType::Texture2D;
@@ -2042,6 +2033,12 @@ TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
     bindless_textures_to_update.push(handle);
 
   view->name = creation.name;
+
+  if (creation.usage & TextureUsage::Sampled) {
+    view->sampler = (creation.format & TextureFormat::R32_UINT)
+                        ? default_u32_sampler
+                        : default_sampler;
+  }
 
   return handle;
 }

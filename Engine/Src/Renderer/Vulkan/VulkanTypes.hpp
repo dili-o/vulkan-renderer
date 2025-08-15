@@ -90,6 +90,7 @@ struct VulkanImage {
 struct VulkanImageView {
   VkImageView vk_handle{VK_NULL_HANDLE};
   ImageHandle image;
+  SamplerHandle sampler;
   cstring name = nullptr;
 };
 
