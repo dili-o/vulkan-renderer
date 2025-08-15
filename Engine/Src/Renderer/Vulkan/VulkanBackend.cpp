@@ -2797,7 +2797,8 @@ select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
                                            &present_queue_support);
       if (present_queue_support &&
           queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
-          queue_family_indices.graphics_family_index == UINT32_MAX) {
+          queue_family_indices.graphics_family_index == UINT32_MAX &&
+          queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
         queue_family_indices.graphics_family_index = idx;
         continue;
       }
