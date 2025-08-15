@@ -287,8 +287,56 @@ bool VulkanBackend::init(void *_config) {
     queue_create_infos.push(queue_create_info);
   }
 
+  {
+    // Check if all features are supported on the GPU
+    VkPhysicalDeviceFeatures2 supported_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+
+    VkPhysicalDeviceVulkan11Features supported_features11{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    VkPhysicalDeviceVulkan12Features supported_features12{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceVulkan13Features supported_features13{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    supported_features.pNext = &supported_features11;
+    supported_features11.pNext = &supported_features12;
+    supported_features12.pNext = &supported_features13;
+
+    vkGetPhysicalDeviceFeatures2(vk_physical_device, &supported_features);
+    // VkPhysicalDeviceFeatures2
+    HASSERT(supported_features.features.samplerAnisotropy == VK_TRUE);
+    HASSERT(supported_features.features.fillModeNonSolid == VK_TRUE);
+    HASSERT(supported_features.features.geometryShader == VK_TRUE);
+    HASSERT(supported_features.features.drawIndirectFirstInstance == VK_TRUE);
+#ifdef VULKAN_EXTRA_VALIDATION
+    HASSERT(supported_features.features.fragmentStoresAndAtomics == VK_TRUE);
+    HASSERT(supported_features.features.vertexPipelineStoresAndAtomics ==
+            VK_TRUE);
+    HASSERT(supported_features.features.shaderInt64 == VK_TRUE);
+#endif
+    // VkPhysicalDeviceVulkan11Features
+    HASSERT(supported_features11.shaderDrawParameters == VK_TRUE);
+    // VkPhysicalDeviceVulkan12Features
+    HASSERT(supported_features12.bufferDeviceAddress == VK_TRUE);
+    HASSERT(supported_features12.shaderSampledImageArrayNonUniformIndexing ==
+            VK_TRUE);
+    HASSERT(supported_features12.runtimeDescriptorArray == VK_TRUE);
+    HASSERT(supported_features12.descriptorBindingSampledImageUpdateAfterBind ==
+            VK_TRUE);
+    HASSERT(supported_features12.descriptorBindingPartiallyBound == VK_TRUE);
+    HASSERT(supported_features12.timelineSemaphore == VK_TRUE);
+    HASSERT(supported_features12.drawIndirectCount == VK_TRUE);
+#ifdef VULKAN_EXTRA_VALIDATION
+    HASSERT(supported_features12.vulkanMemoryModel == VK_TRUE);
+    HASSERT(supported_features12.vulkanMemoryModelDeviceScope == VK_TRUE);
+    HASSERT(supported_features12.storageBuffer8BitAccess == VK_TRUE);
+#endif
+    // VkPhysicalDeviceVulkan13Features
+    HASSERT(supported_features13.dynamicRendering == VK_TRUE);
+    HASSERT(supported_features13.synchronization2 == VK_TRUE);
+  }
+
   VkPhysicalDeviceFeatures device_features{};
-  // TODO: Check if this is available
   device_features.samplerAnisotropy = VK_TRUE;
   device_features.fillModeNonSolid = VK_TRUE;
   device_features.geometryShader = VK_TRUE;
@@ -308,7 +356,6 @@ bool VulkanBackend::init(void *_config) {
   device_create_info.enabledExtensionCount = device_extensions.size;
   device_create_info.ppEnabledExtensionNames = device_extensions.data;
 
-  // TODO: Check if all these features are enabled
   VkPhysicalDeviceVulkan11Features features11 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
   features11.shaderDrawParameters = VK_TRUE;
