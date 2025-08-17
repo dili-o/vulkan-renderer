@@ -489,7 +489,6 @@ bool VulkanBackend::init(void *_config) {
       Platform::get_logical_processor_count(), 1, "Transfer_CommandPool");
 
   // Create swapchain
-
   for (u32 i = 0; i < MAX_SWAPCHAIN_IMAGES; ++i) {
     swapchain.images[i] = images.obtain_new();
     swapchain.image_views[i] = image_views.obtain_new();
@@ -638,6 +637,11 @@ void VulkanBackend::resize_swapchain() {
 
   destroy_swapchain();
   create_swapchain();
+
+  i32 width, height;
+  Platform::instance()->get_window_size(&width, &height);
+  resize_texture(RendererFrontEnd::instance()->visibility_buffer, width,
+                 height);
 }
 
 bool VulkanBackend::begin_frame(RenderPacket *packet) {
@@ -856,7 +860,7 @@ void VulkanBackend::create_swapchain() {
 
     image->vk_handle = vk_images[i];
     image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    image->format = swapchain.vk_surface_format.format;
+    image->vk_format = swapchain.vk_surface_format.format;
     image->vk_extents = {swapchain_extents.width, swapchain_extents.height, 1};
     image->mip_count = 1;
 
@@ -1426,12 +1430,11 @@ PipelineInfo VulkanBackend::access_pipeline_view(PipelineHandle handle) {
   return info;
 }
 
-void VulkanBackend::vk_create_buffer(VkDeviceSize size,
-                                     VkBufferUsageFlags usage,
-                                     VkMemoryPropertyFlags properties,
-                                     VulkanBuffer &buffer) {
-  VkBufferCreateInfo buffer_info{};
-  buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+void VulkanBackend::vma_create_buffer(VkDeviceSize size,
+                                      VkBufferUsageFlags usage,
+                                      VkMemoryPropertyFlags properties,
+                                      VulkanBuffer &buffer) {
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   buffer_info.size = size;
   buffer_info.usage = usage;
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -1443,6 +1446,17 @@ void VulkanBackend::vk_create_buffer(VkDeviceSize size,
 
   VK_CHECK(vmaCreateBuffer(vma_allocator, &buffer_info, &memory_info,
                            &buffer.vk_handle, &buffer.vma_allocation, nullptr));
+}
+
+void VulkanBackend::vma_create_image(const VkImageCreateInfo *create_info,
+                                     VkImage *image_handle,
+                                     VmaAllocation *image_allocation) {
+  // TODO: Texture aliasing
+  VmaAllocationCreateInfo memory_info{};
+  memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+  VK_CHECK(vmaCreateImage(vma_allocator, create_info, &memory_info,
+                          image_handle, image_allocation, nullptr));
 }
 
 BufferHandle VulkanBackend::create_buffer(BufferCreation &creation) {
@@ -1941,9 +1955,10 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
   set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)image->vk_handle, creation.name);
   vmaSetAllocationName(vma_allocator, image->vma_allocation, creation.name);
 
+  image->vk_usage = image_info.usage;
   image->views_count = 0;
   image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-  image->format = to_vk_format(creation.format);
+  image->vk_format = to_vk_format(creation.format);
   image->vk_extents = {creation.width, creation.height, creation.depth};
   image->mip_count = creation.mip_level_count;
 
@@ -1977,21 +1992,17 @@ TextureHandle VulkanBackend::create_image(TextureCreation &creation) {
 
     // TODO: Make more configurable for different image formats right now it
     // assumes a 4 component format
-
     void *data;
     vkMapMemory(vk_device, staging_device_memory, 0, buffer_size, 0, &data);
     memcpy(data, creation.initial_data, (size_t)buffer_size);
     vkUnmapMemory(vk_device, staging_device_memory);
 
-    vkQueueWaitIdle(vk_graphics_queue);
     VulkanCommandBuffer *graphics_command_buffer =
         command_buffer_manager.get_command_buffer(
             frame_number % max_frames_in_flight, 1, false);
     graphics_command_buffer->copy_buffer_to_image(
         handle, staging_buffer, buffer_size, vk_graphics_queue,
         creation.mip_level_count > 1);
-
-    vkQueueWaitIdle(vk_graphics_queue);
 
     graphics_command_buffer->reset();
 
@@ -2038,6 +2049,8 @@ TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
     bindless_textures_to_update.push(handle);
 
   view->name = creation.name;
+  view->base_array_level = creation.array_base_level;
+  view->base_mip_level = creation.mip_base_level;
 
   if (creation.usage & TextureUsage::Sampled) {
     view->sampler = (creation.format & TextureFormat::R32_UINT)
@@ -2223,7 +2236,6 @@ void VulkanBackend::destroy_descriptor_set_instant(DescriptorSetHandle handle) {
     HERROR("Attempting to free an invalid VulkanDescriptorSet");
     return;
   }
-  // TODO: Maybe free them individually vkFreeDescriptorSets
 
   descriptor_sets.release(handle);
 }
@@ -2268,6 +2280,53 @@ void VulkanBackend::destroy_sampler_instant(SamplerHandle handle) {
 
   vkDestroySampler(vk_device, sampler->vk_handle, vk_allocation_callbacks);
   samplers.release(handle);
+}
+
+void VulkanBackend::resize_texture(TextureHandle handle, u32 width,
+                                   u32 height) {
+  VulkanImageView *image_view = access_image_view(handle);
+  VulkanImage *image = access_image(image_view->image);
+  vmaDestroyImage(vma_allocator, image->vk_handle, image->vma_allocation);
+  vkDestroyImageView(vk_device, image_view->vk_handle, vk_allocation_callbacks);
+
+  VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  image_info.imageType = VK_IMAGE_TYPE_2D;
+  image_info.extent = {width, height, 1};
+  image_info.mipLevels = image->mip_count;
+  image_info.arrayLayers =
+      1; // TODO: Assumes all textures only have 1 arrayLayers
+  image_info.format = image->vk_format;
+  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  image_info.usage = image->vk_usage;
+
+  vma_create_image(&image_info, &image->vk_handle, &image->vma_allocation);
+
+  set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)image->vk_handle, image->name);
+  vmaSetAllocationName(vma_allocator, image->vma_allocation, image->name);
+
+  image->vk_extents = {width, height, 1};
+
+  VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+  view_info.image = image->vk_handle;
+  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.format = image->vk_format;
+  view_info.subresourceRange.aspectMask = has_depth_or_stencil(image->vk_format)
+                                              ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                              : VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.baseMipLevel = image_view->base_mip_level;
+  view_info.subresourceRange.levelCount = image->mip_count;
+  view_info.subresourceRange.baseArrayLayer = image_view->base_array_level;
+  view_info.subresourceRange.layerCount = 1; // TODO Assumed to always be 1
+  VK_CHECK(vkCreateImageView(vk_device, &view_info, vk_allocation_callbacks,
+                             &image_view->vk_handle));
+
+  set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)image_view->vk_handle,
+                    image_view->name);
+  if (image->vk_usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+    bindless_textures_to_update.push(handle);
 }
 
 void VulkanBackend::free_queued_resources() {
@@ -2637,10 +2696,10 @@ void VulkanBackend::upload_buffer_data(void *data, BufferHandle buffer_handle,
     vkQueueWaitIdle(vk_transfer_queue);
 
     VulkanBuffer staging_buffer{};
-    vk_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     staging_buffer);
+    vma_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      staging_buffer);
 
     vmaMapMemory(vma_allocator, staging_buffer.vma_allocation,
                  &staging_buffer.mapped_data);
@@ -2677,10 +2736,10 @@ void VulkanBackend::upload_to_image(void *data, TextureHandle dst_image) {
   VkDeviceSize size = image->vk_extents.width * image->vk_extents.height * 4;
 
   VulkanBuffer staging_buffer{};
-  vk_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   staging_buffer);
+  vma_create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    staging_buffer);
 
   vmaMapMemory(vma_allocator, staging_buffer.vma_allocation,
                &staging_buffer.mapped_data);

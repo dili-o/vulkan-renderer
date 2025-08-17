@@ -23,6 +23,7 @@ struct Platform : public Service {
   f64 get_absolute_time_ms();
 
   void get_mouse_position(f32 *mouseX, f32 *mouseY);
+  void get_window_size(i32 *width, i32 *height);
 
   void sleep(u64 ms);
 

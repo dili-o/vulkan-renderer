@@ -296,7 +296,7 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
 
   VkBufferImageCopy2 region{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
   region.bufferOffset = 0;
-  region.imageSubresource.aspectMask = has_depth_or_stencil(image->format)
+  region.imageSubresource.aspectMask = has_depth_or_stencil(image->vk_format)
                                            ? VK_IMAGE_ASPECT_DEPTH_BIT
                                            : VK_IMAGE_ASPECT_COLOR_BIT;
   region.imageSubresource.mipLevel = 0;
@@ -325,15 +325,15 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
         VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
     image_barrier.image = image->vk_handle;
     image_barrier.subresourceRange.aspectMask =
-        has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                            : VK_IMAGE_ASPECT_COLOR_BIT;
+        has_depth_or_stencil(image->vk_format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                               : VK_IMAGE_ASPECT_COLOR_BIT;
     image_barrier.subresourceRange.levelCount = 1;
     image_barrier.subresourceRange.baseArrayLayer = 0;
     image_barrier.subresourceRange.layerCount = 1;
 
     i32 image_width = image->vk_extents.width;
     i32 image_height = image->vk_extents.height;
-    VkImageAspectFlags aspect_mask = has_depth_or_stencil(image->format)
+    VkImageAspectFlags aspect_mask = has_depth_or_stencil(image->vk_format)
                                          ? VK_IMAGE_ASPECT_DEPTH_BIT
                                          : VK_IMAGE_ASPECT_COLOR_BIT;
     image_barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;

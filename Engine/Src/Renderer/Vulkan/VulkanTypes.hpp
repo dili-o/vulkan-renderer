@@ -80,8 +80,9 @@ struct VulkanImage {
   VkImage vk_handle{VK_NULL_HANDLE};
   VmaAllocation vma_allocation{VK_NULL_HANDLE};
   VkImageLayout current_layout{VK_IMAGE_LAYOUT_UNDEFINED};
-  VkFormat format;
+  VkFormat vk_format;
   VkExtent3D vk_extents;
+  VkImageUsageFlags vk_usage;
   u32 mip_count = 1;
   u32 views_count = 0; // Tracks the number of views that view this image;
   cstring name = nullptr;
@@ -91,6 +92,8 @@ struct VulkanImageView {
   VkImageView vk_handle{VK_NULL_HANDLE};
   ImageHandle image;
   SamplerHandle sampler;
+  u32 base_mip_level = 0;
+  u32 base_array_level = 0;
   cstring name = nullptr;
 };
 

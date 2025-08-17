@@ -297,8 +297,8 @@ create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
   image_barrier.dstQueueFamilyIndex = dst_queue_family_index;
   image_barrier.image = image->vk_handle;
   image_barrier.subresourceRange.aspectMask =
-      has_depth_or_stencil(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                          : VK_IMAGE_ASPECT_COLOR_BIT;
+      has_depth_or_stencil(image->vk_format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                             : VK_IMAGE_ASPECT_COLOR_BIT;
   image_barrier.subresourceRange.baseMipLevel = 0;
   image_barrier.subresourceRange.levelCount = 1;
   image_barrier.subresourceRange.baseArrayLayer = 0;

@@ -117,6 +117,10 @@ void Platform::get_mouse_position(f32 *mouseX, f32 *mouseY) {
   SDL_GetMouseState(mouseX, mouseY);
 }
 
+void Platform::get_window_size(i32 *width, i32 *height) {
+  SDL_GetWindowSize(window, width, height);
+}
+
 u64 Platform::get_current_processor_id() {
   return (u64)GetCurrentProcessorNumber();
 }

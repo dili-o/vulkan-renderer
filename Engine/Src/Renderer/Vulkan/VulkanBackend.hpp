@@ -32,8 +32,11 @@ struct VulkanBackend : public RendererBackend {
   void record_command_buffer(VulkanCommandBuffer *command_buffer,
                              RenderPacket *packet, u32 current_frame);
 
-  void vk_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                        VkMemoryPropertyFlags properties, VulkanBuffer &buffer);
+  void vma_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                         VkMemoryPropertyFlags properties,
+                         VulkanBuffer &buffer);
+  void vma_create_image(const VkImageCreateInfo *create_info,
+                        VkImage *image_handle, VmaAllocation *image_allocation);
   virtual BufferHandle create_buffer(BufferCreation &creation) override;
   virtual PipelineHandle create_pipeline(PipelineCreation &creation) override;
   // NOTE: Internal TextureResource handle is a VulkanImageView
@@ -102,6 +105,8 @@ struct VulkanBackend : public RendererBackend {
   void destroy_image_instant(TextureHandle handle);
   void destroy_image_view_instant(TextureHandle handle);
   void destroy_sampler_instant(SamplerHandle handle);
+
+  void resize_texture(TextureHandle handle, u32 width, u32 height);
 
   void free_queued_resources();
 
