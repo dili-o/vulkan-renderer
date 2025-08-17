@@ -2053,7 +2053,7 @@ TextureHandle VulkanBackend::create_image_view(TextureCreation &creation) {
   view->base_mip_level = creation.mip_base_level;
 
   if (creation.usage & TextureUsage::Sampled) {
-    view->sampler = (creation.format & TextureFormat::R32_UINT)
+    view->sampler = (creation.format == TextureFormat::R32_UINT)
                         ? default_u32_sampler
                         : default_sampler;
   }
