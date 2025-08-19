@@ -39,19 +39,20 @@ bool static imgui_node_property(NodeDrawProperty *node_property) {
   Transform *world_transform =
       &node_hierarchy->world_transforms[node_property->node_index];
 
-  const ImGuiInputFlags flags = 0;
   ImGui::Text("Local Transform");
   bool modified = false;
-  ImGui::InputFloat3("Position", &local_transform->position.x, "%.3f", flags);
-  modified |= ImGui::IsItemDeactivatedAfterEdit();
+  ImGui::DragFloat3("Position", &local_transform->position.x, 0.5f, 0.f, 0.f,
+                    "%.3f");
+  modified |= ImGui::IsItemActive();
 
   glm::vec3 euler_radians = glm::eulerAngles(local_transform->rotation);
   glm::vec3 euler_degrees = glm::degrees(euler_radians);
 
-  ImGui::InputFloat3("Rotation(Degrees)", &euler_degrees.x, "%.3f", flags);
-  modified |= ImGui::IsItemDeactivatedAfterEdit();
-  ImGui::InputFloat3("Scale", &local_transform->scale.x, "%.3f", flags);
-  modified |= ImGui::IsItemDeactivatedAfterEdit();
+  ImGui::DragFloat3("Rotation(Degrees)", &euler_degrees.x, 0.5f, 0.f, 0.f,
+                    "%.3f");
+  modified |= ImGui::IsItemActive();
+  ImGui::DragFloat3("Scale", &local_transform->scale.x, 0.5f, 0.f, 0.f, "%.3f");
+  modified |= ImGui::IsItemActive();
 
   ImGui::Text("World Transform");
 
