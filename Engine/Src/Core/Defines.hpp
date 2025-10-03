@@ -6,8 +6,9 @@
 #include <signal.h>
 #endif
 
+#define HELIX_PLATFORM_SDL3
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
-#define HELIX_PLATFORM_WINDOWS 1
+#define HELIX_PLATFORM_WINDOWS
 
 #ifndef _WIN64
 #error "64-bit is required on Windows"

@@ -3,12 +3,10 @@
 #include "Core/Profiler.hpp"
 #include "Renderer/Vulkan/VulkanImguiBackend.hpp"
 // Vendor
-#include <SDL3/SDL_events.h>
-#include <imgui/backends/imgui_impl_sdl3.h>
 #include <imgui_internal.h>
 
 namespace Helix {
-ImguiBackend *ImguiCreateBackend(RendererBackendType type) {
+static ImguiBackend *imgui_create_backend(RendererBackendType type) {
 
   if (type == RENDERER_BACKEND_TYPE_VULKAN) {
     void *memory = halloca(sizeof(VulkanImguiBackend),
@@ -31,12 +29,18 @@ void ImguiFrontend::init(void *config_) {
     return;
   }
 
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGui::StyleColorsDark();
+
   ImguiLayerConfiguration *config = (ImguiLayerConfiguration *)config_;
-  backend = ImguiCreateBackend(config->type);
+  backend = imgui_create_backend(config->type);
   if (!backend) {
     HCRITICAL("Unable to initialise ImGui Backend!");
     return;
   }
+
+  platform_init(config);
 
   backend->init(config_);
 
@@ -44,26 +48,16 @@ void ImguiFrontend::init(void *config_) {
   HELIX_SERVICE_INIT_MSG(ImguiFrontend);
 }
 
-bool ImguiFrontend::handle_events(void *event_) {
-
-  SDL_Event *event = (SDL_Event *)event_;
-  ImGui_ImplSDL3_ProcessEvent(event);
-  if (event->type == SDL_EVENT_QUIT || event->type == SDL_EVENT_WINDOW_RESIZED)
-    return false;
-  return ImGui::GetCurrentContext()->NavWindow;
-}
-
 void ImguiFrontend::shutdown() {
+
+  platform_shutdown(nullptr);
+
+  ImGui::DestroyContext();
   backend->shutdown();
   MemoryService::instance()->system_allocator.deallocate(backend);
 
   s_imgui_service = nullptr;
   HELIX_SERVICE_SHUTDOWN_MSG(ImguiFrontend);
-}
-
-void ImguiFrontend::begin_frame() {
-  HELIX_PROFILER_FUNCTION();
-  backend->begin_frame();
 }
 
 void ImguiFrontend::render_frame(RenderPacket *packet) {

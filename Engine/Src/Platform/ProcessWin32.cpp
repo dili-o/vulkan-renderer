@@ -1,6 +1,6 @@
 #include "Process.hpp"
 
-#if HELIX_PLATFORM_WINDOWS
+#ifdef HELIX_PLATFORM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include "Core/Log.hpp"
 #include <windows.h>

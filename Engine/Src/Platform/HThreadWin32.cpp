@@ -1,6 +1,6 @@
 #include "Platform/HThread.hpp"
 
-#if HELIX_PLATFORM_WINDOWS
+#ifdef HELIX_PLATFORM_WINDOWS
 
 #include "Core/Log.hpp"
 #include "Platform/Platform.hpp"

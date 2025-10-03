@@ -1,30 +1,18 @@
 #include "VulkanImguiBackend.hpp"
-#include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
-#include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/Vulkan/CommandBuffer.hpp"
 #include "Renderer/Vulkan/VulkanBackend.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 // Vendor
-#define IMGUI_IMPL_VULKAN_USE_VOLK
-#include <Vendor/imgui/backends/imgui_impl_sdl3.h>
+#include <Vendor/imgui/imgui.h>
 
 namespace Helix {
-static uint32_t s_vb_size = 665536, s_ib_size = 665536;
 
 void VulkanImguiBackend::init(void *configuration) {
   ImguiLayerConfiguration *config = (ImguiLayerConfiguration *)configuration;
-  frontend = config->frontend;
-  backend = (VulkanBackend *)frontend->backend;
-
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGui::StyleColorsDark();
-
-  ImGui_ImplSDL3_InitForVulkan((SDL_Window *)config->window_handle);
-
+  backend = (VulkanBackend *)config->frontend->backend;
   ImGuiIO &io = ImGui::GetIO();
   io.BackendRendererName = "Helix";
   io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
@@ -55,7 +43,8 @@ void VulkanImguiBackend::init(void *configuration) {
   texture_creation.type = TextureType::Texture2D;
   texture_creation.name = "ImGui_Font";
 
-  font_texture = backend->create_texture(texture_creation);
+  RendererFrontEnd *frontend = config->frontend;
+  font_texture = frontend->create_texture(texture_creation);
 
   io.Fonts->TexID = (ImTextureID)&font_texture;
 
@@ -77,7 +66,7 @@ void VulkanImguiBackend::init(void *configuration) {
     creation.size = s_vb_size;
     creation.name = "ImGui_Vertex_Buffer";
 
-    vertex_buffers[i] = backend->create_buffer(creation);
+    vertex_buffers[i] = frontend->create_buffer(creation);
 
     creation.reset();
     creation.usage_flags = (BufferUsage::Enum)(BufferUsage::Index);
@@ -86,7 +75,7 @@ void VulkanImguiBackend::init(void *configuration) {
     creation.size = s_ib_size;
     creation.name = "ImGui_Index_Buffer";
 
-    index_buffers[i] = backend->create_buffer(creation);
+    index_buffers[i] = frontend->create_buffer(creation);
   }
 
   // Create Pipeline /////////////////////////////////////////////////////////
@@ -105,7 +94,7 @@ void VulkanImguiBackend::init(void *configuration) {
   pipeline_creation.set_layouts[0] =
       RendererFrontEnd::instance()->bindless_set_layout;
   pipeline_creation.set_layout_count = 1;
-  pipeline_creation.render_pass = backend->swapchain_pass;
+  pipeline_creation.render_pass = frontend->backend->get_swapchain_pass();
   pipeline_creation.enable_depth_write = false;
   pipeline_creation.enable_depth_test = false;
 
@@ -116,25 +105,17 @@ void VulkanImguiBackend::init(void *configuration) {
 }
 
 void VulkanImguiBackend::shutdown() {
+  RendererFrontEnd *frontend = RendererFrontEnd::instance();
   for (u32 i = 0; i < vertex_buffers.size; ++i) {
-    backend->destroy_buffer(vertex_buffers[i]);
-    backend->destroy_buffer(index_buffers[i]);
+    frontend->destroy_buffer(vertex_buffers[i]);
+    frontend->destroy_buffer(index_buffers[i]);
   }
 
   vertex_buffers.shutdown();
   index_buffers.shutdown();
 
-  backend->destroy_pipeline(pipeline);
-  backend->destroy_texture(font_texture);
-
-  ImGui_ImplSDL3_Shutdown();
-  ImGui::DestroyContext();
-}
-
-void VulkanImguiBackend::begin_frame() {
-  HELIX_PROFILER_FUNCTION();
-  ImGui_ImplSDL3_NewFrame();
-  ImGui::NewFrame();
+  frontend->destroy_pipeline(pipeline);
+  frontend->destroy_texture(font_texture);
 }
 
 void VulkanImguiBackend::render_frame(RenderPacket *packet) {

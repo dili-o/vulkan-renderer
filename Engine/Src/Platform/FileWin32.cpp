@@ -1,7 +1,7 @@
 #include "File.hpp"
 #include <cstring>
 
-#if HELIX_PLATFORM_WINDOWS
+#ifdef HELIX_PLATFORM_WINDOWS
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include <shlwapi.h>

@@ -1,6 +1,6 @@
 #include "Platform/HMutex.hpp"
 
-#if HELIX_PLATFORM_WINDOWS
+#ifdef HELIX_PLATFORM_WINDOWS
 
 #include "Core/Log.hpp"
 #include <windows.h>

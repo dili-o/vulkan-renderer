@@ -2,9 +2,6 @@
 #include "Core/Defines.hpp"
 #include "Renderer/RendererTypes.hpp"
 
-#include <../../Vendor/imgui/imgui.h>
-// #include <imgui.h>
-
 namespace Helix {
 
 struct RendererFrontEnd;
@@ -14,10 +11,7 @@ struct ImguiBackend {
   virtual void init(void *configuration) = 0;
   virtual void shutdown() = 0;
 
-  virtual void begin_frame() = 0;
   virtual void render_frame(RenderPacket *packet) = 0;
-
-  RendererFrontEnd *frontend = nullptr;
 };
 
 struct ImguiLayerConfiguration {
@@ -27,9 +21,14 @@ struct ImguiLayerConfiguration {
   u32 max_frame_in_flight = 1;
 };
 
+static uint32_t s_vb_size = 665536, s_ib_size = 665536;
+
 struct ImguiFrontend : public Service {
   virtual void init(void *configuration) override;
   virtual void shutdown() override;
+
+  bool platform_init(void *configuration);
+  bool platform_shutdown(void *configuration);
 
   bool handle_events(void *event);
 
@@ -42,7 +41,5 @@ struct ImguiFrontend : public Service {
 private:
   ImguiBackend *backend = nullptr;
 };
-
-ImguiBackend *ImguiCreateBackend(RendererBackendType type);
 
 } // namespace Helix

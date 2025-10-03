@@ -1,14 +1,11 @@
 #include "Engine.hpp"
-#include "Containers/HashMap.hpp"
 #include "Core/Log.hpp"
-#include "Core/String.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/RendererTypes.hpp"
 
 namespace Helix {
 
 void Engine::init(Game *game) {
-  // Initialize services
   log_service.init();
 
   file_service.init();
