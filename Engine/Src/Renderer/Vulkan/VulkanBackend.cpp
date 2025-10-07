@@ -19,10 +19,7 @@
 #include "Renderer/Vulkan/SpirvParser.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
-#include "SDL/src/video/khronos/vulkan/vulkan_core.h"
 // Vendor
-#include <SDL3/SDL_video.h>
-#include <SDL3/SDL_vulkan.h>
 #include <cstdint>
 #include <cstring>
 #include <tracy/TracyVulkan.hpp>
@@ -109,9 +106,10 @@ bool VulkanBackend::init(void *_config) {
   Array<cstring> required_extensions{};
   required_extensions.init(stack_allocator, 1);
   u32 platform_extension_count = 0;
-  const char *const *platform_extensions = SDL_Vulkan_GetInstanceExtensions(
-      &platform_extension_count); // SDL Already includes the
-                                  // KHR_SURFACE_EXTENSION
+  const char *const *platform_extensions =
+      Platform::instance()->get_vulkan_extension_names(
+          &platform_extension_count);
+
   for (u32 i = 0; i < platform_extension_count; ++i) {
     required_extensions.push(platform_extensions[i]);
   }
@@ -219,7 +217,6 @@ bool VulkanBackend::init(void *_config) {
 #pragma endregion Instance_Creation
 
 #ifdef VULKAN_DEBUG_REPORT
-
 #pragma region Vulkan_Debugger
   auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
       vk_instance, "vkCreateDebugUtilsMessengerEXT");
@@ -233,14 +230,11 @@ bool VulkanBackend::init(void *_config) {
   }
 #endif
 #pragma endregion Vulkan_Debugger
-
   // Surface
-  SDL_Window *window = (SDL_Window *)Platform::instance()->platform_handle;
-  if (!SDL_Vulkan_CreateSurface(window, vk_instance, vk_allocation_callbacks,
-                                &vk_surface)) {
-    HERROR("Failed to create surface!");
-    return false;
-  }
+  // if (!Platform::instance()->create_vulkan_surface(this)) {
+  //   HERROR("Failed to create surface!");
+  //   return false;
+  // }
 
   Array<cstring> device_extensions{};
   device_extensions.init(stack_allocator, 2);

@@ -36,6 +36,7 @@ void Application::init(void *config) {
   event_service->register_event(SDL_EVENT_KEY_UP, 0, application_on_key);
 
   HELIX_SERVICE_INIT_MSG(ApplicationService);
+
   // Initialize the Game
   game = (Game *)config;
   game->init();

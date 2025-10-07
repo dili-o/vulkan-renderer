@@ -10,6 +10,7 @@ using TextureHandle = ResourceHandle;
 using BindingSetLayoutHandle = ResourceHandle;
 using BindingSetHandle = ResourceHandle;
 using RenderPassHandle = ResourceHandle;
+using CommandBufferHandle = ResourceHandle;
 
 namespace ShaderStage {
 enum Enum {

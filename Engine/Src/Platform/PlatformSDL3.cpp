@@ -7,10 +7,12 @@
 #include "Core/Profiler.hpp"
 #include "Renderer/ImguiFrontend.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
+#include "Renderer/Vulkan/VkGpuDevice.hpp"
 // Vendor
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_cpuinfo.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_vulkan.h>
 
 namespace Helix {
 
@@ -143,5 +145,17 @@ void Platform::shutdown() {
 
   HELIX_SERVICE_SHUTDOWN_MSG(PlatformService);
 }
+
+bool Platform::create_vulkan_surface(VkGpuDevice *device) {
+  SDL_Window *window = (SDL_Window *)platform_handle;
+  return SDL_Vulkan_CreateSurface(window, device->vk_instance,
+                                  device->vk_allocation_callbacks,
+                                  &device->vk_surface);
+}
+
+const char *const *Platform::get_vulkan_extension_names(u32 *count) {
+  return SDL_Vulkan_GetInstanceExtensions(count);
+}
+
 } // namespace Helix
 #endif

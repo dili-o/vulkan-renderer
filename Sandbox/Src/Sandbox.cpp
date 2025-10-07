@@ -3,9 +3,10 @@
 #include "Core/Engine.hpp"
 #include "Core/Log.hpp"
 #include "Platform/Process.hpp"
-#include <tracy/Tracy.hpp>
-
 #include "Renderer/Scene.hpp"
+// Vendor
+#include <imgui/imgui.h>
+#include <tracy/Tracy.hpp>
 
 namespace Helix {
 
@@ -87,101 +88,10 @@ void Sandbox::update(RenderPacket *packet) {
     packet->previous_proj = camera.get_projection();
   }
 
-  // glm::mat4 projection_transpose =
-  //     glm::transpose(camera.get_projection() * camera.get_view());
-  //
-  // glm::vec4 left_plane = normalize_plane(
-  //     projection_transpose[3] + projection_transpose[0]); // x + w  < 0;
-  // glm::vec4 right_plane = normalize_plane(
-  //     projection_transpose[3] - projection_transpose[0]); // x - w  < 0;
-  // glm::vec4 top_plane = normalize_plane(projection_transpose[3] +
-  //                                       projection_transpose[1]); // y + w  <
-  //                                       0;
-  // glm::vec4 bottom_plane = normalize_plane(
-  //     projection_transpose[3] - projection_transpose[1]); // y - w  < 0;
-  // glm::vec4 near_plane = normalize_plane(
-  //     projection_transpose[3] + projection_transpose[2]); // z + w  < 0;
-  // glm::vec4 far_plane = normalize_plane(projection_transpose[3] -
-  //                                       projection_transpose[2]); // z - w  <
-  //                                       0;
-  //                                                                 //
-  // glm::mat4 inv_proj_view =
-  //     glm::inverse(camera.get_projection() * camera.get_view());
-  // glm::vec3 near_left_top = get_frustum_corner(inv_proj_view, -1.f, -1.f,
-  // -1.f); glm::vec3 near_left_bottom =
-  //     get_frustum_corner(inv_proj_view, -1.f, 1.f, -1.f);
-  // glm::vec3 near_right_top = get_frustum_corner(inv_proj_view, 1.f, -1.f,
-  // -1.f); glm::vec3 near_right_bottom =
-  //     get_frustum_corner(inv_proj_view, 1.f, 1.f, -1.f);
-  // glm::vec3 far_left_top = get_frustum_corner(inv_proj_view, -1.f,
-  // -1.f, 1.f); glm::vec3 far_left_bottom = get_frustum_corner(inv_proj_view,
-  // -1.f, 1.f, 1.f); glm::vec3 far_right_top =
-  // get_frustum_corner(inv_proj_view, 1.f, -1.f, 1.f); glm::vec3
-  // far_right_bottom = get_frustum_corner(inv_proj_view, 1.f, 1.f, 1.f);
-
   scene.update(packet);
 }
 
-void Sandbox::render_frame(f32 dt) {
-  ZoneScoped;
-
-  ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
-                           ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-  ImGui::SetNextWindowBgAlpha(0.25f);
-  ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(256, 96), ImGuiCond_FirstUseEver);
-  if (ImGui::Begin("Frame time", NULL, flags)) {
-    ImGui::Text("Frame time: %.3f ms",
-                Application::instance()->get_delta_time() * 1000.f);
-    ImGui::Checkbox("Limit Frames", &Application::instance()->limit_frames);
-    ImGui::Checkbox("Freeze Camera", &freeze_camera);
-    ImGui::End();
-  }
-
-  if (!Platform::instance()->is_fullscreen) {
-
-    static bool profiler_loaded = false;
-    if (!profiler_loaded) {
-      ImGui::SetNextWindowPos(ImVec2(94, 96), ImGuiCond_Always);
-      ImGui::SetNextWindowSize(ImVec2(162, 40), ImGuiCond_Always);
-      if (ImGui::Begin("Start Profiler", NULL, flags)) {
-        if (ImGui::Button("Start Profiler")) {
-          profiler_loaded = true;
-          if (!launch_tracy_profiler()) {
-            HERROR("Unable to start Tracy Profiler");
-          }
-        }
-        ImGui::End();
-      }
-    }
-
-    ImGui::SetNextWindowPos(ImVec2(0, 96), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(94, 40), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Load Model", NULL, flags)) {
-      if (ImGui::Button("Load Model")) {
-        char *file_path = nullptr;
-        char *file_name = nullptr;
-        if (FileService::open_file_dialog(
-                &file_name, &file_path,
-                &MemoryService::instance()->system_allocator)) {
-          if (file_path && file_name) {
-            string_replace(file_path, '\\', '/');
-            scene.load_mesh(file_path, file_name);
-
-            MemoryService::instance()->system_allocator.deallocate(file_name);
-            MemoryService::instance()->system_allocator.deallocate(file_path);
-          }
-        }
-      }
-      ImGui::End();
-    }
-
-    scene.node_hierarchy.imgui_draw_node_hierarchy();
-    scene.node_hierarchy.imgui_draw_node_property();
-
-    // ImGui::ShowDemoWindow(&show_demo);
-  }
-}
+void Sandbox::render_frame(f32 dt) { ZoneScoped; }
 void Sandbox::resize(u32 width, u32 height) {}
 
 } // namespace Helix

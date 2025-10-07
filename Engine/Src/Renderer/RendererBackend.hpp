@@ -54,6 +54,63 @@ struct RendererBackend {
   u64 frame_number{0};
 };
 
-RendererBackend *RendererBackendCreate(RendererBackendType type);
+////////////////////////////////////////
+/// Context
+////////////////////////////////////////
+struct CommandBuffer {};
+
+struct Context {
+  virtual void begin() = 0;
+  virtual void end() = 0;
+  virtual void resource_barrier() = 0;
+
+  void *api_resource;
+  CommandBufferHandle c_buffer;
+};
+
+struct GraphicsContext : public Context {
+  virtual void bind_pipeline() = 0;
+  virtual void bind_vertex_buffer() = 0;
+  virtual void bind_index_buffer() = 0;
+  virtual void draw() = 0;
+};
+
+struct ComputeContext : public Context {
+  virtual void bind_pipeline() = 0;
+  virtual void dispatch(u32 x, u32 y, u32 z) = 0;
+};
+
+struct TransferContext : public Context {
+  virtual void data_to_buffer() = 0;
+  virtual void buffer_to_buffer() = 0;
+  virtual void buffer_to_texture() = 0;
+};
+
+//////////////////////////////////////////////
+/// GpuDevice
+//////////////////////////////////////////////
+struct GpuDevice {
+  // TODO: Actually implement this
+  virtual u32 create_backbuffers(u32 width, u32 height, u32 count) = 0;
+  virtual void process_display_changes() = 0;
+  virtual void create_buffer() = 0;
+  virtual void create_texture() = 0;
+  virtual void create_pipeline() = 0;
+  virtual GraphicsContext *create_graphics_context() = 0;
+  virtual void destroy_graphics_context(Context *context) = 0;
+
+  virtual void submit_work(Context *context) = 0;
+  virtual void wait_on_work() = 0;
+  virtual void present_to_display() = 0;
+
+  virtual void resize_backbuffers() = 0;
+
+  RendererBackendType type;
+  bool resize_frame{false};
+};
+
+GpuDevice *create_device(RendererBackendType type);
+bool destroy_device(GpuDevice *device);
+//////////////////////////////////////////////
 
 } // namespace Helix

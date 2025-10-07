@@ -26,8 +26,10 @@ constexpr u64 max_index_count = max_vertex_count * 3;
 constexpr u64 max_draw_count = (max_index_count + 2) / 3;
 constexpr u64 max_material_count = (max_index_count + 2) / 3;
 
-struct RendererBackend;
-struct Scene;
+struct GpuDevice;
+struct GraphicsContext;
+struct TransferContext;
+struct ComputeContext;
 
 struct RendererFrontEnd : public Service {
   virtual void init(void *config) override;
@@ -69,11 +71,13 @@ struct RendererFrontEnd : public Service {
   void upload_buffer_data(void *data, BufferHandle dst_buffer, u64 size,
                           u64 offset);
   void upload_to_image(void *data, TextureHandle dst_image);
-  void update_draw_commands(Scene *scene);
   void print_gpu_stats();
 
+  /////////////////////////////////////////////////////////
+  GpuDevice *device{nullptr};
+  GraphicsContext *graphics_context{nullptr};
+  /////////////////////////////////////////////////////////
   u32 current_frame_in_flight;
-  RendererBackend *backend{nullptr};
 
   StringBuffer string_buffer{};
 
@@ -98,7 +102,6 @@ struct RendererFrontEnd : public Service {
   UnifiedBuffer<glm::vec4> unified_bounding_spheres_buffer{};
   UnifiedBuffer<GPUPBRMaterial> unified_pbr_material_buffer{};
   UnifiedBuffer<GPUMeshDraw> unified_mesh_draws_buffer{};
-  // TODO: These might be vulkan specific
   UnifiedBuffer<GPUIndexedDrawCommand> unified_indirect_draws_buffer{};
   BufferHandle count_buffer{};
 

@@ -11,12 +11,17 @@ struct PlatformConfiguration {
   cstring name;
 }; // struct WindowConfiguration
 
+struct VkGpuDevice;
+
 struct Platform : public Service {
 
   virtual void init(void *configuration) override;
   virtual void shutdown() override;
 
   HELIX_DECLARE_SERVICE(Platform)
+
+  bool create_vulkan_surface(VkGpuDevice *device);
+  const char *const *get_vulkan_extension_names(u32 *count);
 
   void handle_os_messages();
   f64 get_absolute_time_s();

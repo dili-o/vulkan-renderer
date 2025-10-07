@@ -1,20 +1,28 @@
 #include "RendererBackend.hpp"
 #include "Core/Log.hpp"
-#include "Core/Memory.hpp"
 #include "Renderer/RendererTypes.hpp"
-#include "Renderer/Vulkan/VulkanBackend.hpp"
+#include "Renderer/Vulkan/VkGpuDevice.hpp"
 
 namespace Helix {
-RendererBackend *RendererBackendCreate(RendererBackendType type) {
-
+GpuDevice *create_device(RendererBackendType type) {
+  GpuDevice *device = nullptr;
   if (type == RENDERER_BACKEND_TYPE_VULKAN) {
-    void *memory = halloca(sizeof(VulkanBackend),
-                           &MemoryService::instance()->system_allocator);
-    // Create 'new' backend and return it.
-    return new (memory) VulkanBackend();
+    device = create_vulkan_device();
+    device->type = RENDERER_BACKEND_TYPE_VULKAN;
+    return device;
+  } else {
+    HCRITICAL("Unknown Backend Type");
   }
-
-  HCRITICAL("Unknown Backend Type");
   return nullptr;
 }
+
+bool destroy_device(GpuDevice *device) {
+  if (device->type == RENDERER_BACKEND_TYPE_VULKAN) {
+    destroy_vulkan_device((VkGpuDevice *)device);
+    MemoryService::instance()->system_allocator.deallocate(device);
+  } else {
+  }
+  return false;
+}
+
 } // namespace Helix

@@ -29,6 +29,19 @@ void VulkanCommandBuffer::init(VkCommandPool pool, VkCommandBufferLevel level,
   state = CommandBufferState::Initial;
   vk_pool = pool;
 }
+void VulkanCommandBuffer::init(VkCommandPool vk_command_pool,
+                               VkCommandBufferLevel vk_level,
+                               VkDevice vk_device, cstring name) {
+  VkCommandBufferAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.commandPool = vk_command_pool;
+  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandBufferCount = 1;
+
+  VK_CHECK(vkAllocateCommandBuffers(vk_device, &alloc_info, &vk_handle));
+  state = CommandBufferState::Initial;
+  vk_pool = vk_command_pool;
+}
 
 void VulkanCommandBuffer::reset() {
   VK_CHECK(vkResetCommandBuffer(vk_handle, 0));

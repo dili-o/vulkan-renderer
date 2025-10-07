@@ -30,8 +30,6 @@ struct EventContext {
   } data;
 };
 
-cstring SDL_Event_type_to_string(u32 type);
-
 // Should return true if handled.
 typedef bool (*PFN_on_event)(u16 code, void *sender, void *listener_inst,
                              EventContext data);

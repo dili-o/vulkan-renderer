@@ -15,6 +15,10 @@ enum Enum { Initial, Recording, Executable, Pending, Invalid };
 struct VulkanCommandBuffer {
   void init(VkCommandPool pool, VkCommandBufferLevel level,
             VulkanBackend *backend, cstring name = nullptr);
+
+  void init(VkCommandPool vk_command_pool, VkCommandBufferLevel vk_level,
+            VkDevice vk_device, cstring name = nullptr);
+
   void begin(VkCommandBufferUsageFlags flags = 0);
   void end();
   void reset();

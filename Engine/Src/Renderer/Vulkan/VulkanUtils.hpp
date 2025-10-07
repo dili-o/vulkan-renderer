@@ -1,7 +1,6 @@
 #pragma once
 #include "Renderer/GPUResources.hpp"
 #include "VulkanTypes.hpp"
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 #define VK_CHECK(call)                                                         \
