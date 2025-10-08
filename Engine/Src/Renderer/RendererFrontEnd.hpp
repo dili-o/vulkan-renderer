@@ -27,7 +27,8 @@ constexpr u64 max_draw_count = (max_index_count + 2) / 3;
 constexpr u64 max_material_count = (max_index_count + 2) / 3;
 
 struct GpuDevice;
-struct GraphicsContext;
+struct Context;
+struct WorkReceipt;
 struct TransferContext;
 struct ComputeContext;
 
@@ -75,7 +76,12 @@ struct RendererFrontEnd : public Service {
 
   /////////////////////////////////////////////////////////
   GpuDevice *device{nullptr};
-  GraphicsContext *graphics_context{nullptr};
+  Context *graphics_context{nullptr};
+  WorkReceipt *frame_receipts[max_frames_in_flight];
+  u32 backbuffer_index;
+  // TODO: Make configurable
+  TextureHandle backbuffers[3];
+  RenderPassHandle main_pass;
   /////////////////////////////////////////////////////////
   u32 current_frame_in_flight;
 

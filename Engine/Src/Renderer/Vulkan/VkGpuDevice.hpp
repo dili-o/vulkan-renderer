@@ -9,12 +9,25 @@ struct VkGpuDevice final : public GpuDevice {
   virtual void create_buffer() override;
   virtual void create_texture() override;
   virtual void create_pipeline() override;
-  virtual GraphicsContext *create_graphics_context() override;
-  virtual void destroy_graphics_context(Context *context) override;
+  virtual RenderPassHandle
+  create_render_pass(const RenderPassCreation &creation) override;
 
-  virtual void submit_work(Context *context) override;
-  virtual void wait_on_work() override;
+  virtual void destroy_render_pass(RenderPassHandle handle) override;
+
+  virtual Context *create_context(ContextType::Enum type) override;
+  virtual void destroy_context(Context *context) override;
+  virtual WorkReceipt *create_receipt() override;
+  virtual void destroy_receipt(WorkReceipt *receipt) override;
+
+  virtual u32 get_next_image_index(Context *context,
+                                   u32 current_frame_in_flight) override;
+  virtual TextureHandle get_backbuffer_texture(u32 index) override;
+  virtual void submit_work(Context *context, WorkReceipt *receipt) override;
+  virtual void wait_on_work(WorkReceipt *receipt) override;
   virtual void present_to_display() override;
+  virtual void set_render_pass_texture(RenderPassHandle handle,
+                                       TextureHandle texture_handle,
+                                       bool is_depth, u32 index = 0) override;
 
   virtual void resize_backbuffers() override;
 
@@ -28,6 +41,9 @@ struct VkGpuDevice final : public GpuDevice {
   }
   inline VulkanImageView *access_image_view(TextureHandle handle) {
     return image_views.obtain(handle);
+  }
+  inline RenderPass *access_render_pass(RenderPassHandle handle) {
+    return render_passes.obtain(handle);
   }
 
   VkInstance vk_instance{VK_NULL_HANDLE};
@@ -46,10 +62,15 @@ struct VkGpuDevice final : public GpuDevice {
   PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT;
   PFN_vkCmdInsertDebugUtilsLabelEXT pfnCmdInsertDebugUtilsLabelEXT;
   PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT;
+  Array<VkSemaphore> vk_image_available_semaphores;
+  Array<VkSemaphore> vk_render_finished_semaphores;
+  VkSemaphore vk_timeline_semaphore{VK_NULL_HANDLE};
+
   VulkanSwapchain swapchain{};
 
   ResourcePool<VulkanImageView> image_views{};
   ResourcePool<VulkanImage> images{};
+  ResourcePool<RenderPass> render_passes{};
 
   VkCommandPool vk_command_pool;
   VulkanCommandBuffer command_buffer;
@@ -58,14 +79,44 @@ struct VkGpuDevice final : public GpuDevice {
 GpuDevice *create_vulkan_device();
 void destroy_vulkan_device(VkGpuDevice *device);
 
-struct VkGraphicsContext final : public GraphicsContext {
-  virtual void begin() override;
-  virtual void end() override;
-  virtual void resource_barrier() override;
+struct VkContext final : public Context {
+  virtual void begin(u32 cbuffer_index) override;
+  virtual void end(u32 cbuffer_index) override;
+  virtual void resource_barrier(const BarrierDescription *barrier) override;
+
+  // Graphics
   virtual void bind_pipeline() override;
   virtual void bind_vertex_buffer() override;
   virtual void bind_index_buffer() override;
   virtual void draw() override;
+  virtual void bind_renderpass(RenderPassHandle handle) override;
+  virtual void end_current_pass() override;
+  // Compute
+  virtual void dispatch(u32 x, u32 y, u32 z) override;
+  // Transfer
+  virtual void data_to_buffer() override;
+  virtual void buffer_to_buffer() override;
+  virtual void buffer_to_texture() override;
+
+  VkGpuDevice *device;
+  VkQueue vk_queue;
+  VkCommandPool vk_command_pool;
+  // TODO: Make the size configurable
+  VulkanCommandBuffer command_buffers[2];
+  u32 ready_buffers_index[2];
+  u32 ready_buffer_count;
+  u32 cbuffer_index;
+
+  // TODO Make more configurable
+  VkSemaphore wait_semaphore;
+  VkSemaphore signal_semaphore;
+  VkSemaphore timeline_semaphore;
+  u64 signal_value;
+};
+
+struct VkWorkReceipt final : public WorkReceipt {
+  u64 wait_value;
+  VkSemaphore vk_timeline_semaphore;
 };
 
 } // namespace Helix

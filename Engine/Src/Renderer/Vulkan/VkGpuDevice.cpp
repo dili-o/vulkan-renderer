@@ -1,6 +1,10 @@
 #include "VkGpuDevice.hpp"
+#include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
+#include "Core/Profiler.hpp"
 #include "Platform/Platform.hpp"
+#include "Renderer/RendererBackend.hpp"
+#include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VulkanUtils.hpp"
 
 #ifdef _DEBUG
@@ -623,8 +627,12 @@ GpuDevice *create_vulkan_device() {
   queue_create_infos.shutdown();
 
   // Init Resource Pools
+  // TODO: Make configurable
   device->images.init(allocator, 1000);
+  // TODO: Make configurable
   device->image_views.init(allocator, 1000);
+  // TODO: Make configurable
+  device->render_passes.init(allocator, 10);
 
   // TODO: Remove
   VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -634,10 +642,41 @@ GpuDevice *create_vulkan_device() {
   VK_CHECK(vkCreateCommandPool(device->vk_device, &pool_info,
                                device->vk_allocation_callbacks,
                                &device->vk_command_pool));
+  device->set_resource_name(VK_OBJECT_TYPE_COMMAND_POOL,
+                            (u64)device->vk_command_pool,
+                            "VkGpuDevice_CommandPool");
 
   device->command_buffer.init(device->vk_command_pool,
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              device->vk_device);
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY, device);
+
+  // TODO: Make this configurable
+  device->vk_image_available_semaphores.init(allocator, 2, 2);
+
+  VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  for (u32 i = 0; i < device->vk_image_available_semaphores.size; ++i) {
+
+    VK_CHECK(vkCreateSemaphore(device->vk_device, &semaphore_info,
+                               device->vk_allocation_callbacks,
+                               &device->vk_image_available_semaphores[i]));
+    // TODO:
+    // set_resource_name(
+    //     VK_OBJECT_TYPE_SEMAPHORE, (u64)image_available_semaphores[i],
+    //     string_buffer.append_use_f("image_available_semaphore_%d", i));
+  }
+  VkSemaphoreTypeCreateInfo timeline_create_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+  timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+  timeline_create_info.initialValue = 0;
+  semaphore_info.pNext = &timeline_create_info;
+
+  VK_CHECK(vkCreateSemaphore(device->vk_device, &semaphore_info,
+                             device->vk_allocation_callbacks,
+                             &device->vk_timeline_semaphore));
+  device->set_resource_name(VK_OBJECT_TYPE_SEMAPHORE,
+                            (u64)device->vk_timeline_semaphore,
+                            "TimelineSemaphore");
+
+  device->frame_number = 0;
 
   HINFO("Vulkan Backend Initialized");
 
@@ -655,6 +694,22 @@ void destroy_vulkan_device(VkGpuDevice *device) {
 
   device->images.shutdown();
   device->image_views.shutdown();
+  device->render_passes.shutdown();
+
+  for (VkSemaphore semaphore : device->vk_image_available_semaphores) {
+    vkDestroySemaphore(device->vk_device, semaphore,
+                       device->vk_allocation_callbacks);
+  }
+
+  for (VkSemaphore semaphore : device->vk_render_finished_semaphores) {
+    vkDestroySemaphore(device->vk_device, semaphore,
+                       device->vk_allocation_callbacks);
+  }
+  vkDestroySemaphore(device->vk_device, device->vk_timeline_semaphore,
+                     device->vk_allocation_callbacks);
+
+  device->vk_image_available_semaphores.shutdown();
+  device->vk_render_finished_semaphores.shutdown();
 
   // TODO: Remove
   vkDestroyCommandPool(device->vk_device, device->vk_command_pool,
@@ -683,6 +738,20 @@ u32 VkGpuDevice::create_backbuffers(u32 width, u32 height, u32 count) {
   }
 
   create_swapchain();
+
+  vk_render_finished_semaphores.init(
+      &MemoryService::instance()->system_allocator, count, count);
+  VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  for (u32 i = 0; i < vk_render_finished_semaphores.size; ++i) {
+
+    VK_CHECK(vkCreateSemaphore(vk_device, &semaphore_info,
+                               vk_allocation_callbacks,
+                               &vk_render_finished_semaphores[i]));
+    // TODO:
+    // set_resource_name(
+    //     VK_OBJECT_TYPE_SEMAPHORE, (u64)vk_render_finished_semaphores[i],
+    //     string_buffer.append_use_f("RenderFinished_Semaphore%d", i));
+  }
   return count;
 }
 
@@ -694,27 +763,259 @@ void VkGpuDevice::create_texture() {}
 
 void VkGpuDevice::create_pipeline() {}
 
-GraphicsContext *VkGpuDevice::create_graphics_context() {
-  void *memory = halloca(sizeof(VkGraphicsContext),
-                         &MemoryService::instance()->system_allocator);
-  VkGraphicsContext *context = new (memory) VkGraphicsContext();
-  context->api_resource = &vk_graphics_queue;
+RenderPassHandle
+VkGpuDevice::create_render_pass(const RenderPassCreation &creation) {
+  RenderPassHandle handle = render_passes.obtain_new();
+  if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain a Render Pass!");
+    return handle;
+  }
+
+  RenderPass *pass = render_passes.obtain(handle);
+  pass->depth_attachment = creation.depth_attachment;
+  pass->num_colour_attachments = creation.num_colour_attachments;
+  memcpy(pass->colour_attachments, creation.colour_attachments,
+         sizeof(AttachmentInfo) * creation.num_colour_attachments);
+
+  return handle;
+}
+void VkGpuDevice::destroy_render_pass(RenderPassHandle handle) {
+  render_passes.release(handle);
+}
+
+Context *VkGpuDevice::create_context(ContextType::Enum type) {
+  void *memory =
+      halloca(sizeof(VkContext), &MemoryService::instance()->system_allocator);
+  VkContext *context = new (memory) VkContext();
+  context->device = this;
+  context->wait_semaphore = VK_NULL_HANDLE;
+  context->signal_semaphore = VK_NULL_HANDLE;
+  context->timeline_semaphore = VK_NULL_HANDLE;
+  context->signal_value = 0;
+
+  u32 queue_index;
+  switch (type) {
+  case ContextType::Graphics: {
+    context->vk_queue = vk_graphics_queue;
+    queue_index = queue_family_indices.graphics_family_index;
+    break;
+  }
+  case ContextType::Compute: {
+    context->vk_queue = vk_compute_queue;
+    queue_index = queue_family_indices.compute_family_index;
+    break;
+  }
+  case ContextType::Transfer: {
+    context->vk_queue = vk_transfer_queue;
+    queue_index = queue_family_indices.transfer_family_index;
+    break;
+  }
+  default: {
+    HERROR("Failed to create Context: Unkown ContextType!");
+    MemoryService::instance()->system_allocator.deallocate(memory);
+    context = nullptr;
+  }
+  }
+
+  if (context) {
+    VkCommandPoolCreateInfo pool_info{
+        VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    pool_info.queueFamilyIndex = queue_index;
+    VK_CHECK(vkCreateCommandPool(vk_device, &pool_info, vk_allocation_callbacks,
+                                 &context->vk_command_pool));
+    set_resource_name(VK_OBJECT_TYPE_COMMAND_POOL,
+                      (u64)context->vk_command_pool, "VkContext_CommandPool");
+
+    for (u32 i = 0; i < 2; ++i) {
+      context->command_buffers[i].init(context->vk_command_pool,
+                                       VK_COMMAND_BUFFER_LEVEL_PRIMARY, this);
+    }
+  }
 
   return context;
 }
 
-void VkGpuDevice::destroy_graphics_context(Context *context) {
+void VkGpuDevice::destroy_context(Context *context) {
   if (!context)
     return;
-  context->api_resource = nullptr;
+
+  VkContext *vk_context = (VkContext *)context;
+
+  vkQueueWaitIdle(vk_context->vk_queue);
+
+  vkDestroyCommandPool(vk_device, vk_context->vk_command_pool,
+                       vk_allocation_callbacks);
   MemoryService::instance()->system_allocator.deallocate(context);
 }
 
-void VkGpuDevice::submit_work(Context *context) {}
+WorkReceipt *VkGpuDevice::create_receipt() {
+  void *memory = halloca(sizeof(VkWorkReceipt),
+                         &MemoryService::instance()->system_allocator);
+  VkWorkReceipt *receipt = new (memory) VkWorkReceipt();
+  receipt->wait_value = 0;
+  receipt->vk_timeline_semaphore = VK_NULL_HANDLE;
 
-void VkGpuDevice::wait_on_work() {}
+  return receipt;
+}
 
-void VkGpuDevice::present_to_display() {}
+void VkGpuDevice::destroy_receipt(WorkReceipt *receipt) {
+  if (!receipt)
+    return;
+
+  MemoryService::instance()->system_allocator.deallocate(receipt);
+}
+
+u32 VkGpuDevice::get_next_image_index(Context *context,
+                                      u32 current_frame_in_flight) {
+  VkResult result = vkAcquireNextImageKHR(
+      vk_device, swapchain.vk_handle, UINT64_MAX,
+      vk_image_available_semaphores[current_frame_in_flight], VK_NULL_HANDLE,
+      &swapchain.current_image_index);
+
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    resize_swapchain();
+    return -1; // TODO: Maybe or maybe return UINT_MAX
+  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    HERROR("Failed to acquire swap chain image!");
+    return -1; // TODO: Maybe or maybe return UINT_MAX
+  }
+
+  VkContext *vk_context = (VkContext *)context;
+  vk_context->wait_semaphore =
+      vk_image_available_semaphores[current_frame_in_flight];
+  vk_context->signal_semaphore =
+      vk_render_finished_semaphores[swapchain.current_image_index];
+  vk_context->timeline_semaphore = vk_timeline_semaphore;
+  vk_context->signal_value = frame_number + max_frames_in_flight;
+
+  return swapchain.current_image_index;
+}
+
+TextureHandle VkGpuDevice::get_backbuffer_texture(u32 index) {
+  return swapchain.image_views[index];
+}
+
+void VkGpuDevice::submit_work(Context *context_, WorkReceipt *receipt) {
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
+  VkContext *vk_context = (VkContext *)context_;
+  // Submit
+  VkCommandBufferSubmitInfo *command_submit_infos =
+      (VkCommandBufferSubmitInfo *)halloca(sizeof(VkCommandBufferSubmitInfo) *
+                                               vk_context->ready_buffer_count,
+                                           stack_allocator);
+
+  for (u32 i = 0; i < vk_context->ready_buffer_count; ++i) {
+    VkCommandBufferSubmitInfo *command_submit_info = &command_submit_infos[i];
+    command_submit_info->sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    command_submit_info->pNext = nullptr;
+    command_submit_info->commandBuffer =
+        vk_context->command_buffers[vk_context->ready_buffers_index[i]]
+            .vk_handle;
+    command_submit_info->deviceMask = 0;
+  }
+
+  VkSemaphoreSubmitInfo wait_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  wait_semaphore_submit_info.semaphore = vk_context->wait_semaphore;
+  wait_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  VkSemaphoreSubmitInfo signal_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_semaphore_submit_info.semaphore = vk_context->signal_semaphore;
+  signal_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+  VkSemaphoreSubmitInfo signal_timeline_semaphore_submit_info{
+      VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+  signal_timeline_semaphore_submit_info.semaphore =
+      vk_context->timeline_semaphore;
+  signal_timeline_semaphore_submit_info.stageMask =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  signal_timeline_semaphore_submit_info.value = vk_context->signal_value;
+
+  VkSemaphoreSubmitInfo signal_semaphore_submit_infos[2] = {
+      signal_semaphore_submit_info, signal_timeline_semaphore_submit_info};
+
+  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  submit_info.commandBufferInfoCount = vk_context->ready_buffer_count;
+  submit_info.pCommandBufferInfos = command_submit_infos;
+
+  submit_info.waitSemaphoreInfoCount = 1;
+  submit_info.pWaitSemaphoreInfos = &wait_semaphore_submit_info;
+
+  submit_info.signalSemaphoreInfoCount =
+      ArraySize(signal_semaphore_submit_infos);
+  submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
+
+  VK_CHECK(
+      vkQueueSubmit2(vk_context->vk_queue, 1, &submit_info, VK_NULL_HANDLE));
+
+  // Clear ready buffer count
+  vk_context->ready_buffer_count = 0;
+
+  if (receipt) {
+    VkWorkReceipt *vk_receipt = (VkWorkReceipt *)receipt;
+    vk_receipt->vk_timeline_semaphore = vk_context->timeline_semaphore;
+    vk_receipt->wait_value = vk_context->signal_value;
+  }
+}
+
+void VkGpuDevice::wait_on_work(WorkReceipt *receipt) {
+  HASSERT(receipt);
+  VkWorkReceipt *vk_receipt = (VkWorkReceipt *)receipt;
+
+  if (vk_receipt->vk_timeline_semaphore == VK_NULL_HANDLE)
+    return;
+  VkSemaphoreWaitInfo wait_info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+  wait_info.semaphoreCount = 1;
+  wait_info.pSemaphores = &vk_receipt->vk_timeline_semaphore;
+  wait_info.pValues = &vk_receipt->wait_value;
+
+  vkWaitSemaphores(vk_device, &wait_info, UINT64_MAX);
+}
+
+void VkGpuDevice::present_to_display() {
+  VkSemaphore wait_semaphores[] = {
+      vk_render_finished_semaphores[swapchain.current_image_index]};
+
+  VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+  present_info.waitSemaphoreCount = 1;
+  present_info.pWaitSemaphores = wait_semaphores;
+
+  VkSwapchainKHR swapchains[] = {swapchain.vk_handle};
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = swapchains;
+  present_info.pImageIndices = &swapchain.current_image_index;
+  present_info.pResults = nullptr;
+
+  VkResult result = vkQueuePresentKHR(vk_graphics_queue, &present_info);
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+      resize_frame) {
+    resize_frame = false;
+    resize_swapchain();
+  } else if (result != VK_SUCCESS) {
+    HERROR("Failed to present swap chain image!");
+  }
+
+  ++frame_number;
+}
+
+void VkGpuDevice::set_render_pass_texture(RenderPassHandle handle,
+                                          TextureHandle texture_handle,
+                                          bool is_depth, u32 index) {
+  RenderPass *render_pass = access_render_pass(handle);
+  if (!render_pass)
+    return;
+
+  if (is_depth) {
+    render_pass->depth_attachment.texture_handle = texture_handle;
+  } else {
+    render_pass->colour_attachments[index].texture_handle = texture_handle;
+  }
+}
 
 void VkGpuDevice::resize_backbuffers() { resize_frame = true; }
 
@@ -851,14 +1152,76 @@ void VkGpuDevice::resize_swapchain() {
 }
 
 //
-// VkGraphicsContext
+// VkContext
 //
-void VkGraphicsContext::begin() {}
-void VkGraphicsContext::end() {}
-void VkGraphicsContext::resource_barrier() {}
-void VkGraphicsContext::bind_pipeline() {}
-void VkGraphicsContext::bind_vertex_buffer() {}
-void VkGraphicsContext::bind_index_buffer() {}
-void VkGraphicsContext::draw() {}
+void VkContext::begin(u32 cbuffer_index_) {
+  command_buffers[cbuffer_index_].begin();
+
+  cbuffer_index = cbuffer_index_;
+};
+
+void VkContext::end(u32 cbuffer_index) {
+  command_buffers[cbuffer_index].end();
+  ready_buffers_index[ready_buffer_count++] = cbuffer_index;
+};
+
+void VkContext::resource_barrier(const BarrierDescription *barrier) {
+  if (barrier->resource_type == ResourceType::Texture) {
+#define SRC_INDEX 0
+#define DST_INDEX 1
+    VkPipelineStageFlags2 stages[2];
+    VkImageLayout src_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout dst_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkPipelineStageFlags2 *src_stage = stages;
+    VkPipelineStageFlags2 *dst_stage = stages + 1;
+
+    if (barrier->dst_state == ResourceState::RenderTarget) {
+      dst_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      stages[DST_INDEX] = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    } else if (barrier->dst_state == ResourceState::Present) {
+      dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+      dst_stage = stages + SRC_INDEX;
+    }
+
+    if (barrier->src_state == ResourceState::Present) {
+      src_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      src_stage = stages + DST_INDEX;
+    } else if (barrier->src_state == ResourceState::RenderTarget) {
+      src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      stages[SRC_INDEX] = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+
+    VulkanImage *image = device->access_image(barrier->resource_handle);
+    command_buffers[cbuffer_index].transition_image(
+        image, src_layout, dst_layout, *src_stage, *dst_stage);
+  } else {
+    HASSERT_MSG(false, "Implement Buffer Resource Barriers");
+  }
+};
+
+// Graphics
+void VkContext::bind_pipeline() {};
+void VkContext::bind_vertex_buffer() {};
+void VkContext::bind_index_buffer() {};
+void VkContext::draw() {};
+
+void VkContext::bind_renderpass(RenderPassHandle handle) {
+  command_buffers[cbuffer_index].bind_renderpass(handle);
+}
+
+void VkContext::end_current_pass() {
+  command_buffers[cbuffer_index].end_current_renderpass();
+}
+
+// Compute
+void VkContext::dispatch(u32 x, u32 y, u32 z) {};
+// Transfer
+void VkContext::data_to_buffer() {};
+void VkContext::buffer_to_buffer() {};
+void VkContext::buffer_to_texture() {};
+
+//
+// VkWorkReceipt
+//
 
 } // namespace Helix

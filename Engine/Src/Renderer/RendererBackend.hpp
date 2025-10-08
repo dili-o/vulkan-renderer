@@ -55,40 +55,38 @@ struct RendererBackend {
 };
 
 ////////////////////////////////////////
+/// WorkReceipt
+////////////////////////////////////////
+struct WorkReceipt {};
+
+////////////////////////////////////////
 /// Context
 ////////////////////////////////////////
-struct CommandBuffer {};
-
 struct Context {
-  virtual void begin() = 0;
-  virtual void end() = 0;
-  virtual void resource_barrier() = 0;
+  virtual void begin(u32 cbuffer_index) = 0;
+  virtual void end(u32 cbuffer_index) = 0;
+  virtual void resource_barrier(const BarrierDescription *barrier) = 0;
 
-  void *api_resource;
-  CommandBufferHandle c_buffer;
-};
-
-struct GraphicsContext : public Context {
+  // Graphics
   virtual void bind_pipeline() = 0;
   virtual void bind_vertex_buffer() = 0;
   virtual void bind_index_buffer() = 0;
   virtual void draw() = 0;
-};
-
-struct ComputeContext : public Context {
-  virtual void bind_pipeline() = 0;
+  virtual void bind_renderpass(RenderPassHandle handle) = 0;
+  virtual void end_current_pass() = 0;
+  // Compute
   virtual void dispatch(u32 x, u32 y, u32 z) = 0;
-};
-
-struct TransferContext : public Context {
+  // Transfer
   virtual void data_to_buffer() = 0;
   virtual void buffer_to_buffer() = 0;
   virtual void buffer_to_texture() = 0;
+
+  ContextType::Enum type;
 };
 
-//////////////////////////////////////////////
+////////////////////////////////////////
 /// GpuDevice
-//////////////////////////////////////////////
+////////////////////////////////////////
 struct GpuDevice {
   // TODO: Actually implement this
   virtual u32 create_backbuffers(u32 width, u32 height, u32 count) = 0;
@@ -96,17 +94,32 @@ struct GpuDevice {
   virtual void create_buffer() = 0;
   virtual void create_texture() = 0;
   virtual void create_pipeline() = 0;
-  virtual GraphicsContext *create_graphics_context() = 0;
-  virtual void destroy_graphics_context(Context *context) = 0;
+  virtual RenderPassHandle
+  create_render_pass(const RenderPassCreation &creation) = 0;
 
-  virtual void submit_work(Context *context) = 0;
-  virtual void wait_on_work() = 0;
+  virtual void destroy_render_pass(RenderPassHandle handle) = 0;
+
+  virtual Context *create_context(ContextType::Enum type) = 0;
+  virtual void destroy_context(Context *context) = 0;
+  virtual WorkReceipt *create_receipt() = 0;
+  virtual void destroy_receipt(WorkReceipt *receipt) = 0;
+
+  virtual u32 get_next_image_index(Context *context,
+                                   u32 current_frame_in_flight) = 0;
+  virtual TextureHandle get_backbuffer_texture(u32 index) = 0;
+  virtual void submit_work(Context *context, WorkReceipt *receipt) = 0;
+  virtual void wait_on_work(WorkReceipt *receipt) = 0;
   virtual void present_to_display() = 0;
+
+  virtual void set_render_pass_texture(RenderPassHandle handle,
+                                       TextureHandle texture_handle,
+                                       bool is_depth, u32 index = 0) = 0;
 
   virtual void resize_backbuffers() = 0;
 
   RendererBackendType type;
   bool resize_frame{false};
+  u64 frame_number;
 };
 
 GpuDevice *create_device(RendererBackendType type);

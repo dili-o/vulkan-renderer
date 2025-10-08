@@ -7,6 +7,7 @@
 
 namespace Helix {
 struct VulkanBackend;
+struct VkGpuDevice;
 
 namespace CommandBufferState {
 enum Enum { Initial, Recording, Executable, Pending, Invalid };
@@ -17,7 +18,7 @@ struct VulkanCommandBuffer {
             VulkanBackend *backend, cstring name = nullptr);
 
   void init(VkCommandPool vk_command_pool, VkCommandBufferLevel vk_level,
-            VkDevice vk_device, cstring name = nullptr);
+            VkGpuDevice *device, cstring name = nullptr);
 
   void begin(VkCommandBufferUsageFlags flags = 0);
   void end();
@@ -42,9 +43,7 @@ struct VulkanCommandBuffer {
   void pipeline_barrier(VkImageMemoryBarrier2 *image_memory_barriers,
                         u32 image_memory_barrier_count);
 
-  void bind_renderpass(RenderPassHandle render_pass,
-                       TextureHandle *color_attachments,
-                       TextureHandle depth_attachment);
+  void bind_renderpass(RenderPassHandle render_pass);
   void end_current_renderpass();
 
   void bind_pipeline(PipelineHandle handle);
@@ -97,7 +96,9 @@ struct VulkanCommandBuffer {
   void insert_marker(cstring name);
   void pop_marker();
 
-  VulkanBackend *backend{nullptr};
+  VkGpuDevice *device{nullptr};
+  // TODO: Remove
+  // VulkanBackend *backend{nullptr};
   VkCommandBuffer vk_handle{VK_NULL_HANDLE};
   VkCommandPool vk_pool{VK_NULL_HANDLE};
   CommandBufferState::Enum state;

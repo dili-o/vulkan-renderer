@@ -20,6 +20,10 @@ enum RendererBackendType {
   RENDERER_BACKEND_TYPE_DIRECTX
 };
 
+namespace ContextType {
+enum Enum { Graphics, Compute, Transfer };
+}
+
 namespace VsyncMode {
 enum Enum { On, Off, Adaptive, Fast };
 }
@@ -145,6 +149,17 @@ struct UniformBufferObject {
   glm::mat4 view_proj;
   glm::mat4 prev_view_matrix;
   glm::vec4 view_frustum_planes[6];
+};
+
+namespace ResourceState {
+enum Enum { RenderTarget, Present };
+}
+
+struct BarrierDescription {
+  ResourceType::Enum resource_type;
+  ResourceState::Enum src_state;
+  ResourceState::Enum dst_state;
+  ResourceHandle resource_handle;
 };
 
 } // namespace Helix

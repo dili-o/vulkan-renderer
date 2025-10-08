@@ -234,9 +234,9 @@ struct BindingSetCreation {
 };
 
 struct AttachmentInfo {
+  TextureHandle texture_handle{k_invalid_index};
   LoadOp::Enum load_op;
   StoreOp::Enum store_op;
-  TextureFormat::Enum format = TextureFormat::Undefined;
 };
 
 #define MAX_COLOR_ATTACHMENTS 8
@@ -248,8 +248,8 @@ struct RenderPassCreation {
 
   RenderPassCreation &add_color_attachment(LoadOp::Enum load_op,
                                            StoreOp::Enum store_op,
-                                           TextureFormat::Enum format) {
-    colour_attachments[num_colour_attachments].format = format;
+                                           TextureHandle handle) {
+    colour_attachments[num_colour_attachments].texture_handle = handle;
     colour_attachments[num_colour_attachments].store_op = store_op;
     colour_attachments[num_colour_attachments].load_op = load_op;
     ++num_colour_attachments;
@@ -258,8 +258,8 @@ struct RenderPassCreation {
 
   RenderPassCreation &add_depth_attachment(LoadOp::Enum load_op,
                                            StoreOp::Enum store_op,
-                                           TextureFormat::Enum format) {
-    depth_attachment.format = format;
+                                           TextureHandle handle) {
+    depth_attachment.texture_handle = handle;
     depth_attachment.store_op = store_op;
     depth_attachment.load_op = load_op;
     return *this;
@@ -269,7 +269,7 @@ struct RenderPassCreation {
 struct RenderPass {
   AttachmentInfo colour_attachments[MAX_COLOR_ATTACHMENTS];
   u32 num_colour_attachments;
-  AttachmentInfo depth_attachment;
+  AttachmentInfo depth_attachment{};
 };
 
 } // namespace Helix

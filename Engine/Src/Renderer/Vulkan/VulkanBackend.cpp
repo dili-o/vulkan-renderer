@@ -491,10 +491,10 @@ bool VulkanBackend::init(void *_config) {
   create_swapchain();
 
   RenderPassCreation pass_creation{};
-  pass_creation
-      .add_color_attachment(LoadOp::Clear, StoreOp::Store,
-                            TextureFormat::B8G8R8A8_UNORM)
-      .add_depth_attachment(LoadOp::Load, StoreOp::Store, TextureFormat::D32);
+  // pass_creation
+  // .add_color_attachment(LoadOp::Clear, StoreOp::Store,
+  //                       TextureFormat::B8G8R8A8_UNORM)
+  // .add_depth_attachment(LoadOp::Load, StoreOp::Store, TextureFormat::D32);
 
   swapchain_pass = create_render_pass(pass_creation);
 
@@ -776,13 +776,13 @@ bool VulkanBackend::end_frame(RenderPacket *packet) {
       ArraySize(signal_semaphore_submit_infos);
   submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
 
+  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
+
+  // Presenting
   VkSemaphore wait_semaphores[] = {
       render_finished_semaphores[swapchain.current_image_index]};
 
-  VK_CHECK(vkQueueSubmit2(vk_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
-
   VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-
   present_info.waitSemaphoreCount = 1;
   present_info.pWaitSemaphores = wait_semaphores;
 
@@ -1137,9 +1137,9 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     // Depth PrePass
     command_buffer->push_marker("Depth PrePass");
     TextureHandle depth_prepass_color_attachments[] = {visibility_buffer};
-    command_buffer->bind_renderpass(RendererFrontEnd::instance()->depth_prepass,
-                                    depth_prepass_color_attachments,
-                                    depth_images[current_frame]);
+    // command_buffer->bind_renderpass(RendererFrontEnd::instance()->depth_prepass,
+    //                                 depth_prepass_color_attachments,
+    //                                 depth_images[current_frame]);
 
     if (packet->mesh_count) {
       PipelineHandle depth_prepass_pipeline_handle =
@@ -1198,8 +1198,8 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
     TextureHandle main_color_attachments[] = {
         swapchain.images[swapchain.current_image_index],
     };
-    command_buffer->bind_renderpass(swapchain_pass, main_color_attachments,
-                                    depth_images[current_frame]);
+    // command_buffer->bind_renderpass(swapchain_pass, main_color_attachments,
+    //                                 depth_images[current_frame]);
 
     PipelineHandle pbr_pipeline_handle =
         *RendererFrontEnd::instance()->pipelines_map.search(
@@ -1804,11 +1804,12 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
           VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
       color_blend_attachments[i].blendEnable =
-          (render_pass->colour_attachments[i].format == TextureFormat::R32_UINT)
-              ? VK_FALSE
-              : VK_TRUE; // TODO: Hard coded
-      color_blend_attachments[i].srcColorBlendFactor =
-          VK_BLEND_FACTOR_SRC_ALPHA;
+          // (render_pass->colour_attachments[i].format ==
+          // TextureFormat::R32_UINT)
+          //     ? VK_FALSE
+          //     : VK_TRUE; // TODO: Hard coded
+          color_blend_attachments[i].srcColorBlendFactor =
+              VK_BLEND_FACTOR_SRC_ALPHA;
       color_blend_attachments[i].dstColorBlendFactor =
           VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
       color_blend_attachments[i].colorBlendOp = VK_BLEND_OP_ADD;
@@ -1830,8 +1831,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     // Dynamic Rendering
     VkFormat color_formats[MAX_COLOR_ATTACHMENTS];
     for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
-      color_formats[i] =
-          to_vk_format(render_pass->colour_attachments[i].format);
+      // color_formats[i] =
+      //     to_vk_format(render_pass->colour_attachments[i].format);
     }
 
     VkPipelineRenderingCreateInfo pipeline_rendering_create{
@@ -1840,8 +1841,8 @@ PipelineHandle VulkanBackend::create_pipeline(PipelineCreation &creation) {
     pipeline_rendering_create.colorAttachmentCount =
         render_pass->num_colour_attachments;
     pipeline_rendering_create.pColorAttachmentFormats = color_formats;
-    pipeline_rendering_create.depthAttachmentFormat =
-        to_vk_format(render_pass->depth_attachment.format);
+    // pipeline_rendering_create.depthAttachmentFormat =
+    //     to_vk_format(render_pass->depth_attachment.format);
     pipeline_rendering_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipeline_info{

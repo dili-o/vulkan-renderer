@@ -1,11 +1,11 @@
 #include "CommandBuffer.hpp"
+#include "Containers/ResourcePool.hpp"
 #include "Core/Memory.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
+#include "Renderer/Vulkan/VkGpuDevice.hpp"
+#include "Renderer/Vulkan/VulkanBackend.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
-#include "SDL/src/video/khronos/vulkan/vulkan_core.h"
-#include "VulkanBackend.hpp"
 #include "VulkanUtils.hpp"
-#include <vulkan/vulkan_core.h>
 
 namespace Helix {
 
@@ -13,34 +13,37 @@ namespace Helix {
 
 void VulkanCommandBuffer::init(VkCommandPool pool, VkCommandBufferLevel level,
                                VulkanBackend *_backend, cstring name) {
-  backend = _backend;
-
-  VkCommandBufferAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  alloc_info.commandPool = pool;
-  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  alloc_info.commandBufferCount = 1;
-
-  VK_CHECK(
-      vkAllocateCommandBuffers(backend->vk_device, &alloc_info, &vk_handle));
-  if (name)
-    backend->set_resource_name(VK_OBJECT_TYPE_COMMAND_BUFFER, (u64)vk_handle,
-                               name);
-  state = CommandBufferState::Initial;
-  vk_pool = pool;
+  // backend = _backend;
+  //
+  // VkCommandBufferAllocateInfo alloc_info{};
+  // alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  // alloc_info.commandPool = pool;
+  // alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  // alloc_info.commandBufferCount = 1;
+  //
+  // VK_CHECK(
+  //     vkAllocateCommandBuffers(backend->vk_device, &alloc_info, &vk_handle));
+  // if (name)
+  //   backend->set_resource_name(VK_OBJECT_TYPE_COMMAND_BUFFER, (u64)vk_handle,
+  //                              name);
+  // state = CommandBufferState::Initial;
+  // vk_pool = pool;
 }
 void VulkanCommandBuffer::init(VkCommandPool vk_command_pool,
                                VkCommandBufferLevel vk_level,
-                               VkDevice vk_device, cstring name) {
+                               VkGpuDevice *device_, cstring name) {
   VkCommandBufferAllocateInfo alloc_info{};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.commandPool = vk_command_pool;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
   alloc_info.commandBufferCount = 1;
 
-  VK_CHECK(vkAllocateCommandBuffers(vk_device, &alloc_info, &vk_handle));
+  VK_CHECK(
+      vkAllocateCommandBuffers(device_->vk_device, &alloc_info, &vk_handle));
   state = CommandBufferState::Initial;
   vk_pool = vk_command_pool;
+
+  device = device_;
 }
 
 void VulkanCommandBuffer::reset() {
@@ -49,7 +52,7 @@ void VulkanCommandBuffer::reset() {
 }
 
 void VulkanCommandBuffer::free() {
-  vkFreeCommandBuffers(backend->vk_device, vk_pool, 1, &vk_handle);
+  vkFreeCommandBuffers(device->vk_device, vk_pool, 1, &vk_handle);
   state = CommandBufferState::Invalid;
 }
 
@@ -79,7 +82,7 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
                                            u32 src_queue_family_index,
                                            u32 dst_queue_family_index) {
   // TODO: Better way to select src and dst stages
-  VulkanImage *image = backend->images.obtain(image_handle);
+  VulkanImage *image = device->images.obtain(image_handle);
   transition_image(image, old_layout, new_layout, src_stage, dst_stage,
                    src_queue_family_index, dst_queue_family_index);
 }
@@ -111,16 +114,17 @@ void VulkanCommandBuffer::pipeline_barrier(
   vkCmdPipelineBarrier2(vk_handle, &dependency_info);
 }
 
-void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
-                                          TextureHandle *color_attachments,
-                                          TextureHandle depth_attachment) {
-  RenderPass *render_pass = backend->access_render_pass(render_pass_handle);
+void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle) {
+  RenderPass *render_pass = device->access_render_pass(render_pass_handle);
+
   VkRenderingAttachmentInfo color_attachment_infos[MAX_COLOR_ATTACHMENTS];
+
   for (u32 i = 0; i < render_pass->num_colour_attachments; ++i) {
     VkRenderingAttachmentInfo &color_attachment_info =
         color_attachment_infos[i];
     color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    VulkanImageView *view = backend->access_image_view(color_attachments[i]);
+    VulkanImageView *view = device->access_image_view(
+        render_pass->colour_attachments[i].texture_handle);
     color_attachment_info.imageView = view->vk_handle;
     color_attachment_info.imageLayout =
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -141,12 +145,12 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
   VkRenderingAttachmentInfo depth_attachment_info{
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
   bool has_depth =
-      render_pass->depth_attachment.format != TextureFormat::Undefined;
+      render_pass->depth_attachment.texture_handle.index != k_invalid_index;
 
   if (has_depth) {
     VulkanImageView *depth_image_view =
-        backend->access_image_view(depth_attachment);
-    VulkanImage *depth_image = backend->access_image(depth_image_view->image);
+        device->access_image_view(render_pass->depth_attachment.texture_handle);
+    VulkanImage *depth_image = device->access_image(depth_image_view->image);
     depth_attachment_info.imageView = depth_image_view->vk_handle;
     depth_attachment_info.imageLayout = depth_image->current_layout;
     depth_attachment_info.loadOp =
@@ -159,7 +163,7 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
   }
 
   VulkanImage *swapchain_image =
-      backend->access_image(backend->swapchain.images[0]);
+      device->access_image(device->swapchain.images[0]);
   VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
   render_info.layerCount = 1;
   render_info.renderArea = {
@@ -179,8 +183,8 @@ void VulkanCommandBuffer::end_current_renderpass() {
 }
 
 void VulkanCommandBuffer::bind_pipeline(PipelineHandle handle) {
-  VulkanPipeline *pipeline = backend->access_pipeline(handle);
-  vkCmdBindPipeline(vk_handle, pipeline->bind_point, pipeline->vk_handle);
+  // VulkanPipeline *pipeline = backend->access_pipeline(handle);
+  // vkCmdBindPipeline(vk_handle, pipeline->bind_point, pipeline->vk_handle);
 }
 
 void VulkanCommandBuffer::bind_viewport(VkExtent2D extents) {
@@ -202,27 +206,28 @@ void VulkanCommandBuffer::bind_vertex_buffer(BufferHandle handle,
                                              u32 first_binding,
                                              u32 binding_count) {
 
-  VulkanBuffer *buffer = backend->access_buffer(handle);
-  VkBuffer vertex_buffers[] = {buffer->vk_handle};
-  VkDeviceSize offsets[] = {0};
-
-  vkCmdBindVertexBuffers(vk_handle, first_binding, binding_count,
-                         vertex_buffers, offsets);
+  // VulkanBuffer *buffer = backend->access_buffer(handle);
+  // VkBuffer vertex_buffers[] = {buffer->vk_handle};
+  // VkDeviceSize offsets[] = {0};
+  //
+  // vkCmdBindVertexBuffers(vk_handle, first_binding, binding_count,
+  //                        vertex_buffers, offsets);
 }
 
 void VulkanCommandBuffer::bind_index_buffer(BufferHandle handle, u32 offset,
                                             VkIndexType index_type) {
-  VulkanBuffer *buffer = backend->access_buffer(handle);
-  vkCmdBindIndexBuffer(vk_handle, buffer->vk_handle, offset, index_type);
+  // VulkanBuffer *buffer = backend->access_buffer(handle);
+  // vkCmdBindIndexBuffer(vk_handle, buffer->vk_handle, offset, index_type);
 }
 
 void VulkanCommandBuffer::bind_descriptor_sets(PipelineHandle pipeline_handle,
                                                VkDescriptorSet dset,
                                                u32 set_index) {
 
-  VulkanPipeline *pipeline = backend->access_pipeline(pipeline_handle);
-  vkCmdBindDescriptorSets(vk_handle, pipeline->bind_point, pipeline->vk_layout,
-                          set_index, 1, &dset, 0, nullptr);
+  // VulkanPipeline *pipeline = backend->access_pipeline(pipeline_handle);
+  // vkCmdBindDescriptorSets(vk_handle, pipeline->bind_point,
+  // pipeline->vk_layout,
+  //                         set_index, 1, &dset, 0, nullptr);
 }
 
 void VulkanCommandBuffer::push_constants(VkPipelineLayout layout,
@@ -302,7 +307,7 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
   begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
   // Tranisiton image (including mip levels) to transfer dst
-  VulkanImage *image = backend->access_image(dst_image);
+  VulkanImage *image = device->access_image(dst_image);
   transition_image(
       image, image->current_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
       VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
@@ -446,7 +451,7 @@ void VulkanCommandBuffer::push_marker(cstring name) {
   label.color[1] = 1.0f;
   label.color[2] = 1.0f;
   label.color[3] = 1.0f;
-  backend->pfnCmdBeginDebugUtilsLabelEXT(vk_handle, &label);
+  device->pfnCmdBeginDebugUtilsLabelEXT(vk_handle, &label);
 #endif
 }
 
@@ -458,13 +463,13 @@ void VulkanCommandBuffer::insert_marker(cstring name) {
   label.color[1] = 1.0f;
   label.color[2] = 1.0f;
   label.color[3] = 1.0f;
-  backend->pfnCmdInsertDebugUtilsLabelEXT(vk_handle, &label);
+  device->pfnCmdInsertDebugUtilsLabelEXT(vk_handle, &label);
 #endif
 }
 
 void VulkanCommandBuffer::pop_marker() {
 #ifdef _DEBUG
-  backend->pfnCmdEndDebugUtilsLabelEXT(vk_handle);
+  device->pfnCmdEndDebugUtilsLabelEXT(vk_handle);
 #endif // _DEBUG
 }
 

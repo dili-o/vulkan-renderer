@@ -42,29 +42,97 @@ void RendererFrontEnd::init(void *_config) {
     return;
   }
 
+  // TODO: Make this configurable
+  for (u32 i = 0; i < 3; ++i) {
+    backbuffers[i] = device->get_backbuffer_texture(i);
+  }
+
+  current_frame_in_flight = 0;
+  for (u32 i = 0; i < max_frames_in_flight; ++i) {
+    frame_receipts[i] = device->create_receipt();
+  }
+
+  graphics_context = device->create_context(ContextType::Graphics);
+
+  RenderPassCreation creation{};
+  creation.add_color_attachment(LoadOp::Clear, StoreOp::Store, backbuffers[0]);
+  main_pass = create_render_pass(creation);
+
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
 }
 
 void RendererFrontEnd::shutdown() {
+  destroy_render_pass(main_pass);
 
+  for (u32 i = 0; i < max_frames_in_flight; ++i) {
+    device->destroy_receipt(frame_receipts[i]);
+  }
+
+  device->destroy_context(graphics_context);
   destroy_device(device);
 
   HELIX_SERVICE_SHUTDOWN_MSG(RendererFrontEnd);
 }
 
-void RendererFrontEnd::on_resize(u16 width, u16 height) {}
+void RendererFrontEnd::on_resize(u16 width, u16 height) {
+  device->resize_backbuffers();
+}
 
 bool RendererFrontEnd::render_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION_COLOR(tracy::Color::Orange);
 
+  if (begin_frame(packet)) {
+    BarrierDescription barrier{};
+    barrier.resource_type = ResourceType::Texture;
+    barrier.src_state = ResourceState::Present;
+    barrier.dst_state = ResourceState::RenderTarget;
+    barrier.resource_handle = backbuffers[backbuffer_index];
+    graphics_context->resource_barrier(&barrier);
+
+    device->set_render_pass_texture(main_pass, backbuffers[backbuffer_index],
+                                    false, 0);
+
+    graphics_context->bind_renderpass(main_pass);
+    graphics_context->end_current_pass();
+
+    barrier.resource_type = ResourceType::Texture;
+    barrier.src_state = ResourceState::RenderTarget;
+    barrier.dst_state = ResourceState::Present;
+    barrier.resource_handle = backbuffers[backbuffer_index];
+
+    graphics_context->resource_barrier(&barrier);
+
+    end_frame(packet);
+  }
+
   return true;
 }
 
-bool RendererFrontEnd::begin_frame(RenderPacket *packet) { return true; }
+bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
+  HELIX_PROFILER_FUNCTION();
+  device->wait_on_work(frame_receipts[current_frame_in_flight]);
+  backbuffer_index =
+      device->get_next_image_index(graphics_context, current_frame_in_flight);
+
+  if (backbuffer_index == -1)
+    return false;
+
+  graphics_context->begin(current_frame_in_flight);
+
+  return true;
+}
 
 bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
+  graphics_context->end(current_frame_in_flight);
+
+  device->submit_work(graphics_context,
+                      frame_receipts[current_frame_in_flight]);
+  device->present_to_display();
+  current_frame_in_flight =
+      (current_frame_in_flight + 1) % max_frames_in_flight;
+
   return true;
 }
 
@@ -94,7 +162,7 @@ RendererFrontEnd::create_binding_set(BindingSetCreation &creation) {
 
 RenderPassHandle
 RendererFrontEnd::create_render_pass(RenderPassCreation &creation) {
-  return RenderPassHandle();
+  return device->create_render_pass(creation);
 }
 
 // TODO: Implement
@@ -123,7 +191,9 @@ void RendererFrontEnd::destroy_texture(TextureHandle handle) {}
 
 void RendererFrontEnd::destroy_binding_set(BindingSetHandle handle) {}
 
-void RendererFrontEnd::destroy_render_pass(RenderPassHandle handle) {}
+void RendererFrontEnd::destroy_render_pass(RenderPassHandle handle) {
+  device->destroy_render_pass(handle);
+}
 
 bool RendererFrontEnd::update_binding_set(BindingSetHandle set,
                                           BindingSetUpdateInfo *update_infos,
