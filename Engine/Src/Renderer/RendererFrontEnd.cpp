@@ -6,7 +6,6 @@
 #include "Core/Profiler.hpp"
 #include "Core/String.hpp"
 #include "Game.hpp"
-#include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
@@ -18,6 +17,7 @@
 #include <stb_image.h>
 
 namespace Helix {
+PipelineHandle hello_triangle{};
 
 static RendererFrontEnd *s_renderer_frontend{nullptr};
 RendererFrontEnd *RendererFrontEnd::instance() { return s_renderer_frontend; }
@@ -58,12 +58,44 @@ void RendererFrontEnd::init(void *_config) {
   creation.add_color_attachment(LoadOp::Clear, StoreOp::Store, backbuffers[0]);
   main_pass = create_render_pass(creation);
 
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
+  pipelines_map.init(allocator, 10, string_hash);
+  {
+    PipelineCreation creation;
+    creation.name = "HelloTriangle";
+    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+        sizeof(ShaderCreateInfo) * 2, stack_allocator);
+    creation.shader_create_infos[0] = {"HelloTriangle.vert",
+                                       ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"HelloTriangle.frag",
+                                       ShaderStage::Fragment};
+    creation.shader_count = 2;
+    creation.pipeline_type = PipelineType::Graphics;
+    creation.cull_mode = CullMode::None;
+    creation.set_layout_count = 0;
+    creation.enable_depth_write = true;
+    creation.enable_depth_test = true;
+    creation.render_pass = main_pass;
+
+    hello_triangle = create_pipeline(creation);
+  }
+
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
 }
 
 void RendererFrontEnd::shutdown() {
   destroy_render_pass(main_pass);
+
+  for (u32 i = 0; i < pipelines_map.capacity; ++i) {
+    const Item<StringView, PipelineHandle> item = pipelines_map.items[i];
+    if (item.state == EntryState::OCCUPIED) {
+      device->destroy_pipeline(item.value);
+    }
+  }
+  pipelines_map.shutdown();
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     device->destroy_receipt(frame_receipts[i]);
@@ -94,6 +126,13 @@ bool RendererFrontEnd::render_frame(RenderPacket *packet) {
                                     false, 0);
 
     graphics_context->bind_renderpass(main_pass);
+    graphics_context->bind_pipeline(hello_triangle);
+    i32 width, height;
+    Platform::instance()->get_window_size(&width, &height);
+
+    graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
+    graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f, 1.f);
+    graphics_context->draw(3, 1, 0, 0);
     graphics_context->end_current_pass();
 
     barrier.resource_type = ResourceType::Texture;
@@ -141,7 +180,15 @@ BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
 }
 
 PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
-  return PipelineHandle();
+  StringView name_view = {creation.name, strlen(creation.name)};
+  if (pipelines_map.search(name_view)) {
+    HERROR("Failed to create Pipeline: PipelineCreation.name already exists");
+    return {k_invalid_index, 0};
+  }
+
+  PipelineHandle handle = device->create_pipeline(creation);
+  pipelines_map.insert({creation.name, strlen(creation.name)}, handle);
+  return handle;
 }
 
 TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
@@ -185,7 +232,17 @@ PipelineInfo RendererFrontEnd::access_pipeline_view(PipelineHandle handle) {
 
 void RendererFrontEnd::destroy_buffer(BufferHandle handle) {}
 
-void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {}
+void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
+  if (handle.index == k_invalid_index) {
+    HERROR("Attempting to destroy an invalid pipeline");
+    return;
+  }
+
+  // TODO: Delete the handle from pipelines
+  PipelineInfo info = device->access_pipeline_view(handle);
+  pipelines_map.remove_item({info.name, strlen(info.name)});
+  device->destroy_pipeline(handle);
+}
 
 void RendererFrontEnd::destroy_texture(TextureHandle handle) {}
 

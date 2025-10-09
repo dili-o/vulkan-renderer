@@ -8,16 +8,21 @@ struct VkGpuDevice final : public GpuDevice {
   virtual void process_display_changes() override;
   virtual void create_buffer() override;
   virtual void create_texture() override;
-  virtual void create_pipeline() override;
+  virtual PipelineHandle create_pipeline(PipelineCreation &creation) override;
   virtual RenderPassHandle
   create_render_pass(const RenderPassCreation &creation) override;
+  virtual Context *create_context(ContextType::Enum type) override;
+  virtual WorkReceipt *create_receipt() override;
+
+  virtual PipelineInfo access_pipeline_view(PipelineHandle handle) override;
 
   virtual void destroy_render_pass(RenderPassHandle handle) override;
-
-  virtual Context *create_context(ContextType::Enum type) override;
-  virtual void destroy_context(Context *context) override;
-  virtual WorkReceipt *create_receipt() override;
+  virtual void destroy_pipeline(PipelineHandle handle) override;
   virtual void destroy_receipt(WorkReceipt *receipt) override;
+  virtual void destroy_context(Context *context) override;
+  void destroy_pipeline_instant(PipelineHandle handle);
+
+  void free_queued_resources();
 
   virtual u32 get_next_image_index(Context *context,
                                    u32 current_frame_in_flight) override;
@@ -45,6 +50,9 @@ struct VkGpuDevice final : public GpuDevice {
   inline RenderPass *access_render_pass(RenderPassHandle handle) {
     return render_passes.obtain(handle);
   }
+  inline VulkanPipeline *access_pipeline(PipelineHandle handle) {
+    return pipelines.obtain(handle);
+  }
 
   VkInstance vk_instance{VK_NULL_HANDLE};
   VkAllocationCallbacks *vk_allocation_callbacks{nullptr};
@@ -67,13 +75,12 @@ struct VkGpuDevice final : public GpuDevice {
   VkSemaphore vk_timeline_semaphore{VK_NULL_HANDLE};
 
   VulkanSwapchain swapchain{};
+  Array<ResourceQueueObject> resource_deletion_queue{};
 
   ResourcePool<VulkanImageView> image_views{};
   ResourcePool<VulkanImage> images{};
   ResourcePool<RenderPass> render_passes{};
-
-  VkCommandPool vk_command_pool;
-  VulkanCommandBuffer command_buffer;
+  ResourcePool<VulkanPipeline> pipelines{};
 };
 
 GpuDevice *create_vulkan_device();
@@ -85,10 +92,14 @@ struct VkContext final : public Context {
   virtual void resource_barrier(const BarrierDescription *barrier) override;
 
   // Graphics
-  virtual void bind_pipeline() override;
+  virtual void set_viewport(f32 x, f32 y, f32 width, f32 height, f32 min_depth,
+                            f32 max_depth) override;
+  virtual void set_scissor(f32 x, f32 y, f32 width, f32 height) override;
+  virtual void bind_pipeline(PipelineHandle handle) override;
   virtual void bind_vertex_buffer() override;
   virtual void bind_index_buffer() override;
-  virtual void draw() override;
+  virtual void draw(u32 vertex_count, u32 instance_count, u32 first_vertex,
+                    u32 first_instance) override;
   virtual void bind_renderpass(RenderPassHandle handle) override;
   virtual void end_current_pass() override;
   // Compute

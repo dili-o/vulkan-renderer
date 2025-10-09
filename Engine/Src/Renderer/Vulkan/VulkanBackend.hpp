@@ -11,12 +11,6 @@
 
 namespace Helix {
 
-struct ResourceQueueObject {
-  VkObjectType type;
-  ResourceHandle handle;
-  cstring name{nullptr};
-};
-
 struct VulkanBackend : public RendererBackend {
   virtual bool init(void *config) override;
   virtual bool shutdown() override;

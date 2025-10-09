@@ -1,5 +1,6 @@
 #pragma once
 #include "GPUResources.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
 #include "RendererTypes.hpp"
 
 namespace Helix {
@@ -68,10 +69,14 @@ struct Context {
   virtual void resource_barrier(const BarrierDescription *barrier) = 0;
 
   // Graphics
-  virtual void bind_pipeline() = 0;
+  virtual void set_viewport(f32 x, f32 y, f32 width, f32 height, f32 min_depth,
+                            f32 max_depth) = 0;
+  virtual void set_scissor(f32 x, f32 y, f32 width, f32 height) = 0;
+  virtual void bind_pipeline(PipelineHandle handle) = 0;
   virtual void bind_vertex_buffer() = 0;
   virtual void bind_index_buffer() = 0;
-  virtual void draw() = 0;
+  virtual void draw(u32 vertex_count, u32 instance_count, u32 first_vertex,
+                    u32 first_instance) = 0;
   virtual void bind_renderpass(RenderPassHandle handle) = 0;
   virtual void end_current_pass() = 0;
   // Compute
@@ -93,15 +98,17 @@ struct GpuDevice {
   virtual void process_display_changes() = 0;
   virtual void create_buffer() = 0;
   virtual void create_texture() = 0;
-  virtual void create_pipeline() = 0;
+  virtual PipelineHandle create_pipeline(PipelineCreation &creation) = 0;
   virtual RenderPassHandle
   create_render_pass(const RenderPassCreation &creation) = 0;
+  virtual WorkReceipt *create_receipt() = 0;
+  virtual Context *create_context(ContextType::Enum type) = 0;
+
+  virtual PipelineInfo access_pipeline_view(PipelineHandle handle) = 0;
 
   virtual void destroy_render_pass(RenderPassHandle handle) = 0;
-
-  virtual Context *create_context(ContextType::Enum type) = 0;
+  virtual void destroy_pipeline(PipelineHandle handle) = 0;
   virtual void destroy_context(Context *context) = 0;
-  virtual WorkReceipt *create_receipt() = 0;
   virtual void destroy_receipt(WorkReceipt *receipt) = 0;
 
   virtual u32 get_next_image_index(Context *context,

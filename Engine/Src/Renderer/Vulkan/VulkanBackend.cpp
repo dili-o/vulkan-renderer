@@ -1099,8 +1099,14 @@ void VulkanBackend::record_command_buffer(VulkanCommandBuffer *command_buffer,
       access_image(swapchain.images[swapchain.current_image_index]);
 
   // Setup view_port and scissor
-  command_buffer->bind_viewport(
-      {swapchain_image->vk_extents.width, swapchain_image->vk_extents.height});
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = swapchain_image->vk_extents.width;
+  viewport.height = swapchain_image->vk_extents.height;
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+  command_buffer->bind_viewport(&viewport);
 
   VkRect2D rect{};
   rect.offset = {0, 0};

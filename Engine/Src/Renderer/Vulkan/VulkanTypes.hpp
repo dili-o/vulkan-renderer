@@ -31,6 +31,12 @@ struct QueueFamilyIndices {
   }
 };
 
+struct ResourceQueueObject {
+  VkObjectType type;
+  ResourceHandle handle;
+  cstring name{nullptr};
+};
+
 struct SamplerCreation {
   VkFilter min_filter = VK_FILTER_LINEAR;
   VkFilter mag_filter = VK_FILTER_LINEAR;

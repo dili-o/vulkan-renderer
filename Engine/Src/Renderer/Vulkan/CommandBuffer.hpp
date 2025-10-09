@@ -49,7 +49,7 @@ struct VulkanCommandBuffer {
   void bind_pipeline(PipelineHandle handle);
 
   // TODO: Maybe bind viewport and scissors in bind_renderpass instead
-  void bind_viewport(VkExtent2D extents);
+  void bind_viewport(VkViewport *viewport);
   void bind_scissors(VkRect2D rect);
 
   // TODO: Make more configurable

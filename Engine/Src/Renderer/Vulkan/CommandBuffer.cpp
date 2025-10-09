@@ -183,19 +183,12 @@ void VulkanCommandBuffer::end_current_renderpass() {
 }
 
 void VulkanCommandBuffer::bind_pipeline(PipelineHandle handle) {
-  // VulkanPipeline *pipeline = backend->access_pipeline(handle);
-  // vkCmdBindPipeline(vk_handle, pipeline->bind_point, pipeline->vk_handle);
+  VulkanPipeline *pipeline = device->access_pipeline(handle);
+  vkCmdBindPipeline(vk_handle, pipeline->bind_point, pipeline->vk_handle);
 }
 
-void VulkanCommandBuffer::bind_viewport(VkExtent2D extents) {
-  VkViewport viewport{};
-  viewport.x = 0.0f;
-  viewport.y = 0.0f;
-  viewport.width = (f32)extents.width;
-  viewport.height = (f32)extents.height;
-  viewport.minDepth = 0.0f;
-  viewport.maxDepth = 1.0f;
-  vkCmdSetViewport(vk_handle, 0, 1, &viewport);
+void VulkanCommandBuffer::bind_viewport(VkViewport *viewport) {
+  vkCmdSetViewport(vk_handle, 0, 1, viewport);
 }
 
 void VulkanCommandBuffer::bind_scissors(VkRect2D rect) {
