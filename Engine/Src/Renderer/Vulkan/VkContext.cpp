@@ -3,12 +3,12 @@
 
 namespace Helix {
 void VkContext::begin(u32 cbuffer_index_) {
-  command_buffers[cbuffer_index_].begin();
   cbuffer_index = cbuffer_index_;
+  current_cb().begin();
 };
 
 void VkContext::end(u32 cbuffer_index) {
-  command_buffers[cbuffer_index].end();
+  current_cb().end();
   ready_buffers_index[ready_buffer_count++] = cbuffer_index;
 };
 
@@ -39,12 +39,16 @@ void VkContext::resource_barrier(const BarrierDescription *barrier) {
     }
 
     VulkanImage *image = device->access_image(barrier->resource_handle);
-    command_buffers[cbuffer_index].transition_image(
-        image, src_layout, dst_layout, *src_stage, *dst_stage);
+    current_cb().transition_image(image, src_layout, dst_layout, *src_stage,
+                                  *dst_stage);
   } else {
     HASSERT_MSG(false, "Implement Buffer Resource Barriers");
   }
 };
+
+void VkContext::push_shader_constants(u32 size, void *data) {
+  current_cb().push_constants(0, size, data);
+}
 
 // Graphics
 void VkContext::set_viewport(f32 x, f32 y, f32 width, f32 height, f32 min_depth,
@@ -57,18 +61,18 @@ void VkContext::set_viewport(f32 x, f32 y, f32 width, f32 height, f32 min_depth,
   viewport.height = height;
   viewport.minDepth = min_depth;
   viewport.maxDepth = max_depth;
-  command_buffers[cbuffer_index].bind_viewport(&viewport);
+  current_cb().bind_viewport(&viewport);
 }
 
 void VkContext::set_scissor(f32 x, f32 y, f32 width, f32 height) {
   VkRect2D rect{};
   rect.offset = {(i32)x, (i32)y};
   rect.extent = {(u32)width, (u32)height};
-  command_buffers[cbuffer_index].bind_scissors(rect);
+  current_cb().bind_scissors(rect);
 }
 
 void VkContext::bind_pipeline(PipelineHandle handle) {
-  command_buffers[cbuffer_index].bind_pipeline(handle);
+  current_cb().bind_pipeline(handle);
 };
 
 void VkContext::bind_vertex_buffer() {};
@@ -77,17 +81,14 @@ void VkContext::bind_index_buffer() {};
 
 void VkContext::draw(u32 vertex_count, u32 instance_count, u32 first_vertex,
                      u32 first_instance) {
-  command_buffers[cbuffer_index].draw(vertex_count, instance_count,
-                                      first_vertex, first_instance);
+  current_cb().draw(vertex_count, instance_count, first_vertex, first_instance);
 };
 
 void VkContext::bind_renderpass(RenderPassHandle handle) {
-  command_buffers[cbuffer_index].bind_renderpass(handle);
+  current_cb().bind_renderpass(handle);
 }
 
-void VkContext::end_current_pass() {
-  command_buffers[cbuffer_index].end_current_renderpass();
-}
+void VkContext::end_current_pass() { current_cb().end_current_renderpass(); }
 
 // Compute
 void VkContext::dispatch(u32 x, u32 y, u32 z) {};

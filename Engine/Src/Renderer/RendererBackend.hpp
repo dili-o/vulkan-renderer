@@ -67,6 +67,7 @@ struct Context {
   virtual void begin(u32 cbuffer_index) = 0;
   virtual void end(u32 cbuffer_index) = 0;
   virtual void resource_barrier(const BarrierDescription *barrier) = 0;
+  virtual void push_shader_constants(u32 size, void *data) = 0;
 
   // Graphics
   virtual void set_viewport(f32 x, f32 y, f32 width, f32 height, f32 min_depth,

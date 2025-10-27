@@ -1,9 +1,7 @@
 #include "CommandBuffer.hpp"
 #include "Containers/ResourcePool.hpp"
-#include "Core/Memory.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/Vulkan/VkGpuDevice.hpp"
-#include "Renderer/Vulkan/VulkanBackend.hpp"
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "VulkanUtils.hpp"
 
@@ -11,24 +9,6 @@ namespace Helix {
 
 #pragma region VulkanCommandBuffer
 
-void VulkanCommandBuffer::init(VkCommandPool pool, VkCommandBufferLevel level,
-                               VulkanBackend *_backend, cstring name) {
-  // backend = _backend;
-  //
-  // VkCommandBufferAllocateInfo alloc_info{};
-  // alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  // alloc_info.commandPool = pool;
-  // alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  // alloc_info.commandBufferCount = 1;
-  //
-  // VK_CHECK(
-  //     vkAllocateCommandBuffers(backend->vk_device, &alloc_info, &vk_handle));
-  // if (name)
-  //   backend->set_resource_name(VK_OBJECT_TYPE_COMMAND_BUFFER, (u64)vk_handle,
-  //                              name);
-  // state = CommandBufferState::Initial;
-  // vk_pool = pool;
-}
 void VulkanCommandBuffer::init(VkCommandPool vk_command_pool,
                                VkCommandBufferLevel vk_level,
                                VkGpuDevice *device_, cstring name) {
@@ -184,7 +164,15 @@ void VulkanCommandBuffer::end_current_renderpass() {
 
 void VulkanCommandBuffer::bind_pipeline(PipelineHandle handle) {
   VulkanPipeline *pipeline = device->access_pipeline(handle);
-  vkCmdBindPipeline(vk_handle, pipeline->bind_point, pipeline->vk_handle);
+  if (pipeline) {
+    vkCmdBindPipeline(vk_handle, pipeline->bind_point, pipeline->vk_handle);
+    current_pipeline = handle;
+  }
+#ifdef _DEBUG
+  else {
+    HERROR("VulkanCommandBuffer::bind_pipeline - Invalid pipeline handle!");
+  }
+#endif
 }
 
 void VulkanCommandBuffer::bind_viewport(VkViewport *viewport) {
@@ -223,10 +211,18 @@ void VulkanCommandBuffer::bind_descriptor_sets(PipelineHandle pipeline_handle,
   //                         set_index, 1, &dset, 0, nullptr);
 }
 
-void VulkanCommandBuffer::push_constants(VkPipelineLayout layout,
-                                         VkShaderStageFlagBits stage,
-                                         u32 offset, u32 size, void *data) {
-  vkCmdPushConstants(vk_handle, layout, stage, offset, size, data);
+void VulkanCommandBuffer::push_constants(u32 offset, u32 size, void *data) {
+  VulkanPipeline *pipeline = device->access_pipeline(current_pipeline);
+  if (pipeline) {
+    // TODO: Specify the shader stage
+    vkCmdPushConstants(vk_handle, pipeline->vk_layout, VK_SHADER_STAGE_ALL,
+                       offset, size, data);
+  }
+#ifdef _DEBUG
+  else {
+    HERROR("VulkanCommandBuffer::push_constants - Invalid pipeline handle!");
+  }
+#endif
 }
 
 void VulkanCommandBuffer::draw_indexed(u32 index_count, u32 instance_count,
@@ -467,70 +463,4 @@ void VulkanCommandBuffer::pop_marker() {
 }
 
 #pragma endregion VulkanCommandBuffer
-
-#pragma region CommandBufferManager
-void CommandBufferManager::init(VulkanBackend *_backend, u32 queue_family_index,
-                                u32 num_threads, u32 _max_frames_in_flight,
-                                cstring name) {
-  backend = _backend;
-  max_frames_in_flight = _max_frames_in_flight;
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  vk_command_pools.init(allocator, num_threads, num_threads);
-  command_buffers.init(allocator, num_threads * max_frames_in_flight,
-                       num_threads * max_frames_in_flight);
-  for (u32 i = 0; i < num_threads; ++i) {
-    VkCommandPoolCreateInfo pool_info{
-        VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    pool_info.queueFamilyIndex = queue_family_index;
-    VK_CHECK(vkCreateCommandPool(backend->vk_device, &pool_info,
-                                 backend->vk_allocation_callbacks,
-                                 &vk_command_pools[i]));
-    if (name) {
-      backend->set_resource_name(
-          VK_OBJECT_TYPE_COMMAND_POOL, (u64)vk_command_pools[i],
-          backend->string_buffer.append_use_f("%s_%d", name, i));
-    }
-    for (u32 j = 0; j < max_frames_in_flight; ++j) {
-      command_buffers[(i * max_frames_in_flight) + j].init(
-          vk_command_pools[i], VK_COMMAND_BUFFER_LEVEL_PRIMARY, backend,
-          backend->string_buffer.append_use_f("%s%d_CommandBuffer_%d", name, i,
-                                              j));
-    }
-  }
-}
-
-void CommandBufferManager::shutdown() {
-  for (VulkanCommandBuffer command_buffer : command_buffers) {
-    command_buffer.free();
-  }
-  for (VkCommandPool vk_command_pool : vk_command_pools) {
-
-    vkDestroyCommandPool(backend->vk_device, vk_command_pool,
-                         backend->vk_allocation_callbacks);
-  }
-  command_buffers.shutdown();
-  vk_command_pools.shutdown();
-}
-
-void CommandBufferManager::reset_pool(u32 thread_index) {
-  VkCommandPool &vk_command_pool = vk_command_pools[thread_index];
-  vkResetCommandPool(backend->vk_device, vk_command_pool, 0);
-  for (u32 i = 0; i < max_frames_in_flight; ++i) {
-    command_buffers[(thread_index * max_frames_in_flight) + i].state =
-        CommandBufferState::Initial;
-  }
-}
-
-VulkanCommandBuffer *CommandBufferManager::get_command_buffer(u32 frame,
-                                                              u32 thread_index,
-                                                              bool begin) {
-  VulkanCommandBuffer *buffer =
-      &command_buffers[(max_frames_in_flight * thread_index) + frame];
-  if (begin) {
-    buffer->begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-  }
-  return buffer;
-}
-#pragma endregion CommandBufferManager
 } // namespace Helix

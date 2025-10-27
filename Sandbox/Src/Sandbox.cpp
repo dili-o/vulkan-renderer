@@ -56,14 +56,15 @@ void Sandbox::init() {
 
     hello_triangle = rf->create_pipeline(creation);
   }
+
+  CameraConfiguration cam_config{};
+  camera.init(cam_config);
 }
 
 void Sandbox::run() {
   clock.start();
   last_time = clock.get_elapsed_time_s();
   f64 target_frame_seconds_ms = 1000.0 / 60.0;
-
-  RenderPacket packet{};
 
   while (!platform->requested_exit) {
     platform->handle_os_messages();
@@ -74,10 +75,9 @@ void Sandbox::run() {
       f64 frame_start_time_ms = platform->get_absolute_time_ms();
 
       InputService::instance()->update(delta_time);
-
       JobService::instance()->update();
 
-      packet.delta_time = (f32)delta_time;
+      camera.update(delta_time);
 
       render_frame();
 
@@ -122,6 +122,8 @@ void Sandbox::render_frame() {
     rf->graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
                                        1.f);
+    glm::mat4 view_proj = camera.get_projection() * camera.get_view();
+    rf->graphics_context->push_shader_constants(sizeof(glm::mat4), &view_proj);
     rf->graphics_context->draw(3, 1, 0, 0);
     rf->graphics_context->end_current_pass();
 
@@ -137,6 +139,8 @@ void Sandbox::render_frame() {
 }
 
 void Sandbox::shutdown() {
+  camera.shutdown();
+
   EventService *event_service = EventService::instance();
   event_service->unregister_event(SDL_EVENT_QUIT, 0, application_on_event);
   event_service->unregister_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);

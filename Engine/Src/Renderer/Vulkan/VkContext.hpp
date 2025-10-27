@@ -7,6 +7,7 @@ struct VkContext final : public Context {
   virtual void end(u32 cbuffer_index) override;
   virtual void resource_barrier(const BarrierDescription *barrier) override;
 
+  virtual void push_shader_constants(u32 size, void *data) override;
   // Graphics
   virtual void set_viewport(f32 x, f32 y, f32 width, f32 height, f32 min_depth,
                             f32 max_depth) override;
@@ -24,6 +25,10 @@ struct VkContext final : public Context {
   virtual void data_to_buffer() override;
   virtual void buffer_to_buffer() override;
   virtual void buffer_to_texture() override;
+
+  inline VulkanCommandBuffer &current_cb() {
+    return command_buffers[cbuffer_index];
+  }
 
   VkGpuDevice *device;
   VkQueue vk_queue;

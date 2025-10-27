@@ -99,14 +99,14 @@ enum Enum { Store, DontCare };
 
 #pragma region Creation
 struct BufferCreation {
+  BufferCreation &reset();
+
   BufferUsage::Enum usage_flags = BufferUsage::None;
   MemoryState::Enum memory_state_flags = MemoryState::None;
   MemoryAccess::Enum memory_access_flags = MemoryAccess::None;
   u64 size = 0;
   void *initial_data = nullptr;
   cstring name = nullptr;
-
-  BufferCreation &reset();
 };
 
 struct ShaderCreateInfo {
@@ -115,22 +115,20 @@ struct ShaderCreateInfo {
 };
 
 struct PipelineCreation {
+  PipelineCreation &reset();
+
   ShaderCreateInfo *shader_create_infos;
   u32 shader_count = 0;
   PipelineType::Enum pipeline_type{};
-  cstring name;
-
   CullMode::Enum cull_mode = CullMode::Back;
   PrimitiveType::Enum primitive_type = PrimitiveType::Triangle;
   BindingSetLayoutHandle set_layouts[5]; // TODO: Remove magic number
   u32 set_layout_count = 0;
-
   RenderPassHandle render_pass;
   bool enable_depth_write = true;
   bool enable_depth_test = true;
   CompareOp::Enum compare_op = CompareOp::Never;
-
-  PipelineCreation &reset();
+  cstring name;
 };
 
 struct TextureCreation {

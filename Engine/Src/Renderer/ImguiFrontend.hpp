@@ -37,9 +37,6 @@ struct ImguiFrontend : public Service {
   void render_frame(RenderPacket *packet);
 
   HELIX_DECLARE_SERVICE(ImguiFrontend);
-
-private:
-  ImguiBackend *backend = nullptr;
 };
 
 } // namespace Helix

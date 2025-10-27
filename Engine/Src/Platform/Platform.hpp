@@ -32,6 +32,8 @@ struct HLX_API Platform : public Service {
 
   void sleep(u64 ms);
 
+  void set_window_relative_mouse_mode(bool enabled);
+
   void set_title(cstring title);
 
   bool toggle_fullscreen();

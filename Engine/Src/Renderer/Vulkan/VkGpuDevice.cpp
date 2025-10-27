@@ -805,7 +805,6 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
 
     // TODO: Maybe create a timestamp system for checking shaders.
-
     cstring binary_name =
         temp_string_buffer.append_use_f("%s.spv", shader.filename);
     FileReadResult shader_binary{};

@@ -3,7 +3,7 @@
 #include "Containers/Array.hpp"
 #include "Core/Defines.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
-
+// Vendor
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -12,7 +12,6 @@
 #define MAX_MATERIALS 4000
 
 namespace Helix {
-struct Camera;
 
 enum RendererBackendType {
   RENDERER_BACKEND_TYPE_VULKAN,
@@ -120,7 +119,6 @@ struct Game;
 struct RenderPacket {
   f32 delta_time;
   u32 current_frame_in_flight;
-  Camera *camera{nullptr};
   glm::mat4 inv_previous_view_proj;
   glm::mat4 previous_view;
   glm::mat4 previous_proj;

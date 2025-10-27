@@ -2,8 +2,10 @@
 #include "Core/Event.hpp"
 #include "Core/Input.hpp"
 #include "Platform/Platform.hpp"
+// Vendor
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_scancode.h>
+#include <cassert>
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
@@ -83,6 +85,23 @@ void Camera::init(CameraConfiguration &config) {
                                 camera_resize_event);
 }
 
+void Camera::shutdown() {
+  EventService *event_service = EventService::instance();
+
+  event_service->unregister_event(SDL_EVENT_KEY_DOWN, this, camera_move_event);
+  event_service->unregister_event(SDL_EVENT_KEY_UP, this, camera_move_event);
+  event_service->unregister_event(SDL_EVENT_MOUSE_MOTION, this,
+                                  camera_mouse_event);
+  event_service->unregister_event(SDL_EVENT_MOUSE_BUTTON_DOWN, this,
+                                  camera_mouse_button_event);
+  event_service->unregister_event(SDL_EVENT_MOUSE_BUTTON_UP, this,
+                                  camera_mouse_button_event);
+  event_service->unregister_event(SDL_EVENT_MOUSE_WHEEL, this,
+                                  camera_scroll_event);
+  event_service->unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
+                                  camera_resize_event);
+}
+
 glm::mat4 Camera::get_rotation() {
   glm::quat pitch_rotation = glm::angleAxis(pitch, glm::vec3{1.f, 0.f, 0.f});
   glm::quat yaw_rotation = glm::angleAxis(yaw, glm::vec3{0.f, -1.f, 0.f});
@@ -159,16 +178,12 @@ void Camera::on_mouse_button_event(bool key_down, u16 key_code) {
   Platform *platform = Platform::instance();
   if (key_down) {
     if (key_code == BUTTON_RIGHT) {
-
-      SDL_SetWindowRelativeMouseMode((SDL_Window *)platform->platform_handle,
-                                     true);
+      platform->set_window_relative_mouse_mode(true);
       is_active = true;
     }
   } else {
     if (key_code == BUTTON_RIGHT) {
-
-      SDL_SetWindowRelativeMouseMode((SDL_Window *)platform->platform_handle,
-                                     false);
+      platform->set_window_relative_mouse_mode(false);
       is_active = false;
       velocity = glm::vec3(0.f);
     }

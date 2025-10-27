@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Defines.hpp"
+// Vendor
 #include <glm/glm.hpp>
 
 namespace Helix {
@@ -29,6 +30,7 @@ struct Camera {
   f32 aspect_ratio{1280.f / 720.f};
 
   void init(CameraConfiguration &camera_config);
+  void shutdown();
   glm::mat4 get_rotation();
   glm::mat4 get_view();
   glm::mat4 get_projection();

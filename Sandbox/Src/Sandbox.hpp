@@ -1,5 +1,5 @@
+#include "Camera.hpp"
 #include "Core/Application.hpp"
-#include "Core/Defines.hpp"
 
 namespace Helix {
 struct Sandbox : public Application {
@@ -9,8 +9,10 @@ struct Sandbox : public Application {
 
   f32 get_delta_time() { return delta_time; }
   void render_frame();
+
   f64 last_time{0.0};
   f32 delta_time{0.f};
   bool limit_frames{true};
+  Camera camera;
 };
 } // namespace Helix

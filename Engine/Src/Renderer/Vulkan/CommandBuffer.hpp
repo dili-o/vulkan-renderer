@@ -1,12 +1,10 @@
 #pragma once
 
-#include "Containers/Array.hpp"
 #include "Core/Defines.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "VulkanTypes.hpp"
 
 namespace Helix {
-struct VulkanBackend;
 struct VkGpuDevice;
 
 namespace CommandBufferState {
@@ -14,9 +12,6 @@ enum Enum { Initial, Recording, Executable, Pending, Invalid };
 }
 
 struct VulkanCommandBuffer {
-  void init(VkCommandPool pool, VkCommandBufferLevel level,
-            VulkanBackend *backend, cstring name = nullptr);
-
   void init(VkCommandPool vk_command_pool, VkCommandBufferLevel vk_level,
             VkGpuDevice *device, cstring name = nullptr);
 
@@ -61,8 +56,7 @@ struct VulkanCommandBuffer {
   void bind_descriptor_sets(PipelineHandle pipeline_handle,
                             VkDescriptorSet dset, u32 set_index);
 
-  void push_constants(VkPipelineLayout layout, VkShaderStageFlagBits stage,
-                      u32 offset, u32 size, void *data);
+  void push_constants(u32 offset, u32 size, void *data);
 
   void draw_indexed(u32 index_count, u32 instance_count, u32 first_index,
                     i32 vertex_offset, u32 first_instance);
@@ -97,28 +91,9 @@ struct VulkanCommandBuffer {
   void pop_marker();
 
   VkGpuDevice *device{nullptr};
-  // TODO: Remove
-  // VulkanBackend *backend{nullptr};
   VkCommandBuffer vk_handle{VK_NULL_HANDLE};
   VkCommandPool vk_pool{VK_NULL_HANDLE};
+  PipelineHandle current_pipeline{};
   CommandBufferState::Enum state;
-};
-
-struct CommandBufferManager {
-  void init(VulkanBackend *backend, u32 queue_family_index, u32 num_threads,
-            u32 max_frames_in_flight, cstring name = nullptr);
-  void shutdown();
-
-  void reset_pool(u32 thread_index);
-
-  VulkanCommandBuffer *get_command_buffer(u32 frame, u32 thread_index,
-                                          bool begin);
-
-  // TODO: Make a function to submit all command buffers for a pool index;
-  u32 max_frames_in_flight = 0;
-  Array<VkCommandPool> vk_command_pools;
-  Array<VulkanCommandBuffer> command_buffers;
-  // VkCommandPool vk_transfer_pool;
-  VulkanBackend *backend = nullptr;
 };
 } // namespace Helix

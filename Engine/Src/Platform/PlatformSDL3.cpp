@@ -109,6 +109,10 @@ void Platform::handle_os_messages() {
   }
 }
 
+void Platform::set_window_relative_mouse_mode(bool enabled) {
+  SDL_SetWindowRelativeMouseMode(window, enabled);
+}
+
 f64 Platform::get_absolute_time_s() {
   return (f64)SDL_GetPerformanceCounter() / (f64)SDL_GetPerformanceFrequency();
 }
