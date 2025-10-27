@@ -32,7 +32,7 @@ struct WorkReceipt;
 struct TransferContext;
 struct ComputeContext;
 
-struct RendererFrontEnd : public Service {
+struct HLX_API RendererFrontEnd : public Service {
   virtual void init(void *config) override;
   virtual void shutdown() override;
 

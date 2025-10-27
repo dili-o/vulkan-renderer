@@ -18,6 +18,12 @@
 #error "Unsupported Platform!"
 #endif // WIN32 || _WIN32 || __WIN32__
 
+#if defined(_WIN32) && defined(HLX_EXPORTS)
+#define HLX_API __declspec(dllexport)
+#else
+#define HLX_API __declspec(dllimport)
+#endif
+
 // Macros ////////////////////////////////////////////////////////////////
 
 #define ArraySize(array) (sizeof(array) / sizeof((array)[0]))

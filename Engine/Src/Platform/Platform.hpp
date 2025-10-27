@@ -13,7 +13,7 @@ struct PlatformConfiguration {
 
 struct VkGpuDevice;
 
-struct Platform : public Service {
+struct HLX_API Platform : public Service {
 
   virtual void init(void *configuration) override;
   virtual void shutdown() override;

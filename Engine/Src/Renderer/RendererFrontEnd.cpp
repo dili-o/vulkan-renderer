@@ -5,7 +5,6 @@
 #include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
 #include "Core/String.hpp"
-#include "Game.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
@@ -17,7 +16,6 @@
 #include <stb_image.h>
 
 namespace Helix {
-PipelineHandle hello_triangle{};
 
 static RendererFrontEnd *s_renderer_frontend{nullptr};
 RendererFrontEnd *RendererFrontEnd::instance() { return s_renderer_frontend; }
@@ -59,28 +57,7 @@ void RendererFrontEnd::init(void *_config) {
   main_pass = create_render_pass(creation);
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
-  StackAllocator *stack_allocator = scope_allocator.allocator;
   pipelines_map.init(allocator, 10, string_hash);
-  {
-    PipelineCreation creation;
-    creation.name = "HelloTriangle";
-    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
-        sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"HelloTriangle.vert",
-                                       ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"HelloTriangle.frag",
-                                       ShaderStage::Fragment};
-    creation.shader_count = 2;
-    creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::None;
-    creation.set_layout_count = 0;
-    creation.enable_depth_write = true;
-    creation.enable_depth_test = true;
-    creation.render_pass = main_pass;
-
-    hello_triangle = create_pipeline(creation);
-  }
 
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
@@ -126,7 +103,7 @@ bool RendererFrontEnd::render_frame(RenderPacket *packet) {
                                     false, 0);
 
     graphics_context->bind_renderpass(main_pass);
-    graphics_context->bind_pipeline(hello_triangle);
+    // graphics_context->bind_pipeline(hello_triangle);
     i32 width, height;
     Platform::instance()->get_window_size(&width, &height);
 

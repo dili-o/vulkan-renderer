@@ -69,7 +69,7 @@ struct JobServiceConfiguration {
   JobType::Enum *type_masks;
 };
 
-struct JobService : public Service {
+struct HLX_API JobService : public Service {
   virtual void init(void *config = nullptr) override;
   virtual void shutdown() override;
   HELIX_DECLARE_SERVICE(JobService);

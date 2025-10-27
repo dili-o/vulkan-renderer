@@ -34,7 +34,7 @@ struct EventContext {
 typedef bool (*PFN_on_event)(u16 code, void *sender, void *listener_inst,
                              EventContext data);
 
-struct EventService : Service {
+struct HLX_API EventService : Service {
   virtual void init(void *config = nullptr) override;
   virtual void shutdown() override;
 

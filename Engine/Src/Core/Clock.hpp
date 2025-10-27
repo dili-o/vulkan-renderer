@@ -3,7 +3,7 @@
 
 namespace Helix {
 
-struct Clock {
+struct HLX_API Clock {
 public:
   void start();
   void stop();

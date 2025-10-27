@@ -23,7 +23,7 @@ using Keys = SDL_Scancode;
 
 #pragma endregion KeyCodes
 
-struct InputService : public Service {
+struct HLX_API InputService : public Service {
   virtual void init(void *config = nullptr) override;
   virtual void shutdown() override;
   HELIX_DECLARE_SERVICE(InputService)

@@ -62,7 +62,6 @@ void Platform::handle_os_messages() {
   SDL_zero(e);
 
   while (SDL_PollEvent(&e)) {
-
     // Don't fire events if they should only be handled by the UI
     if (ImguiFrontend::instance()->handle_events(&e))
       continue;

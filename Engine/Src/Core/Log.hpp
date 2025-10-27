@@ -1,15 +1,17 @@
 
 #pragma once
 
+#include "Defines.hpp"
 #include "Service.hpp"
 
+// Vendor
 #include <memory>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 namespace Helix {
-struct LogService : public Service {
+struct HLX_API LogService : public Service {
 
   static LogService *instance();
 

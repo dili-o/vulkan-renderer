@@ -1,29 +1,51 @@
 #include "Engine.hpp"
+#include "Core/Event.hpp"
+#include "Core/FileWatcher.hpp"
+#include "Core/Input.hpp"
+#include "Core/Job.hpp"
 #include "Core/Log.hpp"
+#include "Core/Memory.hpp"
+#include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
-#include "Renderer/RendererTypes.hpp"
+#include "Renderer/ImguiFrontend.hpp"
+#include "Renderer/RendererFrontEnd.hpp"
 
 namespace Helix {
 
-void Engine::init(Game *game) {
-  log_service.init();
+struct EngineBackend {
+  LogService log_service;
+  FileService file_service;
+  FileWatcherService file_watcher_service;
+  InputService input_service;
+  MemoryService memory_service;
+  Platform platform_service;
+  JobService job_service;
+  EventService event_service;
+  RendererFrontEnd renderer_frontend_service;
+  ImguiFrontend imgui_frontend_service;
+};
 
-  file_service.init();
+static EngineBackend s_backend;
 
-  file_watcher_service.init();
+void Engine::init() {
+  s_backend.log_service.init();
 
-  input_service.init();
+  s_backend.file_service.init();
+
+  s_backend.file_watcher_service.init();
+
+  s_backend.input_service.init();
 
   MemoryServiceConfiguration mem_config{hmega(1000), hmega(1000)};
-  memory_service.init(&mem_config);
+  s_backend.memory_service.init(&mem_config);
 
-  event_service.init();
+  s_backend.event_service.init();
 
   PlatformConfiguration platform_config{1280, 720, "Sandbox"};
-  platform_service.init((void *)&platform_config);
+  s_backend.platform_service.init((void *)&platform_config);
 
   JobServiceConfiguration job_config{};
-  job_config.allocator = &memory_service.system_allocator;
+  job_config.allocator = &s_backend.memory_service.system_allocator;
   job_config.thread_count = Platform::get_logical_processor_count() - 1;
   JobType::Enum job_thread_types[15];
   for (u32 i = 0; i < job_config.thread_count; ++i) {
@@ -47,40 +69,35 @@ void Engine::init(Game *game) {
   }
 
   job_config.type_masks = job_thread_types;
-  job_service.init(&job_config);
+  s_backend.job_service.init(&job_config);
 
   RendererConfig renderer_config{};
   renderer_config.backend_type = RENDERER_BACKEND_TYPE_VULKAN;
   renderer_config.application_name = "Sandbox";
-  renderer_config.platform = &platform_service;
+  renderer_config.platform = &s_backend.platform_service;
   renderer_config.max_frames_in_flight = 2;
-  renderer_frontend_service.init(&renderer_config);
+  s_backend.renderer_frontend_service.init(&renderer_config);
 
   ImguiLayerConfiguration imgui_config{};
   imgui_config.type = RENDERER_BACKEND_TYPE_VULKAN;
-  imgui_config.frontend = &renderer_frontend_service;
-  imgui_config.window_handle = platform_service.platform_handle;
+  imgui_config.frontend = &s_backend.renderer_frontend_service;
+  imgui_config.window_handle = s_backend.platform_service.platform_handle;
   imgui_config.max_frame_in_flight = renderer_config.max_frames_in_flight;
-  imgui_frontend_service.init(&imgui_config);
-
-  application_service.init(game);
-
-  application_service.run();
+  s_backend.imgui_frontend_service.init(&imgui_config);
 }
 
 void Engine::shutdown() {
   HTRACE("Shutting Down Services...");
-  application_service.shutdown();
-  imgui_frontend_service.shutdown();
-  renderer_frontend_service.shutdown();
-  job_service.shutdown();
-  platform_service.shutdown();
-  event_service.shutdown();
-  memory_service.shutdown();
-  input_service.shutdown();
-  file_watcher_service.shutdown();
-  file_service.shutdown();
-  log_service.shutdown();
+  s_backend.imgui_frontend_service.shutdown();
+  s_backend.renderer_frontend_service.shutdown();
+  s_backend.job_service.shutdown();
+  s_backend.platform_service.shutdown();
+  s_backend.event_service.shutdown();
+  s_backend.memory_service.shutdown();
+  s_backend.input_service.shutdown();
+  s_backend.file_watcher_service.shutdown();
+  s_backend.file_service.shutdown();
+  s_backend.log_service.shutdown();
 }
 
 } // namespace Helix

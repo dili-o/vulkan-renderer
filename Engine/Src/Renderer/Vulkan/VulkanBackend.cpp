@@ -6,7 +6,6 @@
 #include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
 #include "Core/String.hpp"
-#include "Game.hpp"
 #include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
 #include "Platform/Process.hpp"

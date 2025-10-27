@@ -53,7 +53,7 @@ struct Allocator {
 
 //
 //
-struct HeapAllocator : public Allocator {
+struct HLX_API HeapAllocator : public Allocator {
 
   ~HeapAllocator() override;
 
@@ -75,7 +75,7 @@ struct HeapAllocator : public Allocator {
 
 //
 //
-struct StackAllocator : public Allocator {
+struct HLX_API StackAllocator : public Allocator {
 
   void init(size_t size);
   void shutdown();
@@ -99,7 +99,7 @@ struct StackAllocator : public Allocator {
 
 //
 //
-struct ScopedAllocator {
+struct HLX_API ScopedAllocator {
   ScopedAllocator(StackAllocator *stack_allocator_)
       : allocator(stack_allocator_),
         stack_marker(stack_allocator_->get_marker()) {}
@@ -124,7 +124,7 @@ struct MemoryServiceConfiguration {
 }; // struct MemoryServiceConfiguration
 //
 //
-struct MemoryService : public Service {
+struct HLX_API MemoryService : public Service {
 
   HELIX_DECLARE_SERVICE(MemoryService);
 

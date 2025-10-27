@@ -30,8 +30,8 @@ if(HELIX_WITH_TRACY)
     list(APPEND EXTRA_SOURCE_LIST "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tracy/public/TracyClient.cpp")
 endif()
 
-# Build as a Static Lib
-add_library(${PROJECT_NAME} STATIC
+# Build as a Dynamic Lib
+add_library(${PROJECT_NAME} SHARED
     ${SOURCE_LIST}
     ${IMGUI_SOURCE_LIST}
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/tlsf/tlsf.c"
@@ -40,6 +40,7 @@ add_library(${PROJECT_NAME} STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/mikktspace.c" 
     ${EXTRA_SOURCE_LIST}
 )
+target_compile_definitions(${PROJECT_NAME} PRIVATE HLX_EXPORTS)
 
 if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PUBLIC VK_USE_PLATFORM_WIN32_KHR)
@@ -126,4 +127,14 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../Bin/$<CONFIG>/${PROJECT_NAME}"
   ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../Bin/$<CONFIG>/${PROJECT_NAME}"
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../Bin/$<CONFIG>/${PROJECT_NAME}"
+)
+
+# Copy Engine.dll to Sandbox folder after build
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_SOURCE_DIR}/Bin/$<CONFIG>/Sandbox/"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:${PROJECT_NAME}>"
+        "${CMAKE_SOURCE_DIR}/Bin/$<CONFIG>/Sandbox/"
+    COMMENT "Copying Engine.dll to Sandbox directory..."
 )
