@@ -13,6 +13,10 @@ struct ResourceHandle {
   u32 generation{0};
 };
 
+inline bool is_handle_valid(const ResourceHandle handle) {
+  return handle.index != k_invalid_index;
+}
+
 template <typename T> struct ResourcePool {
 
   void init(Allocator *allocator, u32 pool_capacity);

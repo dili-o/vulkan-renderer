@@ -22,9 +22,9 @@ struct StringBuffer {
   void append_m(void *memory, size_t size); // Memory version of append.
   void append_f(cstring format, ...);       // Formatted version of append.
 
-  char *append_use(cstring string);
-  char *append_use_f(cstring format, ...);
-  char *append_use_substring(
+  cstring append_use(cstring string);
+  cstring append_use_f(cstring format, ...);
+  cstring append_use_substring(
       cstring string, u32 start_index,
       u32 end_index); // Append a substring of the passed string.
 

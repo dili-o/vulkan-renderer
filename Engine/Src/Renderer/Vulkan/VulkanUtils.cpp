@@ -16,7 +16,7 @@ VkBufferUsageFlags to_vk_buffer_usage_flags(BufferUsage::Enum _usage) {
     usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
   if (_usage & BufferUsage::TransferSrc)
     usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-  if (_usage & BufferUsage::TransferDest)
+  if (_usage & BufferUsage::TransferDst)
     usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   if (_usage & BufferUsage::IndexedIndirect)
     usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
@@ -30,25 +30,15 @@ VkBufferUsageFlags to_vk_buffer_usage_flags(BufferUsage::Enum _usage) {
 
 VkMemoryPropertyFlags to_vk_mem_property_flags(MemoryAccess::Enum _usage) {
   VkMemoryPropertyFlags usage{};
-
   if (_usage & MemoryAccess::GPU_ONLY)
     usage |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
   if (_usage & MemoryAccess::CPU_TO_GPU)
     usage |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-  if (_usage & MemoryAccess::GPU_TO_CPU)
-    usage |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-             VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-  if (_usage & MemoryAccess::CPU_ONLY)
-    usage |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-             VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-
   return usage;
 }
 
 VmaMemoryUsage to_vma_mem_usage_flags(MemoryAccess::Enum _usage) {
-
   switch (_usage) {
   case MemoryAccess::None:
     return VMA_MEMORY_USAGE_UNKNOWN;
@@ -56,10 +46,6 @@ VmaMemoryUsage to_vma_mem_usage_flags(MemoryAccess::Enum _usage) {
     return VMA_MEMORY_USAGE_GPU_ONLY;
   case MemoryAccess::CPU_TO_GPU:
     return VMA_MEMORY_USAGE_CPU_TO_GPU;
-  case MemoryAccess::GPU_TO_CPU:
-    return VMA_MEMORY_USAGE_GPU_TO_CPU;
-  case MemoryAccess::CPU_ONLY:
-    return VMA_MEMORY_USAGE_CPU_ONLY;
   }
 }
 
@@ -277,6 +263,46 @@ VkAttachmentStoreOp to_vk_store_op(StoreOp::Enum store_op) {
     return VK_ATTACHMENT_STORE_OP_DONT_CARE;
   case StoreOp::Store:
     return VK_ATTACHMENT_STORE_OP_STORE;
+  }
+}
+
+VkFilter to_vk_filter(SamplerFilter::Enum filter) {
+  switch (filter) {
+  case SamplerFilter::Linear:
+    return VK_FILTER_LINEAR;
+  case SamplerFilter::Nearest:
+    return VK_FILTER_NEAREST;
+  default:
+    HASSERT_MSG(false, "Unkown SamplerFilter::Enum type!");
+  }
+}
+
+VkSamplerMipmapMode to_vk_sampler_mipmap_mode(SamplerFilter::Enum filter) {
+  switch (filter) {
+  case SamplerFilter::Linear:
+    return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  case SamplerFilter::Nearest:
+    return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+  default:
+    HASSERT_MSG(false, "Unkown SamplerFilter::Enum type!");
+  }
+}
+
+VkSamplerAddressMode
+to_vk_sampler_address_mode(SamplerAddressMode::Enum address_mode) {
+  switch (address_mode) {
+  case SamplerAddressMode::Repeat:
+    return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  case SamplerAddressMode::MirroredRepeat:
+    return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+  case SamplerAddressMode::ClampToEdge:
+    return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  case SamplerAddressMode::ClampToBorder:
+    return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+  case SamplerAddressMode::MirrorClampToEdge:
+    return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+  default:
+    HASSERT_MSG(false, "Unkown SamplerAddressMode::Enum type!");
   }
 }
 

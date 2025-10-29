@@ -270,19 +270,17 @@ void Scene::init() {
   pbr_materials.init(&MemoryService::instance()->system_allocator, 25);
 
   // Default material
-  PBRMaterial &pbr_material = pbr_materials.push_use();
-  pbr_material.albedo_texture_handle =
-      RendererFrontEnd::instance()->default_albedo_texture;
-  pbr_material.normal_texture_handle =
-      RendererFrontEnd::instance()->default_normal_texture;
+  // PBRMaterial &pbr_material = pbr_materials.push_use();
+  // pbr_material.albedo_texture_handle =
+  //     RendererFrontEnd::instance()->default_albedo_texture;
+  // pbr_material.normal_texture_handle =
+  //     RendererFrontEnd::instance()->default_normal_texture;
 
   BufferCreation creation{};
   creation.usage_flags =
-      BufferUsage::Enum(BufferUsage::ShaderAddress | BufferUsage::TransferDest);
-  creation.memory_state_flags = MemoryState::None;
+      BufferUsage::Enum(BufferUsage::ShaderAddress | BufferUsage::TransferDst);
   creation.memory_access_flags = MemoryAccess::GPU_ONLY;
   creation.size = MAX_MATERIALS * sizeof(GPUPBRMaterial);
-  creation.initial_data = nullptr;
   creation.name = "PBR_Materials_Buffer";
 
   // pbr_materials_buffer =
@@ -338,15 +336,15 @@ void Scene::unload_mesh(u32 mesh_index) {
   for (u32 i = 0; i < mesh.draws.size; ++i) {
     // Skip the default material
     if (mesh.draws[i].material_index != 0) {
-      PBRMaterial &material = pbr_materials[mesh.draws[i].material_index];
-      if (material.albedo_texture_handle.index !=
-          renderer_frontend->default_albedo_texture.index) {
-        renderer_frontend->destroy_texture(material.albedo_texture_handle);
-      }
-      if (material.normal_texture_handle.index !=
-          renderer_frontend->default_normal_texture.index) {
-        renderer_frontend->destroy_texture(material.normal_texture_handle);
-      }
+      // PBRMaterial &material = pbr_materials[mesh.draws[i].material_index];
+      // if (material.albedo_texture_handle.index !=
+      //     renderer_frontend->default_albedo_texture.index) {
+      //   renderer_frontend->destroy_texture(material.albedo_texture_handle);
+      // }
+      // if (material.normal_texture_handle.index !=
+      //     renderer_frontend->default_normal_texture.index) {
+      //   renderer_frontend->destroy_texture(material.normal_texture_handle);
+      // }
     }
   }
 

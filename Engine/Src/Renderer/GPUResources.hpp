@@ -5,10 +5,6 @@
 
 namespace Helix {
 
-namespace MemoryState {
-enum Enum { None = 0, Dynamic = 1 << 0, Static = 1 << 1, Mapped = 1 << 2 };
-}
-
 namespace BufferUsage {
 enum Enum {
   None = 0,
@@ -16,7 +12,7 @@ enum Enum {
   Index = 1 << 1,
   Uniform = 1 << 2,
   TransferSrc = 1 << 3,
-  TransferDest = 1 << 4,
+  TransferDst = 1 << 4,
   IndexedIndirect = 1 << 5,
   ShaderAddress = 1 << 6,
   Storage = 1 << 7
@@ -28,8 +24,6 @@ enum Enum {
   None = 0,
   GPU_ONLY = 1 << 0,
   CPU_TO_GPU = 1 << 1,
-  GPU_TO_CPU = 1 << 2,
-  CPU_ONLY = 1 << 3
 };
 }
 namespace TextureType {
@@ -68,6 +62,23 @@ enum Enum {
 };
 }
 
+namespace SamplerFilter {
+enum Enum {
+  Linear,
+  Nearest,
+};
+}
+
+namespace SamplerAddressMode {
+enum Enum {
+  Repeat,
+  MirroredRepeat,
+  ClampToEdge,
+  ClampToBorder,
+  MirrorClampToEdge,
+};
+}
+
 namespace CullMode {
 enum Enum { None, Front, Back, FrontAndBack };
 }
@@ -98,15 +109,13 @@ enum Enum { Store, DontCare };
 }
 
 #pragma region Creation
+#define MAX_ALLOCATION_SIZE UINT64_MAX
 struct BufferCreation {
-  BufferCreation &reset();
-
   BufferUsage::Enum usage_flags = BufferUsage::None;
-  MemoryState::Enum memory_state_flags = MemoryState::None;
   MemoryAccess::Enum memory_access_flags = MemoryAccess::None;
   u64 size = 0;
-  void *initial_data = nullptr;
   cstring name = nullptr;
+  bool mapped;
 };
 
 struct ShaderCreateInfo {
@@ -132,7 +141,6 @@ struct PipelineCreation {
 };
 
 struct TextureCreation {
-  void *initial_data = nullptr;
   u16 width = 1;
   u16 height = 1;
   u16 depth = 1;
@@ -147,6 +155,20 @@ struct TextureCreation {
 
   TextureFormat::Enum format = TextureFormat::Undefined;
   TextureType::Enum type = TextureType::Texture2D;
+
+  SamplerHandle sampler;
+
+  cstring name = nullptr;
+};
+
+struct SamplerCreation {
+  SamplerFilter::Enum min_filter = SamplerFilter::Linear;
+  SamplerFilter::Enum mag_filter = SamplerFilter::Linear;
+  SamplerFilter::Enum mip_filter = SamplerFilter::Linear;
+
+  SamplerAddressMode::Enum address_mode_u = SamplerAddressMode::Repeat;
+  SamplerAddressMode::Enum address_mode_v = SamplerAddressMode::Repeat;
+  SamplerAddressMode::Enum address_mode_w = SamplerAddressMode::Repeat;
 
   cstring name = nullptr;
 };
@@ -188,13 +210,11 @@ struct BindingSetUpdateInfo {
     } buffer_info;
 
     struct {
-      // TODO: Texture data
-      u32 size;
     } texture_info;
   };
 };
 
-struct BindingSetLayoutCreation {
+struct HLX_API BindingSetLayoutCreation {
   BindingInfo binding_infos[MAX_BINDING_PER_SET];
   u32 binding_count = 0;
   bool is_bindless = false;

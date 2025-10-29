@@ -20,8 +20,10 @@
 
 #if defined(_WIN32) && defined(HLX_EXPORTS)
 #define HLX_API __declspec(dllexport)
+#define IMGUI_API __declspec(dllexport)
 #else
 #define HLX_API __declspec(dllimport)
+#define IMGUI_API __declspec(dllimport)
 #endif
 
 // Macros ////////////////////////////////////////////////////////////////

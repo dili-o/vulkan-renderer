@@ -52,9 +52,7 @@ struct VulkanCommandBuffer {
                           u32 binding_count);
   void bind_index_buffer(BufferHandle handle, u32 offset,
                          VkIndexType index_type);
-  void bind_index_buffer(VkBuffer index_buffer);
-  void bind_descriptor_sets(PipelineHandle pipeline_handle,
-                            VkDescriptorSet dset, u32 set_index);
+  void bind_descriptor_sets(VkDescriptorSet dset, u32 set_index);
 
   void push_constants(u32 offset, u32 size, void *data);
 
@@ -83,7 +81,7 @@ struct VulkanCommandBuffer {
   // Note: This function transitions the image to
   // VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL but doesn't transition it back to it's
   // previous state
-  void copy_buffer_to_image(TextureHandle dst_image, VkBuffer src_buffer,
+  void copy_buffer_to_image(VkImageHandle dst_image, VkBuffer src_buffer,
                             u32 size, VkQueue vk_queue, bool generate_mips);
 
   void push_marker(cstring name);

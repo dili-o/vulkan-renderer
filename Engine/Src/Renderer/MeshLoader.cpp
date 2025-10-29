@@ -151,6 +151,7 @@ bool load_texture_data(void *entry_data, void *result_data) {
 }
 
 bool load_texture_success(void *result_data) {
+#if 0
   TextureLoadResult *result = (TextureLoadResult *)result_data;
 
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
@@ -158,6 +159,7 @@ bool load_texture_success(void *result_data) {
   renderer_frontend->upload_to_image(result->data, result->texture_to_update);
 
   free(result->data);
+#endif
   return true;
 }
 
@@ -377,6 +379,7 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
                                     fastgltf::Texture &texture,
                                     cstring texture_path,
                                     MaterialAttribute attribute) {
+#if 0
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
   RendererFrontEnd *renderer_frontend = RendererFrontEnd::instance();
 
@@ -653,6 +656,8 @@ TextureHandle gltf_load_pbr_texture(Scene *scene, fastgltf::Asset &asset,
       image.data);
 
   return texture_handle;
+#endif
+  return TextureHandle();
 }
 
 void gltf_set_vec2(glm::vec2 &glm_vec, const fastgltf::math::fvec2 &f_vec) {
@@ -687,7 +692,7 @@ glm::mat4 gltf_get_matrix4x4(const fastgltf::math::fmat4x4 &m) {
 }
 
 bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
-
+#if 0
   Directory dir{};
   FileService::current_directory(&dir);
   FileService::change_directory(path);
@@ -1117,6 +1122,7 @@ bool load_gltf_mesh(Scene *scene, cstring path, cstring model) {
   stack_allocator->free_marker(stack_marker);
 
   FileService::change_directory(dir.path);
+#endif
   return true;
 }
 

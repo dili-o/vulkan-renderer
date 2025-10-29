@@ -1,4 +1,5 @@
 #include "VkGpuDevice.hpp"
+#include "Containers/ResourcePool.hpp"
 #include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
 #include "Core/String.hpp"
@@ -6,6 +7,7 @@
 #include "Platform/Platform.hpp"
 #include "Platform/Process.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
+#include "Renderer/GPUResources.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/SpirvParser.hpp"
@@ -397,14 +399,23 @@ GpuDevice *create_vulkan_device() {
   device_extensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
   // Create Physical Device
-  if (!select_physical_device(device->vk_instance, device->vk_physical_device,
-                              &device->vk_physical_device_properties,
-                              device->queue_family_indices,
-                              device->vk_surface)) {
+  device->vk_physical_device_properties2.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+  device->vk_physical_device_vulkan11_properties.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+
+  device->vk_physical_device_properties2.pNext =
+      &device->vk_physical_device_vulkan11_properties;
+  if (!select_physical_device(
+          device->vk_instance, device->vk_physical_device,
+          &device->vk_physical_device_properties2.properties,
+          device->queue_family_indices, device->vk_surface)) {
     HERROR("Failed to create physical device!");
     free(device);
     return nullptr;
   }
+  vkGetPhysicalDeviceProperties2(device->vk_physical_device,
+                                 &device->vk_physical_device_properties2);
 
   // Create Logical Device
   Array<VkDeviceQueueCreateInfo> queue_create_infos{};
@@ -631,14 +642,18 @@ GpuDevice *create_vulkan_device() {
   }
   queue_create_infos.shutdown();
 
+  device->string_buffer.init(allocator, hkilo(15));
   // Init Resource Pools
   // TODO: Make configurable
+  device->buffers.init(allocator, 50);
   device->images.init(allocator, 1000);
-  // TODO: Make configurable
   device->image_views.init(allocator, 1000);
-  // TODO: Make configurable
-  device->render_passes.init(allocator, 10);
+  device->samplers.init(allocator, 10);
+  device->descriptor_sets.init(allocator, 15);
+  device->descriptor_set_layouts.init(allocator, 15);
   device->pipelines.init(allocator, 10);
+  device->render_passes.init(allocator, 10);
+
   device->resource_deletion_queue.init(allocator, 10);
 
   // TODO: Make this configurable
@@ -650,11 +665,11 @@ GpuDevice *create_vulkan_device() {
     VK_CHECK(vkCreateSemaphore(device->vk_device, &semaphore_info,
                                device->vk_allocation_callbacks,
                                &device->vk_image_available_semaphores[i]));
-    // TODO:
-    // set_resource_name(
-    //     VK_OBJECT_TYPE_SEMAPHORE, (u64)image_available_semaphores[i],
-    //     string_buffer.append_use_f("image_available_semaphore_%d", i));
+    device->set_resource_name(
+        VK_OBJECT_TYPE_SEMAPHORE, (u64)device->vk_image_available_semaphores[i],
+        device->string_buffer.append_use_f("image_available_semaphore_%d", i));
   }
+
   VkSemaphoreTypeCreateInfo timeline_create_info{
       VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
   timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
@@ -668,6 +683,34 @@ GpuDevice *create_vulkan_device() {
                             (u64)device->vk_timeline_semaphore,
                             "TimelineSemaphore");
 
+  VkDescriptorPoolSize bindless_poolsize{};
+  bindless_poolsize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  bindless_poolsize.descriptorCount = MAX_TEXTURES;
+
+  VkDescriptorPoolCreateInfo bindless_pool_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  bindless_pool_info.poolSizeCount = 1;
+  bindless_pool_info.pPoolSizes = &bindless_poolsize;
+  bindless_pool_info.maxSets = 1;
+  bindless_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+
+  VK_CHECK(vkCreateDescriptorPool(device->vk_device, &bindless_pool_info,
+                                  device->vk_allocation_callbacks,
+                                  &device->vk_bindless_pool));
+
+  VkDescriptorPoolSize poolsize{};
+  poolsize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  poolsize.descriptorCount = 3;
+  VkDescriptorPoolCreateInfo pool_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  pool_info.poolSizeCount = 1;
+  pool_info.pPoolSizes = &poolsize;
+  pool_info.maxSets = 3;
+  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+  VK_CHECK(vkCreateDescriptorPool(device->vk_device, &bindless_pool_info,
+                                  device->vk_allocation_callbacks,
+                                  &device->vk_descriptor_pool));
+
   device->frame_number = 0;
 
   HINFO("Vulkan Backend Initialized");
@@ -677,6 +720,11 @@ GpuDevice *create_vulkan_device() {
 
 void destroy_vulkan_device(VkGpuDevice *device) {
   vkDeviceWaitIdle(device->vk_device);
+
+  vkDestroyDescriptorPool(device->vk_device, device->vk_bindless_pool,
+                          device->vk_allocation_callbacks);
+  vkDestroyDescriptorPool(device->vk_device, device->vk_descriptor_pool,
+                          device->vk_allocation_callbacks);
 
   device->destroy_swapchain();
   for (u32 i = 0; i < MAX_SWAPCHAIN_IMAGES; ++i) {
@@ -701,11 +749,18 @@ void destroy_vulkan_device(VkGpuDevice *device) {
 
   device->vk_image_available_semaphores.shutdown();
   device->vk_render_finished_semaphores.shutdown();
+
+  device->buffers.shutdown();
   device->images.shutdown();
   device->image_views.shutdown();
-  device->render_passes.shutdown();
+  device->samplers.shutdown();
+  device->descriptor_sets.shutdown();
+  device->descriptor_set_layouts.shutdown();
   device->pipelines.shutdown();
+  device->render_passes.shutdown();
+
   device->resource_deletion_queue.shutdown();
+  device->string_buffer.shutdown();
 
   vmaDestroyAllocator(device->vma_allocator);
 
@@ -740,22 +795,285 @@ u32 VkGpuDevice::create_backbuffers(u32 width, u32 height, u32 count) {
                                vk_allocation_callbacks,
                                &vk_render_finished_semaphores[i]));
     // TODO:
-    // set_resource_name(
-    //     VK_OBJECT_TYPE_SEMAPHORE, (u64)vk_render_finished_semaphores[i],
-    //     string_buffer.append_use_f("RenderFinished_Semaphore%d", i));
+    set_resource_name(
+        VK_OBJECT_TYPE_SEMAPHORE, (u64)vk_render_finished_semaphores[i],
+        string_buffer.append_use_f("RenderFinished_Semaphore%d", i));
   }
   return count;
 }
 
 void VkGpuDevice::process_display_changes() {}
 
-void VkGpuDevice::create_buffer() {}
+BufferHandle VkGpuDevice::create_buffer(const BufferCreation &creation) {
+  BufferHandle handle = buffers.obtain_new();
+  if (!is_handle_valid(handle)) {
+    HERROR("Failed to obtain a Vulkan Buffer Resource!");
+    return handle;
+  }
 
-void VkGpuDevice::create_texture() {}
+  if (creation.usage_flags == BufferUsage::None) {
+    HERROR("Creating a buffer with no usage flags");
+  }
 
-PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
-  PipelineHandle handle = pipelines.obtain_new();
+  VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  buffer_info.size =
+      (creation.size == MAX_ALLOCATION_SIZE)
+          ? vk_physical_device_vulkan11_properties.maxMemoryAllocationSize
+          : creation.size;
+  buffer_info.usage = to_vk_buffer_usage_flags(creation.usage_flags);
+  buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  VmaAllocationCreateInfo memory_info{};
+  memory_info.usage = creation.memory_access_flags & MemoryAccess::GPU_ONLY
+                          ? VMA_MEMORY_USAGE_GPU_ONLY
+                          : VMA_MEMORY_USAGE_AUTO;
+  memory_info.requiredFlags =
+      to_vk_mem_property_flags(creation.memory_access_flags);
+  memory_info.flags =
+      creation.mapped
+          ? VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+          : 0;
+
+  VulkanBuffer *buffer = access_buffer(handle);
+  VmaAllocationInfo alloc_info{};
+
+  VK_CHECK(vmaCreateBuffer(vma_allocator, &buffer_info, &memory_info,
+                           &buffer->vk_handle, &buffer->vma_allocation,
+                           &alloc_info));
+  buffer->name = creation.name;
+  buffer->memory_access = creation.memory_access_flags;
+  buffer->usage = creation.usage_flags;
+  buffer->mapped_data = nullptr;
+
+  if (creation.mapped) {
+    vmaMapMemory(vma_allocator, buffer->vma_allocation, &buffer->mapped_data);
+  }
+
+  if (creation.usage_flags & BufferUsage::ShaderAddress) {
+    VkBufferDeviceAddressInfo address_info{
+        VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
+    address_info.buffer = buffer->vk_handle;
+    buffer->device_address = vkGetBufferDeviceAddress(vk_device, &address_info);
+  }
+
+  set_resource_name(VK_OBJECT_TYPE_BUFFER, (u64)buffer->vk_handle,
+                    creation.name);
+  vmaSetAllocationName(vma_allocator, buffer->vma_allocation, creation.name);
+
+  return handle;
+}
+
+TextureHandle VkGpuDevice::create_texture(const TextureCreation &creation) {
+  return create_image_view(creation, create_image(creation));
+}
+
+VkImageHandle VkGpuDevice::create_image(const TextureCreation &creation) {
+  HASSERT(creation.mip_level_count != 0);
+  TextureHandle handle = images.obtain_new();
+  if (!is_handle_valid(handle)) {
+    HERROR("Failed to obtain a Vulkan image Resource!");
+    return handle;
+  }
+  VulkanImage *image = images.obtain(handle);
+
+  VkImageCreateInfo image_info{};
+  image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  image_info.imageType = VK_IMAGE_TYPE_2D;
+  image_info.extent.width = creation.width;
+  image_info.extent.height = creation.height;
+  image_info.extent.depth = creation.depth;
+  image_info.mipLevels = creation.mip_level_count;
+  image_info.arrayLayers = creation.array_layer_count;
+  image_info.format = to_vk_format(creation.format);
+  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+
+  image_info.usage |= to_vk_image_usage_flags(creation.usage);
+
+  // TODO: Texture aliasing
+  VmaAllocationCreateInfo memory_info{};
+  memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+  VK_CHECK(vmaCreateImage(vma_allocator, &image_info, &memory_info,
+                          &image->vk_handle, &image->vma_allocation, nullptr));
+
+  set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)image->vk_handle, creation.name);
+  vmaSetAllocationName(vma_allocator, image->vma_allocation, creation.name);
+
+  image->vk_usage = image_info.usage;
+  image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image->vk_format = to_vk_format(creation.format);
+  image->vk_extents = {creation.width, creation.height, creation.depth};
+  image->mip_count = creation.mip_level_count;
+  image->name = creation.name;
+
+  return handle;
+}
+
+VkImageViewHandle
+VkGpuDevice::create_image_view(const TextureCreation &creation,
+                               VkImageHandle image) {
+  TextureHandle handle = image_views.obtain_new();
   if (handle.index == k_invalid_index) {
+    HERROR("Failed to obtain a Vulkan image view Resource!");
+    return handle;
+  }
+
+  VulkanImage *vk_image = images.obtain(image);
+  VulkanImageView *view = image_views.obtain(handle);
+  VkImageViewCreateInfo view_info{};
+  view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  view_info.image = vk_image->vk_handle;
+  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.format = to_vk_format(creation.format);
+  view_info.subresourceRange.aspectMask = has_depth_or_stencil(creation.format)
+                                              ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                              : VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.baseMipLevel = creation.mip_base_level;
+  view_info.subresourceRange.levelCount = creation.mip_level_count;
+  view_info.subresourceRange.baseArrayLayer = creation.array_base_level;
+  view_info.subresourceRange.layerCount = creation.array_layer_count;
+
+  VK_CHECK(vkCreateImageView(vk_device, &view_info, vk_allocation_callbacks,
+                             &view->vk_handle));
+  cstring name = string_buffer.append_use_f("%s_View", creation.name);
+  set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)view->vk_handle, name);
+  view->image = image;
+  view->name = name;
+  view->base_array_level = creation.array_base_level;
+  view->base_mip_level = creation.mip_base_level;
+
+  if (creation.usage & TextureUsage::Sampled) {
+    view->sampler = creation.sampler;
+  }
+
+  return handle;
+}
+
+SamplerHandle VkGpuDevice::create_sampler(const SamplerCreation &creation) {
+  SamplerHandle handle = samplers.obtain_new();
+  if (!is_handle_valid(handle)) {
+    HERROR("Failed to obtain a Vulkan Sampler!");
+    return handle;
+  }
+
+  VulkanSampler *sampler = access_sampler(handle);
+
+  VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  sampler_info.minFilter = to_vk_filter(creation.min_filter);
+  sampler_info.magFilter = to_vk_filter(creation.mag_filter);
+  sampler_info.minLod = 0.f;
+  sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+  sampler_info.addressModeU =
+      to_vk_sampler_address_mode(creation.address_mode_u);
+  sampler_info.addressModeV =
+      to_vk_sampler_address_mode(creation.address_mode_v);
+  sampler_info.addressModeW =
+      to_vk_sampler_address_mode(creation.address_mode_w);
+  sampler_info.mipmapMode = to_vk_sampler_mipmap_mode(creation.mip_filter);
+  sampler_info.anisotropyEnable = VK_FALSE;
+  sampler_info.maxAnisotropy = 1.f;
+  sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  sampler_info.unnormalizedCoordinates = VK_FALSE;
+  sampler_info.compareEnable = VK_FALSE;
+  sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+
+  VK_CHECK(vkCreateSampler(vk_device, &sampler_info, vk_allocation_callbacks,
+                           &sampler->vk_handle));
+  set_resource_name(VK_OBJECT_TYPE_SAMPLER, (u64)sampler->vk_handle,
+                    creation.name);
+
+  return handle;
+}
+
+BindingSetLayoutHandle VkGpuDevice::create_binding_set_layout(
+    const BindingSetLayoutCreation &creation) {
+  BindingSetLayoutHandle handle = descriptor_set_layouts.obtain_new();
+  if (!is_handle_valid(handle)) {
+    HERROR("Failed to obtain a Vulkan Descriptor Set Layout!");
+    return handle;
+  }
+
+  VulkanDescriptorSetLayout *layout = descriptor_set_layouts.obtain(handle);
+  layout->name = creation.name;
+  layout->is_bindless = creation.is_bindless;
+
+  VkDescriptorSetLayoutBinding bindings[MAX_BINDING_PER_SET];
+  for (u32 i = 0; i < creation.binding_count; ++i) {
+    const BindingInfo &binding_info = creation.binding_infos[i];
+    VkDescriptorSetLayoutBinding &binding = bindings[i];
+    binding.descriptorType = to_vk_descriptor_type(binding_info.type);
+    binding.descriptorCount = binding_info.resource_count;
+    binding.binding = binding_info.binding;
+    binding.stageFlags = to_vk_shader_stage(binding_info.stage);
+    binding.pImmutableSamplers = nullptr;
+  }
+
+  VkDescriptorSetLayoutCreateInfo layout_info = {
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layout_info.bindingCount = creation.binding_count;
+  layout_info.pBindings = bindings;
+  layout_info.flags =
+      creation.is_bindless
+          ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT
+          : 0;
+
+  VkDescriptorBindingFlags bindless_flags =
+      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+  VkDescriptorSetLayoutBindingFlagsCreateInfo extended_info{
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+      nullptr};
+  extended_info.bindingCount = 1;
+  extended_info.pBindingFlags = &bindless_flags;
+
+  layout_info.pNext = creation.is_bindless ? &extended_info : nullptr;
+
+  VK_CHECK(vkCreateDescriptorSetLayout(
+      vk_device, &layout_info, vk_allocation_callbacks, &layout->vk_handle));
+
+  set_resource_name(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                    (u64)layout->vk_handle, creation.name);
+
+  return handle;
+}
+
+BindingSetHandle
+VkGpuDevice::create_binding_set(const BindingSetCreation &creation) {
+  BindingSetHandle handle = descriptor_sets.obtain_new();
+  if (!is_handle_valid(handle)) {
+    HERROR("Failed to obtain a Vulkan Descriptor Set!");
+    return handle;
+  }
+
+  VulkanDescriptorSet *set = descriptor_sets.obtain(handle);
+  set->set_layout = creation.layout;
+  set->name = creation.name;
+
+  VulkanDescriptorSetLayout *layout =
+      access_descriptor_set_layout(creation.layout);
+
+  VkDescriptorSetLayout vk_layout = layout->vk_handle;
+  VkDescriptorSetAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  alloc_info.descriptorPool =
+      layout->is_bindless ? vk_bindless_pool : vk_descriptor_pool;
+  alloc_info.descriptorSetCount = 1;
+  alloc_info.pSetLayouts = &vk_layout;
+
+  VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info, &set->vk_handle));
+
+  set_resource_name(VK_OBJECT_TYPE_DESCRIPTOR_SET, (u64)set->vk_handle,
+                    creation.name);
+  return handle;
+}
+
+PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
+  PipelineHandle handle = pipelines.obtain_new();
+  if (!is_handle_valid(handle)) {
     HERROR("Failed to obtain VulkanPipeline");
     return handle;
   }
@@ -820,6 +1138,7 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
         HTRACE("\n{}", glsl_code.data);
       HERROR("\n{}", process_get_output());
     }
+
     FileService::delete_file(binary_name);
 
     VkShaderModuleCreateInfo shader_create_info{
@@ -850,13 +1169,10 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
   // Descriptor Set Layouts
   // TODO: MAgic numbers
   VkDescriptorSetLayout layouts[5];
-  pipeline->set_count = creation.set_layout_count;
-  pipeline->sets = (DescriptorSetHandle *)halloca(
-      sizeof(DescriptorSetHandle) * creation.set_layout_count, allocator);
+  HASSERT(creation.set_layout_count <= 5);
   for (u32 i = 0; i < creation.set_layout_count; ++i) {
-    // TODO: Implement
-    // layouts[i] =
-    //     access_descriptor_set_layout(creation.set_layouts[i])->vk_handle;
+    layouts[i] =
+        access_descriptor_set_layout(creation.set_layouts[i])->vk_handle;
   }
 
   // Pipeline Layout
@@ -887,10 +1203,12 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
     VkPipelineCacheHeaderVersionOne *cache_header =
         (VkPipelineCacheHeaderVersionOne *)read_result.data;
 
-    if (cache_header->deviceID == vk_physical_device_properties.deviceID &&
-        cache_header->vendorID == vk_physical_device_properties.vendorID &&
+    if (cache_header->deviceID ==
+            vk_physical_device_properties2.properties.deviceID &&
+        cache_header->vendorID ==
+            vk_physical_device_properties2.properties.vendorID &&
         memcmp(cache_header->pipelineCacheUUID,
-               vk_physical_device_properties.pipelineCacheUUID,
+               vk_physical_device_properties2.properties.pipelineCacheUUID,
                VK_UUID_SIZE) == 0) {
       pipeline_cache_create_info.initialDataSize = read_result.size;
       pipeline_cache_create_info.pInitialData = read_result.data;
@@ -940,24 +1258,10 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
     input_assembly.topology = to_vk_primitive_topology(creation.primitive_type);
     input_assembly.primitiveRestartEnable = VK_FALSE;
 
-    // Viewport
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    // Scissor
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    // scissor.extent = swapchain.vk_extents;
-
     VkPipelineViewportStateCreateInfo viewport_state{
         VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewport_state.viewportCount = 1;
     viewport_state.scissorCount = 1;
-    viewport_state.pScissors = &scissor;
-    viewport_state.pViewports = &viewport;
 
     // Rasterizer State
     VkPipelineRasterizationStateCreateInfo rasterizer{
@@ -1030,10 +1334,6 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
     color_blending.logicOp = VK_LOGIC_OP_CLEAR;
     color_blending.attachmentCount = color_blend_attachments.size;
     color_blending.pAttachments = color_blend_attachments.data;
-    color_blending.blendConstants[0] = 0.0f; // Optional
-    color_blending.blendConstants[1] = 0.0f; // Optional
-    color_blending.blendConstants[2] = 0.0f; // Optional
-    color_blending.blendConstants[3] = 0.0f; // Optional
     // Dynamic Rendering
     VkFormat color_formats[MAX_COLOR_ATTACHMENTS];
     for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
@@ -1116,7 +1416,7 @@ PipelineHandle VkGpuDevice::create_pipeline(PipelineCreation &creation) {
 RenderPassHandle
 VkGpuDevice::create_render_pass(const RenderPassCreation &creation) {
   RenderPassHandle handle = render_passes.obtain_new();
-  if (handle.index == k_invalid_index) {
+  if (!is_handle_valid(handle)) {
     HERROR("Failed to obtain a Render Pass!");
     return handle;
   }
@@ -1130,29 +1430,159 @@ VkGpuDevice::create_render_pass(const RenderPassCreation &creation) {
   return handle;
 }
 
-void VkGpuDevice::destroy_render_pass(RenderPassHandle handle) {
-  render_passes.release(handle);
+void VkGpuDevice::destroy_buffer(BufferHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HWARN("Attempting to free an invalid VulkanBuffer");
+    return;
+  }
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_BUFFER, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VkGpuDevice::destroy_texture(TextureHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HWARN("Attempting to free an invalid Texture");
+    return;
+  }
+
+  VulkanImageView *view = access_image_view(handle);
+  destroy_image(view->image);
+  destroy_image_view(handle);
+}
+
+void VkGpuDevice::destroy_image(VkImageHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanImage");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VkGpuDevice::destroy_image_view(VkImageViewHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanImageView");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE_VIEW, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VkGpuDevice::destroy_sampler(SamplerHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanSampler");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_SAMPLER, handle};
+  resource_deletion_queue.push(q_object);
+}
+
+void VkGpuDevice::destroy_binding_set(BindingSetHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanDescriptorSet");
+    return;
+  }
+  descriptor_sets.release(handle);
+}
+
+void VkGpuDevice::destroy_binding_set_layout(BindingSetLayoutHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanDescriptorSetLayout");
+    return;
+  }
+
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, handle};
+  resource_deletion_queue.push(q_object);
 }
 
 void VkGpuDevice::destroy_pipeline(PipelineHandle handle) {
-  if (handle.index == k_invalid_index) {
+  if (!is_handle_valid(handle)) {
     HERROR("Attempting to free an invalid VulkanPipeline");
     return;
   }
 
-  VulkanPipeline *pipeline = access_pipeline(handle);
-
-  for (u32 i = 0; i < pipeline->set_count; ++i) {
-    // destroy_descriptor_set(pipeline->sets[i]);
-  }
-
-  pipeline->set_count = 0;
-
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle, pipeline->name};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle};
   resource_deletion_queue.push(q_object);
 }
+
+void VkGpuDevice::destroy_render_pass(RenderPassHandle handle) {
+  render_passes.release(handle);
+}
+
+void VkGpuDevice::destroy_buffer_instant(BufferHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HWARN("Attempting to free an invalid VulkanBuffer");
+    return;
+  }
+  VulkanBuffer *buffer = access_buffer(handle);
+  if (!buffer)
+    return;
+
+  VmaAllocationInfo alloc_info{};
+  vmaGetAllocationInfo(vma_allocator, buffer->vma_allocation, &alloc_info);
+
+  if (alloc_info.pMappedData)
+    vmaUnmapMemory(vma_allocator, buffer->vma_allocation);
+
+  vmaDestroyBuffer(vma_allocator, buffer->vk_handle, buffer->vma_allocation);
+  buffer->name = nullptr;
+  buffer->vk_handle = VK_NULL_HANDLE;
+  buffer->vma_allocation = VK_NULL_HANDLE;
+  buffer->mapped_data = nullptr;
+
+  buffers.release(handle);
+}
+
+void VkGpuDevice::destroy_image_instant(VkImageHandle handle) {
+  VulkanImage *image = images.obtain(handle);
+  if (!image)
+    return;
+
+  vmaDestroyImage(vma_allocator, image->vk_handle, image->vma_allocation);
+  images.release(handle);
+}
+
+void VkGpuDevice::destroy_image_view_instant(VkImageViewHandle handle) {
+  VulkanImageView *image_view = image_views.obtain(handle);
+  if (!image_view)
+    return;
+
+  if (image_view) {
+    vkDestroyImageView(vk_device, image_view->vk_handle,
+                       vk_allocation_callbacks);
+    image_views.release(handle);
+  }
+}
+
+void VkGpuDevice::destroy_sampler_instant(SamplerHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanSampler");
+    return;
+  }
+
+  VulkanSampler *sampler = access_sampler(handle);
+  vkDestroySampler(vk_device, sampler->vk_handle, vk_allocation_callbacks);
+  samplers.release(handle);
+}
+
+void VkGpuDevice::destroy_binding_set_layout_instant(
+    BindingSetLayoutHandle handle) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to free an invalid VulkanDescriptorSetLayout");
+    return;
+  }
+
+  VulkanDescriptorSetLayout *layout = access_descriptor_set_layout(handle);
+  vkDestroyDescriptorSetLayout(vk_device, layout->vk_handle,
+                               vk_allocation_callbacks);
+  descriptor_set_layouts.release(handle);
+}
+
 void VkGpuDevice::destroy_pipeline_instant(PipelineHandle handle) {
-  if (handle.index == k_invalid_index) {
+  if (!is_handle_valid(handle)) {
     HERROR("Attempting to free an invalid VulkanPipeline");
     return;
   }
@@ -1161,12 +1591,8 @@ void VkGpuDevice::destroy_pipeline_instant(PipelineHandle handle) {
   if (!pipeline)
     return;
 
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  hfree(pipeline->sets, allocator);
-
   vkDestroyPipelineLayout(vk_device, pipeline->vk_layout,
                           vk_allocation_callbacks);
-
   vkDestroyPipeline(vk_device, pipeline->vk_handle, vk_allocation_callbacks);
 
   pipelines.release(handle);
@@ -1180,25 +1606,22 @@ void VkGpuDevice::free_queued_resources() {
       ResourceQueueObject &queue_object = resource_deletion_queue[i];
       switch (queue_object.type) {
       case VK_OBJECT_TYPE_BUFFER:
-        // destroy_buffer_instant(queue_object.handle);
+        destroy_buffer_instant(queue_object.handle);
         break;
       case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT:
-        // destroy_descriptor_set_layout_instant(queue_object.handle);
-        break;
-      case VK_OBJECT_TYPE_DESCRIPTOR_SET:
-        // destroy_descriptor_set_instant(queue_object.handle);
+        destroy_binding_set_layout_instant(queue_object.handle);
         break;
       case VK_OBJECT_TYPE_PIPELINE:
         destroy_pipeline_instant(queue_object.handle);
         break;
       case VK_OBJECT_TYPE_IMAGE:
-        // destroy_image_instant(queue_object.handle);
+        destroy_image_instant(queue_object.handle);
         break;
       case VK_OBJECT_TYPE_IMAGE_VIEW:
-        // destroy_image_view_instant(queue_object.handle);
+        destroy_image_view_instant(queue_object.handle);
         break;
       case VK_OBJECT_TYPE_SAMPLER:
-        // destroy_sampler_instant(queue_object.handle);
+        destroy_sampler_instant(queue_object.handle);
         break;
       default:
         HERROR("Trying to delete an unknown type");
@@ -1329,6 +1752,49 @@ TextureHandle VkGpuDevice::get_backbuffer_texture(u32 index) {
   return swapchain.image_views[index];
 }
 
+bool VkGpuDevice::update_binding_set(BindingSetHandle set,
+                                     BindingSetUpdateInfo *update_infos,
+                                     u32 update_count) {
+  VulkanDescriptorSet *d_set = access_descriptor_set(set);
+
+  VkWriteDescriptorSet descriptor_writes[MAX_BINDING_PER_SET];
+  VkDescriptorBufferInfo buffer_infos[MAX_BINDING_PER_SET];
+  VkDescriptorImageInfo image_infos[MAX_BINDING_PER_SET];
+  for (u32 i = 0; i < update_count; i++) {
+    BindingSetUpdateInfo &update_info = update_infos[i];
+    if (update_info.resource_type == ResourceType::Texture) {
+      VulkanImageView *image_view =
+          access_image_view(update_info.resource_handle);
+      VulkanSampler *sampler = access_sampler(image_view->sampler);
+
+      VkDescriptorImageInfo &image_info = image_infos[i];
+      image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      image_info.imageView = image_view->vk_handle;
+      image_info.sampler = sampler->vk_handle;
+
+      VkWriteDescriptorSet &descriptor_write = descriptor_writes[i];
+      descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_write.pNext = nullptr;
+      descriptor_write.pImageInfo = &image_info;
+      descriptor_write.pTexelBufferView = nullptr;
+      descriptor_write.dstSet = d_set->vk_handle;
+      descriptor_write.dstBinding = update_info.binding;
+      descriptor_write.dstArrayElement = update_info.resource_index;
+      descriptor_write.descriptorType =
+          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptor_write.descriptorCount = 1;
+      descriptor_write.pBufferInfo = nullptr;
+    } else {
+      HERROR("Unkown descriptor type");
+      return false;
+    }
+  }
+
+  vkUpdateDescriptorSets(vk_device, update_count, descriptor_writes, 0,
+                         nullptr);
+  return true;
+}
+
 void VkGpuDevice::submit_work(Context *context_, WorkReceipt *receipt) {
   ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
   StackAllocator *stack_allocator = scope_allocator.allocator;
@@ -1348,6 +1814,9 @@ void VkGpuDevice::submit_work(Context *context_, WorkReceipt *receipt) {
             .vk_handle;
     command_submit_info->deviceMask = 0;
   }
+
+  bool has_wait_semaphore = vk_context->wait_semaphore != VK_NULL_HANDLE;
+  bool has_signal_semphore = vk_context->signal_semaphore != VK_NULL_HANDLE;
 
   VkSemaphoreSubmitInfo wait_semaphore_submit_info{
       VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
@@ -1376,12 +1845,14 @@ void VkGpuDevice::submit_work(Context *context_, WorkReceipt *receipt) {
   submit_info.commandBufferInfoCount = vk_context->ready_buffer_count;
   submit_info.pCommandBufferInfos = command_submit_infos;
 
-  submit_info.waitSemaphoreInfoCount = 1;
-  submit_info.pWaitSemaphoreInfos = &wait_semaphore_submit_info;
+  submit_info.waitSemaphoreInfoCount = has_wait_semaphore ? 1 : 0;
+  submit_info.pWaitSemaphoreInfos =
+      has_wait_semaphore ? &wait_semaphore_submit_info : nullptr;
 
   submit_info.signalSemaphoreInfoCount =
-      ArraySize(signal_semaphore_submit_infos);
-  submit_info.pSignalSemaphoreInfos = signal_semaphore_submit_infos;
+      has_signal_semphore ? ArraySize(signal_semaphore_submit_infos) : 0;
+  submit_info.pSignalSemaphoreInfos =
+      has_signal_semphore ? signal_semaphore_submit_infos : nullptr;
 
   VK_CHECK(
       vkQueueSubmit2(vk_context->vk_queue, 1, &submit_info, VK_NULL_HANDLE));
@@ -1394,6 +1865,10 @@ void VkGpuDevice::submit_work(Context *context_, WorkReceipt *receipt) {
     vk_receipt->vk_timeline_semaphore = vk_context->timeline_semaphore;
     vk_receipt->wait_value = vk_context->signal_value;
   }
+
+  vk_context->wait_semaphore = VK_NULL_HANDLE;
+  vk_context->signal_semaphore = VK_NULL_HANDLE;
+  vk_context->timeline_semaphore = VK_NULL_HANDLE;
 }
 
 void VkGpuDevice::wait_on_work(WorkReceipt *receipt) {
@@ -1449,6 +1924,11 @@ void VkGpuDevice::set_render_pass_texture(RenderPassHandle handle,
   } else {
     render_pass->colour_attachments[index].texture_handle = texture_handle;
   }
+}
+
+void *VkGpuDevice::get_buffer_map(BufferHandle handle) {
+  VulkanBuffer *buffer = access_buffer(handle);
+  return buffer->mapped_data;
 }
 
 void VkGpuDevice::resize_backbuffers() { resize_frame = true; }

@@ -113,11 +113,11 @@ void StringBuffer::append_f(cstring format, ...) {
   }
 }
 
-char *StringBuffer::append_use(cstring string) {
+cstring StringBuffer::append_use(cstring string) {
   return append_use_f("%s", string);
 }
 
-char *StringBuffer::append_use_f(cstring format, ...) {
+cstring StringBuffer::append_use_f(cstring format, ...) {
   u32 cached_offset = this->current_size;
 
   // TODO: safer version!
@@ -152,8 +152,8 @@ char *StringBuffer::append_use_f(cstring format, ...) {
   return this->data + cached_offset;
 }
 
-char *StringBuffer::append_use_substring(cstring string, u32 start_index,
-                                         u32 end_index) {
+cstring StringBuffer::append_use_substring(cstring string, u32 start_index,
+                                           u32 end_index) {
   u32 size = end_index - start_index;
   if (current_size + size >= buffer_size) {
     HERROR("StringBuffer full! Please allocate more size. Current size: {}, "

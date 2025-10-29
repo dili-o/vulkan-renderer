@@ -42,6 +42,13 @@ VkAttachmentLoadOp to_vk_load_op(LoadOp::Enum load_op);
 
 VkAttachmentStoreOp to_vk_store_op(StoreOp::Enum store_op);
 
+VkFilter to_vk_filter(SamplerFilter::Enum filter);
+
+VkSamplerMipmapMode to_vk_sampler_mipmap_mode(SamplerFilter::Enum filter);
+
+VkSamplerAddressMode
+to_vk_sampler_address_mode(SamplerAddressMode::Enum address_mode);
+
 VkImageMemoryBarrier2
 create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
                      VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,

@@ -14,10 +14,15 @@ endif()
 
 # Define your project sources and headers
 file(GLOB_RECURSE SOURCE_LIST "Src/*.cpp" "Src/*.hpp")
+file(GLOB IMGUI_SOURCE_LIST 
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Engine/imgui/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Engine/Vendor/imgui/*.cpp"
+    )
 
 # Build as an EXE
 add_executable(${PROJECT_NAME} 
     ${SOURCE_LIST}
+    ${IMGUI_SOURCE_LIST}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Engine)

@@ -187,28 +187,26 @@ void VulkanCommandBuffer::bind_vertex_buffer(BufferHandle handle,
                                              u32 first_binding,
                                              u32 binding_count) {
 
-  // VulkanBuffer *buffer = backend->access_buffer(handle);
-  // VkBuffer vertex_buffers[] = {buffer->vk_handle};
-  // VkDeviceSize offsets[] = {0};
-  //
-  // vkCmdBindVertexBuffers(vk_handle, first_binding, binding_count,
-  //                        vertex_buffers, offsets);
+  VulkanBuffer *buffer = device->access_buffer(handle);
+  VkBuffer vertex_buffers[] = {buffer->vk_handle};
+  VkDeviceSize offsets[] = {0};
+
+  vkCmdBindVertexBuffers(vk_handle, first_binding, binding_count,
+                         vertex_buffers, offsets);
 }
 
 void VulkanCommandBuffer::bind_index_buffer(BufferHandle handle, u32 offset,
                                             VkIndexType index_type) {
-  // VulkanBuffer *buffer = backend->access_buffer(handle);
-  // vkCmdBindIndexBuffer(vk_handle, buffer->vk_handle, offset, index_type);
+  VulkanBuffer *buffer = device->access_buffer(handle);
+  vkCmdBindIndexBuffer(vk_handle, buffer->vk_handle, offset, index_type);
 }
 
-void VulkanCommandBuffer::bind_descriptor_sets(PipelineHandle pipeline_handle,
-                                               VkDescriptorSet dset,
+void VulkanCommandBuffer::bind_descriptor_sets(VkDescriptorSet dset,
                                                u32 set_index) {
 
-  // VulkanPipeline *pipeline = backend->access_pipeline(pipeline_handle);
-  // vkCmdBindDescriptorSets(vk_handle, pipeline->bind_point,
-  // pipeline->vk_layout,
-  //                         set_index, 1, &dset, 0, nullptr);
+  VulkanPipeline *pipeline = device->access_pipeline(current_pipeline);
+  vkCmdBindDescriptorSets(vk_handle, pipeline->bind_point, pipeline->vk_layout,
+                          set_index, 1, &dset, 0, nullptr);
 }
 
 void VulkanCommandBuffer::push_constants(u32 offset, u32 size, void *data) {
@@ -288,12 +286,12 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
   vkQueueWaitIdle(vk_queue);
 }
 
-void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
+void VulkanCommandBuffer::copy_buffer_to_image(VkImageHandle dst_image,
                                                VkBuffer src_buffer, u32 size,
                                                VkQueue vk_queue,
                                                bool generate_mips) {
 
-  begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+  // begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
   // Tranisiton image (including mip levels) to transfer dst
   VulkanImage *image = device->access_image(dst_image);
@@ -416,20 +414,20 @@ void VulkanCommandBuffer::copy_buffer_to_image(TextureHandle dst_image,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
   }
 
-  end();
+  // end();
 
   image->current_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-  VkCommandBufferSubmitInfo command_submit_info{
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-  command_submit_info.commandBuffer = vk_handle;
-
-  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-  submit_info.commandBufferInfoCount = 1;
-  submit_info.pCommandBufferInfos = &command_submit_info;
-
-  vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
-  vkQueueWaitIdle(vk_queue);
+  // VkCommandBufferSubmitInfo command_submit_info{
+  //     VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+  // command_submit_info.commandBuffer = vk_handle;
+  //
+  // VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+  // submit_info.commandBufferInfoCount = 1;
+  // submit_info.pCommandBufferInfos = &command_submit_info;
+  //
+  // vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
+  // vkQueueWaitIdle(vk_queue);
 }
 
 void VulkanCommandBuffer::push_marker(cstring name) {

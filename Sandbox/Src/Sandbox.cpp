@@ -7,8 +7,13 @@
 #include "Core/Log.hpp"
 #include "Core/Profiler.hpp"
 #include "Platform/Platform.hpp"
+#include "Renderer/GPUResourceTypes.hpp"
+#include "Renderer/ImguiFrontend.hpp"
 #include "Renderer/RendererBackend.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
+#include "Renderer/RendererTypes.hpp"
+// Vendors
+#include <imgui_internal.h>
 
 namespace Helix {
 Platform *platform = nullptr;
@@ -23,6 +28,7 @@ static bool application_on_key(u16 event_code, void *sender, void *listener,
 
 void Sandbox::init() {
   Engine::init();
+  ImGui::SetCurrentContext(ImguiFrontend::instance()->get_ImGuiContext());
 
   platform = Platform::instance();
   if (!platform) {
@@ -104,11 +110,16 @@ void Sandbox::render_frame() {
   RendererFrontEnd *rf = RendererFrontEnd::instance();
 
   if (rf->begin_frame(nullptr)) {
+    i32 width, height;
+    Platform::instance()->get_window_size(&width, &height);
+    glm::mat4 view_proj = camera.get_projection() * camera.get_view();
+
     BarrierDescription barrier{};
     barrier.resource_type = ResourceType::Texture;
     barrier.src_state = ResourceState::Present;
     barrier.dst_state = ResourceState::RenderTarget;
     barrier.resource_handle = rf->backbuffers[rf->backbuffer_index];
+
     rf->graphics_context->resource_barrier(&barrier);
 
     rf->device->set_render_pass_texture(
@@ -116,15 +127,32 @@ void Sandbox::render_frame() {
 
     rf->graphics_context->bind_renderpass(rf->main_pass);
     rf->graphics_context->bind_pipeline(hello_triangle);
-    i32 width, height;
-    Platform::instance()->get_window_size(&width, &height);
 
     rf->graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
                                        1.f);
-    glm::mat4 view_proj = camera.get_projection() * camera.get_view();
     rf->graphics_context->push_shader_constants(sizeof(glm::mat4), &view_proj);
     rf->graphics_context->draw(3, 1, 0, 0);
+
+    // Imgui
+    ImguiFrontend *imgui = ImguiFrontend::instance();
+    imgui->begin_frame();
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoMove;
+    ImGui::SetNextWindowBgAlpha(0.25f);
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(256, 96), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Frame time", NULL, flags)) {
+      ImGui::Text("Frame time: %.3f ms", delta_time * 1000.f);
+      ImGui::Checkbox("Limit Frames", &limit_frames);
+      // ImGui::Checkbox("Freeze Camera", &freeze_camera);
+      ImGui::End();
+    }
+
+    imgui->render_frame();
+
     rf->graphics_context->end_current_pass();
 
     barrier.resource_type = ResourceType::Texture;
@@ -133,13 +161,14 @@ void Sandbox::render_frame() {
     barrier.resource_handle = rf->backbuffers[rf->backbuffer_index];
 
     rf->graphics_context->resource_barrier(&barrier);
-
     rf->end_frame(nullptr);
   }
 }
 
 void Sandbox::shutdown() {
   camera.shutdown();
+  RendererFrontEnd *rf = RendererFrontEnd::instance();
+  rf->destroy_pipeline(hello_triangle);
 
   EventService *event_service = EventService::instance();
   event_service->unregister_event(SDL_EVENT_QUIT, 0, application_on_event);

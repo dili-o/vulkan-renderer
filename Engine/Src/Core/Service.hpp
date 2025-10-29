@@ -1,7 +1,8 @@
 #pragma once
 
+#include "Core/Defines.hpp"
 namespace Helix {
-struct Service {
+struct HLX_API Service {
   virtual void init(void *configuration) {}
   virtual void shutdown() {}
 

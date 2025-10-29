@@ -7,6 +7,7 @@ namespace Helix {
 using BufferHandle = ResourceHandle;
 using PipelineHandle = ResourceHandle;
 using TextureHandle = ResourceHandle;
+using SamplerHandle = ResourceHandle;
 using BindingSetLayoutHandle = ResourceHandle;
 using BindingSetHandle = ResourceHandle;
 using RenderPassHandle = ResourceHandle;

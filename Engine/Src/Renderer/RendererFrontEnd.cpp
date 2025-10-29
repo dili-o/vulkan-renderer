@@ -1,10 +1,8 @@
 #include "Renderer/RendererFrontEnd.hpp"
-#include "Containers/HashMap.hpp"
 #include "Containers/ResourcePool.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
-#include "Core/String.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
@@ -12,7 +10,6 @@
 #include "RendererBackend.hpp"
 #include "RendererTypes.hpp"
 // Vendor
-#include <cstring>
 #include <stb_image.h>
 
 namespace Helix {
@@ -51,34 +48,68 @@ void RendererFrontEnd::init(void *_config) {
   }
 
   graphics_context = device->create_context(ContextType::Graphics);
+  transfer_context = device->create_context(ContextType::Transfer);
 
-  RenderPassCreation creation{};
-  creation.add_color_attachment(LoadOp::Clear, StoreOp::Store, backbuffers[0]);
-  main_pass = create_render_pass(creation);
+  {
+    RenderPassCreation creation{};
+    creation.add_color_attachment(LoadOp::Clear, StoreOp::Store,
+                                  backbuffers[0]);
+    main_pass = create_render_pass(creation);
+  }
+  {
+    BufferCreation creation{};
+    creation.mapped = true;
+    creation.size = MAX_ALLOCATION_SIZE;
+    creation.usage_flags =
+        BufferUsage::Enum(BufferUsage::TransferSrc | BufferUsage::TransferDst);
+    creation.memory_access_flags = MemoryAccess::CPU_TO_GPU;
+    creation.name = "StagingBuffer";
+    staging_buffer = create_buffer(creation);
+    staging_buffer_current_size = 0;
+  }
+  {
+    BindingSetLayoutCreation creation;
+    creation.is_bindless = true;
+    creation.name = "BindlessDescriptorSetLayout";
+    creation.add_binding(0, MAX_TEXTURES,
+                         (ShaderStage::Enum)(ShaderStage::Fragment),
+                         BindingType::CombinedSampler);
+    bindless_set_layout = create_binding_set_layout(creation);
+  }
+  {
+    BindingSetCreation creation;
+    creation.name = "BindlessDescriptorSet";
+    creation.layout = bindless_set_layout;
+    bindless_set = create_binding_set(creation);
+  }
+  {
+    SamplerCreation creation{};
+    creation.name = "DefaultSampler";
+    default_sampler = create_sampler(creation);
+  }
 
   HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  pipelines_map.init(allocator, 10, string_hash);
+  bindless_textures_to_update.init(allocator, 10);
 
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
 }
 
 void RendererFrontEnd::shutdown() {
+  bindless_textures_to_update.shutdown();
+  destroy_sampler(default_sampler);
+  destroy_binding_set(bindless_set);
+  destroy_binding_set_layout(bindless_set_layout);
   destroy_render_pass(main_pass);
-
-  for (u32 i = 0; i < pipelines_map.capacity; ++i) {
-    const Item<StringView, PipelineHandle> item = pipelines_map.items[i];
-    if (item.state == EntryState::OCCUPIED) {
-      device->destroy_pipeline(item.value);
-    }
-  }
-  pipelines_map.shutdown();
+  destroy_buffer(staging_buffer);
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     device->destroy_receipt(frame_receipts[i]);
   }
 
   device->destroy_context(graphics_context);
+  device->destroy_context(transfer_context);
+
   destroy_device(device);
 
   HELIX_SERVICE_SHUTDOWN_MSG(RendererFrontEnd);
@@ -143,6 +174,28 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   HELIX_PROFILER_FUNCTION();
   graphics_context->end(current_frame_in_flight);
 
+  if (bindless_textures_to_update.size) {
+    u32 update_count =
+        (bindless_textures_to_update.size < MAX_BINDLESS_UPDATE_PER_FRAME)
+            ? bindless_textures_to_update.size
+            : MAX_BINDLESS_UPDATE_PER_FRAME;
+
+    BindingSetUpdateInfo infos[MAX_BINDLESS_UPDATE_PER_FRAME];
+    u32 current_info = 0;
+    for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
+      BindingSetUpdateInfo &info = infos[current_info];
+      TextureHandle texture = bindless_textures_to_update[it];
+      bindless_textures_to_update.pop();
+
+      info.resource_handle = texture;
+      info.resource_type = ResourceType::Texture;
+      info.binding = 0;
+      info.resource_index = texture.index;
+    }
+
+    update_binding_set(bindless_set, infos, update_count);
+  }
+
   device->submit_work(graphics_context,
                       frame_receipts[current_frame_in_flight]);
   device->present_to_display();
@@ -152,78 +205,68 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   return true;
 }
 
-BufferHandle RendererFrontEnd::create_buffer(BufferCreation &creation) {
-  return BufferHandle();
+BufferHandle RendererFrontEnd::create_buffer(const BufferCreation &creation) {
+  return device->create_buffer(creation);
 }
 
-PipelineHandle RendererFrontEnd::create_pipeline(PipelineCreation &creation) {
-  StringView name_view = {creation.name, strlen(creation.name)};
-  if (pipelines_map.search(name_view)) {
-    HERROR("Failed to create Pipeline: PipelineCreation.name already exists");
-    return {k_invalid_index, 0};
-  }
+TextureHandle
+RendererFrontEnd::create_texture(const TextureCreation &creation) {
+  TextureHandle handle = device->create_texture(creation);
+  if (creation.usage & TextureUsage::Sampled)
+    bindless_textures_to_update.push(handle);
 
-  PipelineHandle handle = device->create_pipeline(creation);
-  pipelines_map.insert({creation.name, strlen(creation.name)}, handle);
   return handle;
 }
 
-TextureHandle RendererFrontEnd::create_texture(TextureCreation &creation) {
-  HELIX_PROFILER_FUNCTION();
-  HELIX_PROFILER_ZONE_TEXT(creation.name, strlen(creation.name));
-  return TextureHandle();
-}
-
-BindingSetLayoutHandle RendererFrontEnd::create_binding_set_layout(
-    BindingSetLayoutCreation &creation) {
-  return BindingSetLayoutHandle();
+SamplerHandle
+RendererFrontEnd::create_sampler(const SamplerCreation &creation) {
+  return device->create_sampler(creation);
 }
 
 BindingSetHandle
-RendererFrontEnd::create_binding_set(BindingSetCreation &creation) {
-  return BindingSetHandle();
+RendererFrontEnd::create_binding_set(const BindingSetCreation &creation) {
+  return device->create_binding_set(creation);
+}
+
+BindingSetLayoutHandle RendererFrontEnd::create_binding_set_layout(
+    const BindingSetLayoutCreation &creation) {
+  return device->create_binding_set_layout(creation);
+}
+
+PipelineHandle
+RendererFrontEnd::create_pipeline(const PipelineCreation &creation) {
+  return device->create_pipeline(creation);
 }
 
 RenderPassHandle
-RendererFrontEnd::create_render_pass(RenderPassCreation &creation) {
+RendererFrontEnd::create_render_pass(const RenderPassCreation &creation) {
   return device->create_render_pass(creation);
 }
 
-// TODO: Implement
-BufferInfo RendererFrontEnd::access_buffer_view(BufferHandle handle) {
-  BufferInfo info{};
-  return info;
+void RendererFrontEnd::destroy_buffer(BufferHandle handle) {
+  device->destroy_buffer(handle);
 }
 
-// TODO: Implement
-TextureInfo RendererFrontEnd::access_texture_view(TextureHandle handle) {
-  TextureInfo info{};
-  return info;
+void RendererFrontEnd::destroy_texture(TextureHandle handle) {
+  device->destroy_texture(handle);
 }
 
-// TODO: Implement
-PipelineInfo RendererFrontEnd::access_pipeline_view(PipelineHandle handle) {
-  PipelineInfo info{};
-  return info;
+void RendererFrontEnd::destroy_sampler(SamplerHandle handle) {
+  device->destroy_sampler(handle);
 }
 
-void RendererFrontEnd::destroy_buffer(BufferHandle handle) {}
+void RendererFrontEnd::destroy_binding_set(BindingSetHandle handle) {
+  device->destroy_binding_set(handle);
+}
+
+void RendererFrontEnd::destroy_binding_set_layout(
+    BindingSetLayoutHandle handle) {
+  device->destroy_binding_set_layout(handle);
+}
 
 void RendererFrontEnd::destroy_pipeline(PipelineHandle handle) {
-  if (handle.index == k_invalid_index) {
-    HERROR("Attempting to destroy an invalid pipeline");
-    return;
-  }
-
-  // TODO: Delete the handle from pipelines
-  PipelineInfo info = device->access_pipeline_view(handle);
-  pipelines_map.remove_item({info.name, strlen(info.name)});
   device->destroy_pipeline(handle);
 }
-
-void RendererFrontEnd::destroy_texture(TextureHandle handle) {}
-
-void RendererFrontEnd::destroy_binding_set(BindingSetHandle handle) {}
 
 void RendererFrontEnd::destroy_render_pass(RenderPassHandle handle) {
   device->destroy_render_pass(handle);
@@ -232,17 +275,42 @@ void RendererFrontEnd::destroy_render_pass(RenderPassHandle handle) {
 bool RendererFrontEnd::update_binding_set(BindingSetHandle set,
                                           BindingSetUpdateInfo *update_infos,
                                           u32 update_count) {
-  return true;
+  return device->update_binding_set(set, update_infos, update_count);
 }
 
 void RendererFrontEnd::set_pipeline_binding_set(PipelineHandle pipeline,
                                                 BindingSetHandle set,
                                                 u32 set_index) {}
 
-void RendererFrontEnd::upload_buffer_data(void *data, BufferHandle dst_buffer,
-                                          u64 size, u64 offset) {}
+void *RendererFrontEnd::get_buffer_map(BufferHandle handle) {
+  return device->get_buffer_map(handle);
+}
 
-void RendererFrontEnd::upload_to_image(void *data, TextureHandle dst_image) {}
+void RendererFrontEnd::copy_data_to_image(void *data, TextureHandle texture,
+                                          u64 texture_size) {
+// TODO: Hard coded
+#define MAX_ALLOC_SIZE 4292870144
+  memcpy(get_buffer_map(staging_buffer), data, texture_size);
+
+  device->wait_on_work(frame_receipts[current_frame_in_flight]);
+  graphics_context->begin(current_frame_in_flight);
+
+  graphics_context->copy_buffer_to_texture(texture, staging_buffer,
+                                           texture_size);
+
+  graphics_context->end(0);
+
+  device->submit_work(graphics_context, nullptr);
+
+  // TODO: Blocking
+  graphics_context->wait_on_queue();
+}
+
+void RendererFrontEnd::copy_data_to_buffer(void *data,
+                                           TextureHandle dst_image) {}
+
+void RendererFrontEnd::copy_buffer_to_buffer(BufferHandle src_buffer,
+                                             BufferHandle dst_buffer) {}
 
 void RendererFrontEnd::print_gpu_stats() {}
 
