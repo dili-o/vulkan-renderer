@@ -51,9 +51,22 @@ void RendererFrontEnd::init(void *_config) {
   transfer_context = device->create_context(ContextType::Transfer);
 
   {
+    i32 width, height;
+    Platform::instance()->get_window_size(&width, &height);
+    TextureCreation creation{};
+    creation.name = "DepthBuffer";
+    creation.width = (u32)width;
+    creation.height = (u32)height;
+    creation.usage = TextureUsage::Depth;
+    creation.format = TextureFormat::D32;
+    creation.type = TextureType::Texture2D;
+    depth_texture = create_texture(creation);
+  }
+  {
     RenderPassCreation creation{};
     creation.add_color_attachment(LoadOp::Clear, StoreOp::Store,
                                   backbuffers[0]);
+    creation.add_depth_attachment(LoadOp::Clear, StoreOp::Store, depth_texture);
     main_pass = create_render_pass(creation);
   }
   {
@@ -102,6 +115,7 @@ void RendererFrontEnd::shutdown() {
   destroy_binding_set_layout(bindless_set_layout);
   destroy_render_pass(main_pass);
   destroy_buffer(staging_buffer);
+  destroy_texture(depth_texture);
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     device->destroy_receipt(frame_receipts[i]);
@@ -117,43 +131,6 @@ void RendererFrontEnd::shutdown() {
 
 void RendererFrontEnd::on_resize(u16 width, u16 height) {
   device->resize_backbuffers();
-}
-
-bool RendererFrontEnd::render_frame(RenderPacket *packet) {
-  HELIX_PROFILER_FUNCTION_COLOR(tracy::Color::Orange);
-
-  if (begin_frame(packet)) {
-    BarrierDescription barrier{};
-    barrier.resource_type = ResourceType::Texture;
-    barrier.src_state = ResourceState::Present;
-    barrier.dst_state = ResourceState::RenderTarget;
-    barrier.resource_handle = backbuffers[backbuffer_index];
-    graphics_context->resource_barrier(&barrier);
-
-    device->set_render_pass_texture(main_pass, backbuffers[backbuffer_index],
-                                    false, 0);
-
-    graphics_context->bind_renderpass(main_pass);
-    // graphics_context->bind_pipeline(hello_triangle);
-    i32 width, height;
-    Platform::instance()->get_window_size(&width, &height);
-
-    graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
-    graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f, 1.f);
-    graphics_context->draw(3, 1, 0, 0);
-    graphics_context->end_current_pass();
-
-    barrier.resource_type = ResourceType::Texture;
-    barrier.src_state = ResourceState::RenderTarget;
-    barrier.dst_state = ResourceState::Present;
-    barrier.resource_handle = backbuffers[backbuffer_index];
-
-    graphics_context->resource_barrier(&barrier);
-
-    end_frame(packet);
-  }
-
-  return true;
 }
 
 bool RendererFrontEnd::begin_frame(RenderPacket *packet) {
@@ -272,6 +249,11 @@ void RendererFrontEnd::destroy_render_pass(RenderPassHandle handle) {
   device->destroy_render_pass(handle);
 }
 
+void RendererFrontEnd::resize_texture(TextureHandle handle, u32 width,
+                                      u32 height) {
+  device->resize_texture(handle, width, height);
+}
+
 bool RendererFrontEnd::update_binding_set(BindingSetHandle set,
                                           BindingSetUpdateInfo *update_infos,
                                           u32 update_count) {
@@ -298,7 +280,7 @@ void RendererFrontEnd::copy_data_to_image(void *data, TextureHandle texture,
   graphics_context->copy_buffer_to_texture(texture, staging_buffer,
                                            texture_size);
 
-  graphics_context->end(0);
+  graphics_context->end(current_frame_in_flight);
 
   device->submit_work(graphics_context, nullptr);
 
@@ -306,11 +288,28 @@ void RendererFrontEnd::copy_data_to_image(void *data, TextureHandle texture,
   graphics_context->wait_on_queue();
 }
 
-void RendererFrontEnd::copy_data_to_buffer(void *data,
-                                           TextureHandle dst_image) {}
+void RendererFrontEnd::copy_data_to_buffer(void *data, BufferHandle dst_buffer,
+                                           u64 size) {
+  memcpy(get_buffer_map(staging_buffer), data, size);
+
+  // TODO: Blocking
+  transfer_context->wait_on_queue();
+
+  transfer_context->begin(current_frame_in_flight);
+
+  transfer_context->copy_buffer_to_buffer(dst_buffer, staging_buffer, size);
+
+  transfer_context->end(current_frame_in_flight);
+
+  device->submit_work(transfer_context, nullptr);
+
+  // TODO: Blocking
+  transfer_context->wait_on_queue();
+}
 
 void RendererFrontEnd::copy_buffer_to_buffer(BufferHandle src_buffer,
-                                             BufferHandle dst_buffer) {}
+                                             BufferHandle dst_buffer,
+                                             u64 size) {}
 
 void RendererFrontEnd::print_gpu_stats() {}
 

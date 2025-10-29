@@ -37,6 +37,9 @@ struct VkGpuDevice final : public GpuDevice {
   virtual void destroy_pipeline(PipelineHandle handle) override;
   virtual void destroy_render_pass(RenderPassHandle handle) override;
 
+  virtual void resize_texture(TextureHandle handle, u32 width,
+                              u32 height) override;
+
   virtual void destroy_receipt(WorkReceipt *receipt) override;
   virtual void destroy_context(Context *context) override;
 

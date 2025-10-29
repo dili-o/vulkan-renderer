@@ -818,7 +818,7 @@ BufferHandle VkGpuDevice::create_buffer(const BufferCreation &creation) {
   VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   buffer_info.size =
       (creation.size == MAX_ALLOCATION_SIZE)
-          ? vk_physical_device_vulkan11_properties.maxMemoryAllocationSize
+          ? vk_physical_device_vulkan11_properties.maxMemoryAllocationSize / 2
           : creation.size;
   buffer_info.usage = to_vk_buffer_usage_flags(creation.usage_flags);
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -877,8 +877,7 @@ VkImageHandle VkGpuDevice::create_image(const TextureCreation &creation) {
   }
   VulkanImage *image = images.obtain(handle);
 
-  VkImageCreateInfo image_info{};
-  image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   image_info.imageType = VK_IMAGE_TYPE_2D;
   image_info.extent.width = creation.width;
   image_info.extent.height = creation.height;
@@ -1336,6 +1335,13 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     color_blending.pAttachments = color_blend_attachments.data;
     // Dynamic Rendering
     VkFormat color_formats[MAX_COLOR_ATTACHMENTS];
+    VkFormat depth_format = VK_FORMAT_UNDEFINED;
+    if (is_handle_valid(render_pass->depth_attachment.texture_handle)) {
+      VulkanImageView *depth_view =
+          access_image_view(render_pass->depth_attachment.texture_handle);
+      VulkanImage *depth_image = access_image(depth_view->image);
+      depth_format = depth_image->vk_format;
+    }
     for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
       VulkanImage *image =
           access_image(render_pass->colour_attachments[i].texture_handle);
@@ -1348,8 +1354,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     pipeline_rendering_create.colorAttachmentCount =
         render_pass->num_colour_attachments;
     pipeline_rendering_create.pColorAttachmentFormats = color_formats;
-    // pipeline_rendering_create.depthAttachmentFormat =
-    //     to_vk_format(render_pass->depth_attachment.format);
+    pipeline_rendering_create.depthAttachmentFormat = depth_format;
     pipeline_rendering_create.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipeline_info{
@@ -1510,6 +1515,64 @@ void VkGpuDevice::destroy_pipeline(PipelineHandle handle) {
 
 void VkGpuDevice::destroy_render_pass(RenderPassHandle handle) {
   render_passes.release(handle);
+}
+
+void VkGpuDevice::resize_texture(TextureHandle handle, u32 width, u32 height) {
+  if (!is_handle_valid(handle)) {
+    HERROR("Attempting to resize an invalid Texture");
+    return;
+  }
+
+  VulkanImageView *view = access_image_view(handle);
+  VulkanImage *image = access_image(view->image);
+
+  vmaDestroyImage(vma_allocator, image->vk_handle, image->vma_allocation);
+  vkDestroyImageView(vk_device, view->vk_handle, vk_allocation_callbacks);
+
+  VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  image_info.imageType = VK_IMAGE_TYPE_2D;
+  image_info.extent.width = width;
+  image_info.extent.height = height;
+  image_info.extent.depth = image->vk_extents.depth;
+  image_info.mipLevels = image->mip_count;
+  image_info.arrayLayers = 1;
+  image_info.format = image->vk_format;
+  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+
+  image_info.usage = image->vk_usage;
+
+  VmaAllocationCreateInfo memory_info{};
+  memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+  VK_CHECK(vmaCreateImage(vma_allocator, &image_info, &memory_info,
+                          &image->vk_handle, &image->vma_allocation, nullptr));
+
+  set_resource_name(VK_OBJECT_TYPE_IMAGE, (u64)image->vk_handle, image->name);
+  vmaSetAllocationName(vma_allocator, image->vma_allocation, image->name);
+
+  image->current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  image->vk_extents = {width, height, image->vk_extents.depth};
+  image->mip_count = image->mip_count;
+
+  VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+  view_info.image = image->vk_handle;
+  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.format = image->vk_format;
+  view_info.subresourceRange.aspectMask = has_depth_or_stencil(image->vk_format)
+                                              ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                              : VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.baseMipLevel = view->base_mip_level;
+  view_info.subresourceRange.levelCount = image->mip_count;
+  view_info.subresourceRange.baseArrayLayer = view->base_array_level;
+  view_info.subresourceRange.layerCount = 1;
+
+  VK_CHECK(vkCreateImageView(vk_device, &view_info, vk_allocation_callbacks,
+                             &view->vk_handle));
+  set_resource_name(VK_OBJECT_TYPE_IMAGE_VIEW, (u64)view->vk_handle,
+                    view->name);
 }
 
 void VkGpuDevice::destroy_buffer_instant(BufferHandle handle) {
@@ -1931,7 +1994,7 @@ void *VkGpuDevice::get_buffer_map(BufferHandle handle) {
   return buffer->mapped_data;
 }
 
-void VkGpuDevice::resize_backbuffers() { resize_frame = true; }
+void VkGpuDevice::resize_backbuffers() { resize_swapchain(); }
 
 void VkGpuDevice::set_resource_name(VkObjectType type, u64 handle,
                                     cstring name) {

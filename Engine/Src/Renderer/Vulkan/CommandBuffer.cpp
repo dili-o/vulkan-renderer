@@ -125,7 +125,7 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle) {
   VkRenderingAttachmentInfo depth_attachment_info{
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
   bool has_depth =
-      render_pass->depth_attachment.texture_handle.index != k_invalid_index;
+      is_handle_valid(render_pass->depth_attachment.texture_handle);
 
   if (has_depth) {
     VulkanImageView *depth_image_view =
@@ -255,10 +255,6 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
                                                 VkBuffer src_buffer,
                                                 u32 src_offset, u32 size,
                                                 VkQueue vk_queue) {
-  // TODO: Add a flag that lets you record multiple commands before submitting
-
-  begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
   VkBufferCopy2 region{VK_STRUCTURE_TYPE_BUFFER_COPY_2};
   region.srcOffset = src_offset;
   region.dstOffset = dst_offset;
@@ -271,28 +267,12 @@ void VulkanCommandBuffer::copy_buffer_to_buffer(VkBuffer dst_buffer,
   buffer_info.pRegions = &region;
 
   vkCmdCopyBuffer2(vk_handle, &buffer_info);
-
-  end();
-
-  VkCommandBufferSubmitInfo command_submit_info{
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-  command_submit_info.commandBuffer = vk_handle;
-
-  VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-  submit_info.commandBufferInfoCount = 1;
-  submit_info.pCommandBufferInfos = &command_submit_info;
-
-  vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
-  vkQueueWaitIdle(vk_queue);
 }
 
 void VulkanCommandBuffer::copy_buffer_to_image(VkImageHandle dst_image,
                                                VkBuffer src_buffer, u32 size,
                                                VkQueue vk_queue,
                                                bool generate_mips) {
-
-  // begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
   // Tranisiton image (including mip levels) to transfer dst
   VulkanImage *image = device->access_image(dst_image);
   transition_image(
@@ -413,21 +393,7 @@ void VulkanCommandBuffer::copy_buffer_to_image(VkImageHandle dst_image,
         image, image->current_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
   }
-
-  // end();
-
   image->current_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-  // VkCommandBufferSubmitInfo command_submit_info{
-  //     VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-  // command_submit_info.commandBuffer = vk_handle;
-  //
-  // VkSubmitInfo2 submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-  // submit_info.commandBufferInfoCount = 1;
-  // submit_info.pCommandBufferInfos = &command_submit_info;
-  //
-  // vkQueueSubmit2(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
-  // vkQueueWaitIdle(vk_queue);
 }
 
 void VulkanCommandBuffer::push_marker(cstring name) {

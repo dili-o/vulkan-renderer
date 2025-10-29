@@ -16,15 +16,21 @@
 #include <imgui_internal.h>
 
 namespace Helix {
+
 Platform *platform = nullptr;
 Clock clock;
 PipelineHandle hello_triangle;
+BufferHandle cubeVertex;
+BufferHandle cubeIndex;
 
 static bool application_on_event(u16 event_code, void *sender, void *listener,
                                  EventContext context);
 
 static bool application_on_key(u16 event_code, void *sender, void *listener,
                                EventContext context);
+
+static bool application_on_window_resize(u16 event_code, void *sender,
+                                         void *listener, EventContext context);
 
 void Sandbox::init() {
   Engine::init();
@@ -39,6 +45,8 @@ void Sandbox::init() {
   event_service->register_event(SDL_EVENT_QUIT, 0, application_on_event);
   event_service->register_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
   event_service->register_event(SDL_EVENT_KEY_UP, 0, application_on_key);
+  event_service->register_event(SDL_EVENT_WINDOW_RESIZED, 0,
+                                application_on_window_resize);
 
   RendererFrontEnd *rf = RendererFrontEnd::instance();
   ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
@@ -58,9 +66,85 @@ void Sandbox::init() {
     creation.set_layout_count = 0;
     creation.enable_depth_write = true;
     creation.enable_depth_test = true;
+    creation.compare_op = CompareOp::Less;
     creation.render_pass = rf->main_pass;
 
     hello_triangle = rf->create_pipeline(creation);
+  }
+  {
+    std::array<glm::vec4, 24> cubeVertices = {
+        // +X face
+        glm::vec4(+0.5f, -0.5f, -0.5f, 1.0f),
+        glm::vec4(+0.5f, +0.5f, -0.5f, 1.0f),
+        glm::vec4(+0.5f, +0.5f, +0.5f, 1.0f),
+        glm::vec4(+0.5f, -0.5f, +0.5f, 1.0f),
+
+        // -X face
+        glm::vec4(-0.5f, -0.5f, +0.5f, 1.0f),
+        glm::vec4(-0.5f, +0.5f, +0.5f, 1.0f),
+        glm::vec4(-0.5f, +0.5f, -0.5f, 1.0f),
+        glm::vec4(-0.5f, -0.5f, -0.5f, 1.0f),
+
+        // +Y face
+        glm::vec4(-0.5f, +0.5f, -0.5f, 1.0f),
+        glm::vec4(-0.5f, +0.5f, +0.5f, 1.0f),
+        glm::vec4(+0.5f, +0.5f, +0.5f, 1.0f),
+        glm::vec4(+0.5f, +0.5f, -0.5f, 1.0f),
+
+        // -Y face
+        glm::vec4(-0.5f, -0.5f, +0.5f, 1.0f),
+        glm::vec4(-0.5f, -0.5f, -0.5f, 1.0f),
+        glm::vec4(+0.5f, -0.5f, -0.5f, 1.0f),
+        glm::vec4(+0.5f, -0.5f, +0.5f, 1.0f),
+
+        // +Z face
+        glm::vec4(-0.5f, -0.5f, +0.5f, 1.0f),
+        glm::vec4(+0.5f, -0.5f, +0.5f, 1.0f),
+        glm::vec4(+0.5f, +0.5f, +0.5f, 1.0f),
+        glm::vec4(-0.5f, +0.5f, +0.5f, 1.0f),
+
+        // -Z face
+        glm::vec4(+0.5f, -0.5f, -0.5f, 1.0f),
+        glm::vec4(-0.5f, -0.5f, -0.5f, 1.0f),
+        glm::vec4(-0.5f, +0.5f, -0.5f, 1.0f),
+        glm::vec4(+0.5f, +0.5f, -0.5f, 1.0f),
+    };
+    std::array<uint32_t, 36> cubeIndices = {// +X face
+                                            0, 1, 2, 0, 2, 3,
+
+                                            // -X face
+                                            4, 5, 6, 4, 6, 7,
+
+                                            // +Y face
+                                            8, 9, 10, 8, 10, 11,
+
+                                            // -Y face
+                                            12, 13, 14, 12, 14, 15,
+
+                                            // +Z face
+                                            16, 17, 18, 16, 18, 19,
+
+                                            // -Z face
+                                            20, 21, 22, 20, 22, 23};
+    BufferCreation creation{};
+    creation.mapped = false;
+    creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+    creation.usage_flags =
+        BufferUsage::Enum(BufferUsage::TransferDst | BufferUsage::Vertex);
+    creation.name = "CubeVertexBuffer";
+    creation.size = sizeof(glm::vec4) * 24;
+    cubeVertex = rf->create_buffer(creation);
+    rf->copy_data_to_buffer(&cubeVertices[0], cubeVertex, creation.size);
+
+    creation.mapped = false;
+    creation.memory_access_flags = MemoryAccess::GPU_ONLY;
+    creation.usage_flags =
+        BufferUsage::Enum(BufferUsage::TransferDst | BufferUsage::Index);
+    creation.name = "CubeIndexBuffer";
+    creation.size = sizeof(u32) * 36;
+    cubeIndex = rf->create_buffer(creation);
+    rf->copy_data_to_buffer((void *)cubeIndices.data(), cubeIndex,
+                            creation.size);
   }
 
   CameraConfiguration cam_config{};
@@ -122,17 +206,25 @@ void Sandbox::render_frame() {
 
     rf->graphics_context->resource_barrier(&barrier);
 
+    barrier.resource_type = ResourceType::Texture;
+    barrier.src_state = ResourceState::DepthAttachment;
+    barrier.dst_state = ResourceState::DepthAttachment;
+    barrier.resource_handle = rf->depth_texture;
+    rf->graphics_context->resource_barrier(&barrier);
+
     rf->device->set_render_pass_texture(
         rf->main_pass, rf->backbuffers[rf->backbuffer_index], false, 0);
 
     rf->graphics_context->bind_renderpass(rf->main_pass);
     rf->graphics_context->bind_pipeline(hello_triangle);
+    rf->graphics_context->bind_vertex_buffer(cubeVertex, 0, 1);
+    rf->graphics_context->bind_index_buffer(cubeIndex, 0, false);
 
     rf->graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
                                        1.f);
     rf->graphics_context->push_shader_constants(sizeof(glm::mat4), &view_proj);
-    rf->graphics_context->draw(3, 1, 0, 0);
+    rf->graphics_context->draw_indexed(36, 1, 0, 0, 0);
 
     // Imgui
     ImguiFrontend *imgui = ImguiFrontend::instance();
@@ -169,11 +261,15 @@ void Sandbox::shutdown() {
   camera.shutdown();
   RendererFrontEnd *rf = RendererFrontEnd::instance();
   rf->destroy_pipeline(hello_triangle);
+  rf->destroy_buffer(cubeVertex);
+  rf->destroy_buffer(cubeIndex);
 
   EventService *event_service = EventService::instance();
   event_service->unregister_event(SDL_EVENT_QUIT, 0, application_on_event);
   event_service->unregister_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
   event_service->unregister_event(SDL_EVENT_KEY_UP, 0, application_on_key);
+  event_service->unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
+                                  application_on_window_resize);
   Engine::shutdown();
 }
 
@@ -220,4 +316,16 @@ bool application_on_key(u16 event_code, void *sender, void *listener,
   }
   return false;
 }
+
+bool application_on_window_resize(u16 event_code, void *sender, void *listener,
+                                  EventContext context) {
+  RendererFrontEnd *rf = RendererFrontEnd::instance();
+
+  i32 width, height;
+  Platform::instance()->get_window_size(&width, &height);
+  rf->resize_texture(rf->depth_texture, width, height);
+
+  return false;
+}
+
 } // namespace Helix

@@ -150,7 +150,7 @@ struct UniformBufferObject {
 };
 
 namespace ResourceState {
-enum Enum { RenderTarget, Present };
+enum Enum { Undefined, RenderTarget, DepthAttachment, Present };
 }
 
 struct BarrierDescription {

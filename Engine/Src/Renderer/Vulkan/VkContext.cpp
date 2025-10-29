@@ -1,4 +1,5 @@
 #include "VkContext.hpp"
+#include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VkGpuDevice.hpp"
 
 namespace Helix {
@@ -15,34 +16,64 @@ void VkContext::end(u32 cbuffer_index) {
 void VkContext::wait_on_queue() { vkQueueWaitIdle(vk_queue); }
 
 void VkContext::resource_barrier(const BarrierDescription *barrier) {
-#define SRC_INDEX 0
-#define DST_INDEX 1
   if (barrier->resource_type == ResourceType::Texture) {
-    VkPipelineStageFlags2 stages[2];
-    VkImageLayout src_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkImageLayout dst_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VkPipelineStageFlags2 *src_stage = stages;
-    VkPipelineStageFlags2 *dst_stage = stages + 1;
+    VkPipelineStageFlags2 src_stage;
+    VkPipelineStageFlags2 dst_stage;
 
-    if (barrier->dst_state == ResourceState::RenderTarget) {
-      dst_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-      stages[DST_INDEX] = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    } else if (barrier->dst_state == ResourceState::Present) {
-      dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-      dst_stage = stages + SRC_INDEX;
+    switch (barrier->src_state) {
+    case ResourceState::Undefined: {
+      src_stage = VK_PIPELINE_STAGE_2_NONE;
+      break;
+    }
+    case ResourceState::Present: {
+      src_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+      break;
+    }
+    case ResourceState::RenderTarget: {
+      src_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+      break;
+    }
+    case ResourceState::DepthAttachment: {
+      src_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+      break;
+    }
+    default: {
+      HASSERT(false);
+      break;
+    }
     }
 
-    if (barrier->src_state == ResourceState::Present) {
-      src_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-      src_stage = stages + DST_INDEX;
-    } else if (barrier->src_state == ResourceState::RenderTarget) {
-      src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-      stages[SRC_INDEX] = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    switch (barrier->dst_state) {
+    case ResourceState::Undefined: {
+      dst_stage = VK_PIPELINE_STAGE_2_NONE;
+      dst_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      break;
+    }
+    case ResourceState::Present: {
+      dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+      dst_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+      break;
+    }
+    case ResourceState::RenderTarget: {
+      dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+      dst_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      break;
+    }
+    case ResourceState::DepthAttachment: {
+      dst_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+      dst_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+      break;
+    }
+    default: {
+      HASSERT(false);
+      break;
+    }
     }
 
     VulkanImage *image = device->access_image(barrier->resource_handle);
-    current_cb().transition_image(image, src_layout, dst_layout, *src_stage,
-                                  *dst_stage);
+    current_cb().transition_image(image, image->current_layout, dst_layout,
+                                  src_stage, dst_stage);
   } else {
     HASSERT_MSG(false, "Implement Buffer Resource Barriers");
   }
@@ -115,9 +146,13 @@ void VkContext::end_current_pass() { current_cb().end_current_renderpass(); }
 // Compute
 void VkContext::dispatch(u32 x, u32 y, u32 z) {};
 // Transfer
-void VkContext::copy_data_to_buffer() {}
-
-void VkContext::copy_buffer_to_buffer() {}
+void VkContext::copy_buffer_to_buffer(BufferHandle dst_buffer,
+                                      BufferHandle src_buffer, u64 size) {
+  VulkanBuffer *src = device->access_buffer(src_buffer);
+  VulkanBuffer *dst = device->access_buffer(dst_buffer);
+  current_cb().copy_buffer_to_buffer(dst->vk_handle, 0, src->vk_handle, 0, size,
+                                     vk_queue);
+}
 
 void VkContext::copy_buffer_to_texture(TextureHandle dst_texture,
                                        BufferHandle src_buffer, u64 copy_size) {

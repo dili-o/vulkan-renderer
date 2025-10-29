@@ -39,7 +39,6 @@ struct HLX_API RendererFrontEnd : public Service {
   HELIX_DECLARE_SERVICE(RendererFrontEnd);
 
   void on_resize(u16 width, u16 height);
-  bool render_frame(RenderPacket *packet);
   bool begin_frame(RenderPacket *packet);
   bool end_frame(RenderPacket *packet);
 
@@ -60,6 +59,8 @@ struct HLX_API RendererFrontEnd : public Service {
   void destroy_pipeline(PipelineHandle handle);
   void destroy_render_pass(RenderPassHandle handle);
 
+  void resize_texture(TextureHandle handle, u32 width, u32 height);
+
   bool update_binding_set(BindingSetHandle set,
                           BindingSetUpdateInfo *update_infos, u32 update_count);
   void set_pipeline_binding_set(PipelineHandle pipeline, BindingSetHandle set,
@@ -67,8 +68,9 @@ struct HLX_API RendererFrontEnd : public Service {
 
   void *get_buffer_map(BufferHandle handle);
   void copy_data_to_image(void *data, TextureHandle texture, u64 texture_size);
-  void copy_data_to_buffer(void *data, TextureHandle dst_image);
-  void copy_buffer_to_buffer(BufferHandle src_buffer, BufferHandle dst_buffer);
+  void copy_data_to_buffer(void *data, BufferHandle dst_buffer, u64 size);
+  void copy_buffer_to_buffer(BufferHandle src_buffer, BufferHandle dst_buffer,
+                             u64 size);
   void print_gpu_stats();
 
   GpuDevice *device{nullptr};
@@ -78,6 +80,7 @@ struct HLX_API RendererFrontEnd : public Service {
   u32 backbuffer_index;
   // TODO: Make configurable
   TextureHandle backbuffers[3];
+  TextureHandle depth_texture;
   RenderPassHandle main_pass;
   BindingSetLayoutHandle bindless_set_layout;
   BindingSetHandle bindless_set;

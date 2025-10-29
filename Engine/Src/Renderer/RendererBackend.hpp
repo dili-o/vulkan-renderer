@@ -44,8 +44,8 @@ struct Context {
   // Compute
   virtual void dispatch(u32 x, u32 y, u32 z) = 0;
   // Transfer
-  virtual void copy_data_to_buffer() = 0;
-  virtual void copy_buffer_to_buffer() = 0;
+  virtual void copy_buffer_to_buffer(BufferHandle dst_buffer,
+                                     BufferHandle src_buffer, u64 size) = 0;
   virtual void copy_buffer_to_texture(TextureHandle dst_texture,
                                       BufferHandle src_buffer,
                                       u64 copy_size) = 0;
@@ -80,6 +80,8 @@ struct GpuDevice {
   virtual void destroy_binding_set_layout(BindingSetLayoutHandle handle) = 0;
   virtual void destroy_pipeline(PipelineHandle handle) = 0;
   virtual void destroy_render_pass(RenderPassHandle handle) = 0;
+
+  virtual void resize_texture(TextureHandle handle, u32 width, u32 height) = 0;
 
   virtual void destroy_context(Context *context) = 0;
   virtual void destroy_receipt(WorkReceipt *receipt) = 0;

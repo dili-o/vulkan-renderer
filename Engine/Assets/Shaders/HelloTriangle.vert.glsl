@@ -1,5 +1,6 @@
 #version 450
 
+layout(location = 0) in vec4 inPos;
 layout(location = 0) out vec3 fragColor;
 
 vec2 positions[3] = vec2[](
@@ -21,7 +22,6 @@ layout(push_constant) uniform constants
 };
 
 void main() {
-  vec4 pos = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-  gl_Position = viewProj * pos;
-  fragColor = colors[gl_VertexIndex];
+  gl_Position = viewProj * inPos;
+  fragColor = inPos.xyz;
 }
