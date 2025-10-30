@@ -1,27 +1,29 @@
 #version 450
 
-layout(location = 0) in vec4 inPos;
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec2 inTexCoord;
 
-vec2 positions[3] = vec2[](
-  vec2(0.0, -0.5),
-  vec2(0.5, 0.5),
-  vec2(-0.5, 0.5)
-);
+layout(location = 0) out vec4 outFragPosLightSpace;
+layout(location = 1) out vec3 outNormal;
+layout(location = 2) out vec2 outTexCoord;
+layout(location = 3) flat out uint texId;
 
-vec3 colors[3] = vec3[](
-  vec3(1.0, 0.0, 0.0),
-  vec3(0.0, 1.0, 0.0),
-  vec3(0.0, 0.0, 1.0)
-);
-
+layout(set = 1, binding = 0) uniform UniformBufferObject {
+    mat4 viewProj;
+    mat4 lightViewProj;
+} ubo;
 
 layout(push_constant) uniform constants
 {
-  mat4 viewProj;
+  vec3 lightDirection;
+  uint shadowMapIndex;
 };
 
 void main() {
-  gl_Position = viewProj * inPos;
-  fragColor = inPos.xyz;
+  outFragPosLightSpace = ubo.lightViewProj * vec4(inPosition, 1.f);
+  outNormal = inNormal;
+  outTexCoord = inTexCoord;
+  texId = gl_InstanceIndex;
+  gl_Position = ubo.viewProj * vec4(inPosition.xyz, 1.f);
 }

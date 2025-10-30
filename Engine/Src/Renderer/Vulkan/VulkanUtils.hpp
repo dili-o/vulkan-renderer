@@ -49,6 +49,8 @@ VkSamplerMipmapMode to_vk_sampler_mipmap_mode(SamplerFilter::Enum filter);
 VkSamplerAddressMode
 to_vk_sampler_address_mode(SamplerAddressMode::Enum address_mode);
 
+VkBorderColor to_vk_border_color(BorderColor::Enum border_color);
+
 VkImageMemoryBarrier2
 create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
                      VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,

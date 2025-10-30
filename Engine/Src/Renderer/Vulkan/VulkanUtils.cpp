@@ -306,6 +306,22 @@ to_vk_sampler_address_mode(SamplerAddressMode::Enum address_mode) {
   }
 }
 
+VkBorderColor to_vk_border_color(BorderColor::Enum border_color) {
+  switch (border_color) {
+  case BorderColor::IntOpaqueBlack:
+    return VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  case BorderColor::IntOpaqueWhite:
+    return VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+  case BorderColor::FloatOpaqueBlack:
+    return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+  case BorderColor::FloatOpaqueWhite:
+    return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+  default:
+    HASSERT_MSG(false, "Unkown BorderColor::Enum type!");
+  }
+}
+
+
 VkImageMemoryBarrier2
 create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
                      VkImageLayout new_layout, VkPipelineStageFlags2 src_stage,

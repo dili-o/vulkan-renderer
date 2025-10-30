@@ -24,7 +24,8 @@ struct VkContext final : public Context {
   virtual void draw_indexed(u32 index_count, u32 instance_count,
                             u32 first_index, i32 vertex_offset,
                             u32 first_instance) override;
-  virtual void bind_renderpass(RenderPassHandle handle) override;
+  virtual void bind_renderpass(RenderPassHandle render_pass_handle,
+                               u32 extents[2], u32 offsets[2]) override;
   virtual void end_current_pass() override;
   // Compute
   virtual void dispatch(u32 x, u32 y, u32 z) override;

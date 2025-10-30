@@ -30,7 +30,7 @@ inline std::shared_ptr<spdlog::logger> &LogService::GetCoreLogger() {
   return s_CoreLogger;
 }
 
-void ReportAssertionFailure(cstring expression, cstring message, cstring file,
+void HLX_API ReportAssertionFailure(cstring expression, cstring message, cstring file,
                             i32 line) {
   HCRITICAL("Assertion Failure: {}, message: {}, in file: {}, line: {}",
             expression, message, file, line);

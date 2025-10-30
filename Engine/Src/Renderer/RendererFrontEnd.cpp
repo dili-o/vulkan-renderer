@@ -26,6 +26,9 @@ void RendererFrontEnd::init(void *_config) {
   RendererConfig *config = (RendererConfig *)_config;
   device = create_device(config->backend_type);
 
+  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  bindless_textures_to_update.init(allocator, 10);
+
   if (!device) {
     HCRITICAL("Failed to create backend!");
     return;
@@ -100,9 +103,25 @@ void RendererFrontEnd::init(void *_config) {
     creation.name = "DefaultSampler";
     default_sampler = create_sampler(creation);
   }
+  {
+    i32 width, height, channels;
+    stbi_uc *pixels = stbi_load(ASSETS_PATH "/Textures/wood.png", &width,
+                                &height, &channels, 4);
+    HASSERT(pixels);
+    TextureCreation creation{};
+    creation.name = "WoodTexture";
+    creation.width = width;
+    creation.height = height;
+    creation.sampler = default_sampler;
+    creation.usage =
+        TextureUsage::Enum(TextureUsage::Sampled | TextureUsage::TransferDest);
+    creation.format = TextureFormat::R8G8B8A8_SRGB;
+    wood_texture = create_texture(creation);
 
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  bindless_textures_to_update.init(allocator, 10);
+    copy_data_to_image(pixels, wood_texture, width * height * 4);
+
+    stbi_image_free(pixels);
+  }
 
   HELIX_SERVICE_INIT_MSG(RendererFrontEnd);
   s_renderer_frontend = this;
@@ -116,6 +135,7 @@ void RendererFrontEnd::shutdown() {
   destroy_render_pass(main_pass);
   destroy_buffer(staging_buffer);
   destroy_texture(depth_texture);
+  destroy_texture(wood_texture);
 
   for (u32 i = 0; i < max_frames_in_flight; ++i) {
     device->destroy_receipt(frame_receipts[i]);
@@ -160,7 +180,7 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
     BindingSetUpdateInfo infos[MAX_BINDLESS_UPDATE_PER_FRAME];
     u32 current_info = 0;
     for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
-      BindingSetUpdateInfo &info = infos[current_info];
+      BindingSetUpdateInfo &info = infos[current_info++];
       TextureHandle texture = bindless_textures_to_update[it];
       bindless_textures_to_update.pop();
 

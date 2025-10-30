@@ -35,7 +35,11 @@ void VkContext::resource_barrier(const BarrierDescription *barrier) {
       break;
     }
     case ResourceState::DepthAttachment: {
-      src_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+      src_stage = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+      break;
+    }
+    case ResourceState::Sampled: {
+      src_stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
       break;
     }
     default: {
@@ -63,6 +67,11 @@ void VkContext::resource_barrier(const BarrierDescription *barrier) {
     case ResourceState::DepthAttachment: {
       dst_stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
       dst_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+      break;
+    }
+    case ResourceState::Sampled: {
+      dst_stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+      dst_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
       break;
     }
     default: {
@@ -137,8 +146,9 @@ void VkContext::draw_indexed(u32 index_count, u32 instance_count,
                             vertex_offset, first_instance);
 }
 
-void VkContext::bind_renderpass(RenderPassHandle handle) {
-  current_cb().bind_renderpass(handle);
+void VkContext::bind_renderpass(RenderPassHandle render_pass_handle,
+                               u32 extents[2], u32 offsets[2]) {
+  current_cb().bind_renderpass(render_pass_handle, extents, offsets);
 }
 
 void VkContext::end_current_pass() { current_cb().end_current_renderpass(); }

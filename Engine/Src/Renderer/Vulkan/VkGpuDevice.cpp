@@ -17,6 +17,7 @@
 #ifdef _DEBUG
 #define VULKAN_DEBUG_REPORT
 #define VULKAN_EXTRA_VALIDATION
+#define SHADER_DEBUG_SYMBOLS
 #endif // _DEBUG
 
 // TODO: Make configurable
@@ -706,8 +707,7 @@ GpuDevice *create_vulkan_device() {
   pool_info.poolSizeCount = 1;
   pool_info.pPoolSizes = &poolsize;
   pool_info.maxSets = 3;
-  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-  VK_CHECK(vkCreateDescriptorPool(device->vk_device, &bindless_pool_info,
+  VK_CHECK(vkCreateDescriptorPool(device->vk_device, &pool_info,
                                   device->vk_allocation_callbacks,
                                   &device->vk_descriptor_pool));
 
@@ -975,7 +975,7 @@ SamplerHandle VkGpuDevice::create_sampler(const SamplerCreation &creation) {
   sampler_info.mipmapMode = to_vk_sampler_mipmap_mode(creation.mip_filter);
   sampler_info.anisotropyEnable = VK_FALSE;
   sampler_info.maxAnisotropy = 1.f;
-  sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  sampler_info.borderColor = to_vk_border_color(creation.border_color);
   sampler_info.unnormalizedCoordinates = VK_FALSE;
   sampler_info.compareEnable = VK_FALSE;
   sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
@@ -1062,7 +1062,6 @@ VkGpuDevice::create_binding_set(const BindingSetCreation &creation) {
       layout->is_bindless ? vk_bindless_pool : vk_descriptor_pool;
   alloc_info.descriptorSetCount = 1;
   alloc_info.pSetLayouts = &vk_layout;
-
   VK_CHECK(vkAllocateDescriptorSets(vk_device, &alloc_info, &set->vk_handle));
 
   set_resource_name(VK_OBJECT_TYPE_DESCRIPTOR_SET, (u64)set->vk_handle,
@@ -1847,6 +1846,26 @@ bool VkGpuDevice::update_binding_set(BindingSetHandle set,
           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       descriptor_write.descriptorCount = 1;
       descriptor_write.pBufferInfo = nullptr;
+    } else if (update_info.resource_type == ResourceType::Buffer) {
+      VulkanBuffer *buffer = access_buffer(update_info.resource_handle);
+
+      VkDescriptorBufferInfo &buffer_info = buffer_infos[i];
+      buffer_info.range = update_info.buffer_info.range;
+      buffer_info.offset = update_info.buffer_info.offset;
+      buffer_info.buffer = buffer->vk_handle;
+
+      VkWriteDescriptorSet &descriptor_write = descriptor_writes[i];
+      descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_write.pNext = nullptr;
+      descriptor_write.pBufferInfo = &buffer_info;
+      descriptor_write.pTexelBufferView = nullptr;
+      descriptor_write.dstSet = d_set->vk_handle;
+      descriptor_write.dstBinding = update_info.binding;
+      descriptor_write.dstArrayElement = update_info.resource_index;
+      descriptor_write.descriptorType =
+          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptor_write.descriptorCount = 1;
+      descriptor_write.pImageInfo = nullptr;
     } else {
       HERROR("Unkown descriptor type");
       return false;

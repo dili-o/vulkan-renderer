@@ -94,7 +94,8 @@ void VulkanCommandBuffer::pipeline_barrier(
   vkCmdPipelineBarrier2(vk_handle, &dependency_info);
 }
 
-void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle) {
+void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
+                                          u32 extents[2], u32 offsets[2]) {
   RenderPass *render_pass = device->access_render_pass(render_pass_handle);
 
   VkRenderingAttachmentInfo color_attachment_infos[MAX_COLOR_ATTACHMENTS];
@@ -142,13 +143,11 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle) {
     depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
   }
 
-  VulkanImage *swapchain_image =
-      device->access_image(device->swapchain.images[0]);
   VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
   render_info.layerCount = 1;
   render_info.renderArea = {
-      {0, 0},
-      {swapchain_image->vk_extents.width, swapchain_image->vk_extents.height}};
+      {(i32)offsets[0], (i32)offsets[1]},
+      {extents[0], extents[1]}};
   render_info.viewMask = 0;
   render_info.colorAttachmentCount = render_pass->num_colour_attachments;
   render_info.pColorAttachments = color_attachment_infos;

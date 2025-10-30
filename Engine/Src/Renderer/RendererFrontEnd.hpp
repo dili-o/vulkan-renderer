@@ -81,6 +81,7 @@ struct HLX_API RendererFrontEnd : public Service {
   // TODO: Make configurable
   TextureHandle backbuffers[3];
   TextureHandle depth_texture;
+  TextureHandle wood_texture;
   RenderPassHandle main_pass;
   BindingSetLayoutHandle bindless_set_layout;
   BindingSetHandle bindless_set;

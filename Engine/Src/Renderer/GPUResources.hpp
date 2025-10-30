@@ -79,6 +79,15 @@ enum Enum {
 };
 }
 
+namespace BorderColor {
+enum Enum {
+  IntOpaqueBlack,
+  IntOpaqueWhite,
+  FloatOpaqueBlack,
+  FloatOpaqueWhite
+};
+}
+
 namespace CullMode {
 enum Enum { None, Front, Back, FrontAndBack };
 }
@@ -150,9 +159,6 @@ struct TextureCreation {
   u8 mip_base_level = 0;
 
   TextureUsage::Enum usage;
-
-  TextureHandle alias_image{};
-
   TextureFormat::Enum format = TextureFormat::Undefined;
   TextureType::Enum type = TextureType::Texture2D;
 
@@ -169,6 +175,8 @@ struct SamplerCreation {
   SamplerAddressMode::Enum address_mode_u = SamplerAddressMode::Repeat;
   SamplerAddressMode::Enum address_mode_v = SamplerAddressMode::Repeat;
   SamplerAddressMode::Enum address_mode_w = SamplerAddressMode::Repeat;
+
+  BorderColor::Enum border_color = BorderColor::IntOpaqueBlack;
 
   cstring name = nullptr;
 };

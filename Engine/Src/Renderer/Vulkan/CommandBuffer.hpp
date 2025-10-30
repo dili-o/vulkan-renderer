@@ -38,7 +38,8 @@ struct VulkanCommandBuffer {
   void pipeline_barrier(VkImageMemoryBarrier2 *image_memory_barriers,
                         u32 image_memory_barrier_count);
 
-  void bind_renderpass(RenderPassHandle render_pass);
+  void bind_renderpass(RenderPassHandle render_pass_handle, u32 extents[2],
+                       u32 offsets[2]);
   void end_current_renderpass();
 
   void bind_pipeline(PipelineHandle handle);

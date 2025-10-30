@@ -71,7 +71,10 @@ void Platform::handle_os_messages() {
       EventContext context{};
       EventService::instance()->fire_event(SDL_EVENT_QUIT, 0, context);
     } break;
+    case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+    case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
     case SDL_EVENT_WINDOW_RESIZED: {
+      HINFO("Fullscreen");
       SDL_GetWindowSize(window, &width, &height);
       EventContext context{};
       context.data.i32[0] = width;
@@ -122,8 +125,9 @@ void Platform::get_mouse_position(f32 *mouseX, f32 *mouseY) {
   SDL_GetMouseState(mouseX, mouseY);
 }
 
-void Platform::get_window_size(i32 *width, i32 *height) {
-  SDL_GetWindowSize(window, width, height);
+void Platform::get_window_size(i32 *width_, i32 *height_) {
+  *width_ = width;
+  *height_ = height;
 }
 
 void Platform::sleep(u64 ms) { SDL_Delay(ms); }
