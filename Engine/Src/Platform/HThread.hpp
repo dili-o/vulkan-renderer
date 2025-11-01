@@ -2,7 +2,7 @@
 
 #include "Core/Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 
 // A function pointer to be invoked when a thread starts
 typedef u32 (*PFN_thread_start)(void *);
@@ -36,4 +36,4 @@ private:
   u64 thread_id{UINT64_MAX};
 };
 
-} // namespace Helix
+} // namespace hlx

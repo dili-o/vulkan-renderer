@@ -2,7 +2,7 @@
 #include "Core/String.hpp"
 #include "Renderer/RendererBackend.hpp"
 
-namespace Helix {
+namespace hlx {
 struct VkGpuDevice final : public GpuDevice {
   virtual u32 create_backbuffers(u32 width, u32 height, u32 count) override;
   virtual void process_display_changes() override;
@@ -145,4 +145,4 @@ struct VkGpuDevice final : public GpuDevice {
 GpuDevice *create_vulkan_device();
 void destroy_vulkan_device(VkGpuDevice *device);
 
-} // namespace Helix
+} // namespace hlx

@@ -3,7 +3,7 @@
 #include "Renderer/GPUResourceTypes.hpp"
 #include "RendererTypes.hpp"
 
-namespace Helix {
+namespace hlx {
 
 struct Platform;
 struct BufferCreation;
@@ -117,4 +117,4 @@ GpuDevice *create_device(RendererBackendType type);
 bool destroy_device(GpuDevice *device);
 //////////////////////////////////////////////
 
-} // namespace Helix
+} // namespace hlx

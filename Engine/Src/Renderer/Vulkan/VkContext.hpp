@@ -1,7 +1,7 @@
 #include "CommandBuffer.hpp"
 #include "Renderer/RendererBackend.hpp"
 
-namespace Helix {
+namespace hlx {
 struct VkContext final : public Context {
   virtual void begin(u32 cbuffer_index) override;
   virtual void end(u32 cbuffer_index) override;
@@ -62,4 +62,4 @@ struct VkWorkReceipt final : public WorkReceipt {
   VkSemaphore vk_timeline_semaphore;
 };
 
-} // namespace Helix
+} // namespace hlx

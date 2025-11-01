@@ -2,7 +2,7 @@
 #include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
 
-namespace Helix {
+namespace hlx {
 
 #define MIN_POOL_CAPACITY 4
 
@@ -169,4 +169,4 @@ template <typename T> inline void ResourcePool<T>::release_all() {
     free_indices[i] = i;
   }
 }
-} // namespace Helix
+} // namespace hlx

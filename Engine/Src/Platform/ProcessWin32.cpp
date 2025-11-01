@@ -5,7 +5,7 @@
 #include "Core/Log.hpp"
 #include <windows.h>
 
-namespace Helix {
+namespace hlx {
 // Static buffer to log the error coming from windows.
 static const u32 k_process_log_buffer = 256;
 char s_process_log_buffer[k_process_log_buffer];
@@ -155,5 +155,5 @@ bool process_execute(cstring working_directory, cstring process_fullpath,
 }
 
 cstring process_get_output() { return k_process_output_buffer; }
-} // namespace Helix
+} // namespace hlx
 #endif

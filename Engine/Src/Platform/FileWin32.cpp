@@ -8,7 +8,7 @@
 #include <shobjidl.h>
 #pragma comment(lib, "Shlwapi.lib")
 #include <windows.h>
-namespace Helix {
+namespace hlx {
 
 static long file_get_size(FILE *f) {
   long fileSizeSigned;
@@ -255,5 +255,5 @@ void FileService::expand_enviroment_variable(cstring variable, char *dst_string,
   ExpandEnvironmentStringsA(variable, dst_string, size);
 }
 
-} // namespace Helix
+} // namespace hlx
 #endif

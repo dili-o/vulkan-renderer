@@ -10,7 +10,7 @@
 #include "Renderer/ImguiFrontend.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 
-namespace Helix {
+namespace hlx {
 
 struct EngineBackend {
   LogService log_service;
@@ -100,4 +100,4 @@ void Engine::shutdown() {
   s_backend.log_service.shutdown();
 }
 
-} // namespace Helix
+} // namespace hlx

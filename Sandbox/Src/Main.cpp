@@ -2,7 +2,7 @@
 #include "Sandbox.hpp"
 
 int main() {
-  Helix::Sandbox app;
+  hlx::Sandbox app;
   app.init();
   app.run();
   app.shutdown();

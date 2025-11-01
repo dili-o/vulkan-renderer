@@ -7,7 +7,7 @@
 #include <imgui/backends/imgui_impl_sdl3.h>
 #include <imgui/imgui_internal.h>
 
-namespace Helix {
+namespace hlx {
 
 bool ImguiFrontend::platform_init(void *configuration) {
   ImguiLayerConfiguration *config = (ImguiLayerConfiguration *)configuration;
@@ -34,5 +34,5 @@ void ImguiFrontend::begin_frame() {
   ImGui_ImplSDL3_NewFrame();
   ImGui::NewFrame();
 }
-} // namespace Helix
+} // namespace hlx
 #endif // HELIX_PLATFORM_SDL3

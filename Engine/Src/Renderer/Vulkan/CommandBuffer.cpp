@@ -5,7 +5,7 @@
 #include "Renderer/Vulkan/VulkanTypes.hpp"
 #include "VulkanUtils.hpp"
 
-namespace Helix {
+namespace hlx {
 
 #pragma region VulkanCommandBuffer
 
@@ -426,4 +426,4 @@ void VulkanCommandBuffer::pop_marker() {
 }
 
 #pragma endregion VulkanCommandBuffer
-} // namespace Helix
+} // namespace hlx

@@ -7,7 +7,7 @@
 // Vendor
 #include <Vendor/rapidhash/rapidhash.h>
 
-namespace Helix {
+namespace hlx {
 
 char *string_concat(cstring a, cstring b, Allocator *allocator) {
   u32 size = strlen(a) + strlen(b) + 1;
@@ -203,4 +203,4 @@ u64 StringView::hash(const void *string, size_t len, u64 seed) {
 
   return rapidhash_withSeed(string_view->data, strlen(string_view->data), seed);
 }
-} // namespace Helix
+} // namespace hlx

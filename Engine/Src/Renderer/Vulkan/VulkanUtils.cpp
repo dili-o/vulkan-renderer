@@ -4,7 +4,7 @@
 #include "Renderer/GPUResources.hpp"
 #include "vk_mem_alloc.h"
 
-namespace Helix {
+namespace hlx {
 
 VkBufferUsageFlags to_vk_buffer_usage_flags(BufferUsage::Enum _usage) {
   VkBufferUsageFlags usage{};
@@ -348,4 +348,4 @@ create_image_barrier(VulkanImage *image, VkImageLayout old_layout,
   return image_barrier;
 }
 
-} // namespace Helix
+} // namespace hlx

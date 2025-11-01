@@ -4,7 +4,7 @@
 // Vendor
 #include <glm/glm.hpp>
 
-namespace Helix {
+namespace hlx {
 
 struct CameraConfiguration {
   glm::vec3 position{0.f};
@@ -44,4 +44,4 @@ struct Camera {
   void on_mouse_scroll_event(i8 direction);
   void on_window_resize(i32 width, i32 height);
 };
-} // namespace Helix
+} // namespace hlx

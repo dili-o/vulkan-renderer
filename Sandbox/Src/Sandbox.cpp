@@ -17,7 +17,7 @@
 #include <imgui_internal.h>
 #include <stb_image.h>
 
-namespace Helix {
+namespace hlx {
 
 Platform *platform = nullptr;
 Clock clock;
@@ -501,4 +501,4 @@ bool application_on_window_resize(u16 event_code, void *sender, void *listener,
   return false;
 }
 
-} // namespace Helix
+} // namespace hlx

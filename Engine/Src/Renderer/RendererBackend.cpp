@@ -3,7 +3,7 @@
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VkGpuDevice.hpp"
 
-namespace Helix {
+namespace hlx {
 GpuDevice *create_device(RendererBackendType type) {
   GpuDevice *device = nullptr;
   if (type == RENDERER_BACKEND_TYPE_VULKAN) {
@@ -25,4 +25,4 @@ bool destroy_device(GpuDevice *device) {
   return false;
 }
 
-} // namespace Helix
+} // namespace hlx

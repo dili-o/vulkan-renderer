@@ -2,7 +2,7 @@
 
 #include "Core/Defines.hpp"
 #include "Core/Service.hpp"
-namespace Helix {
+namespace hlx {
 struct Allocator;
 struct HMutex;
 
@@ -57,4 +57,4 @@ struct FileService : public Service {
   static void expand_enviroment_variable(cstring variable, char *dst_string,
                                          u32 size);
 };
-} // namespace Helix
+} // namespace hlx

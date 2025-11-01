@@ -5,7 +5,7 @@
 // Vendor
 #include <Vendor/FileWatch.hpp>
 
-namespace Helix {
+namespace hlx {
 std::wstring to_wstring(const char *str) {
   int size = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0);
   std::wstring result(size - 1, 0);
@@ -67,4 +67,4 @@ bool FileWatcherService::set_watch_dir(cstring dir) {
   }
   return false;
 }
-} // namespace Helix
+} // namespace hlx

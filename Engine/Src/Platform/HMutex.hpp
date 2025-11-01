@@ -2,7 +2,7 @@
 
 #include "Core/Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 //
 // TODO: Implement critical sections
 struct HMutex {
@@ -17,4 +17,4 @@ struct HMutex {
   void *internal_data;
 };
 
-} // namespace Helix
+} // namespace hlx

@@ -6,7 +6,7 @@
 #include "Service.hpp"
 #include <string.h>
 
-namespace Helix {
+namespace hlx {
 
 // Memory Methods /////////////////////////////////////////////////////
 inline void memory_copy(void *destination, void *source, size_t size) {
@@ -40,7 +40,7 @@ struct MemoryStatistics {
 
 //
 //
-struct Allocator {
+struct HLX_API Allocator {
   virtual ~Allocator() {}
   virtual void *allocate(size_t size, size_t alignment) = 0;
   virtual void *allocate(size_t size, size_t alignment, cstring file,
@@ -156,4 +156,4 @@ struct HLX_API MemoryService : public Service {
 #define hmega(size) (size * 1024 * 1024)
 #define hgiga(size) (size * 1024 * 1024 * 1024)
 
-} // namespace Helix
+} // namespace hlx

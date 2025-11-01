@@ -8,7 +8,7 @@
 #include <vk_mem_alloc.h>
 #include <volk.h>
 
-namespace Helix {
+namespace hlx {
 
 #define MAX_SWAPCHAIN_IMAGES 3
 
@@ -107,4 +107,4 @@ struct IndexedDrawCommand {
   u32 firstInstance;
 };
 
-} // namespace Helix
+} // namespace hlx

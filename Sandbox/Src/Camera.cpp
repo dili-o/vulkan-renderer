@@ -10,7 +10,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
 
-namespace Helix {
+namespace hlx {
 
 static u16 s_left_button = SDL_SCANCODE_A;
 static u16 s_right_button = SDL_SCANCODE_D;
@@ -205,4 +205,4 @@ void Camera::on_mouse_scroll_event(i8 direction) {
 void Camera::on_window_resize(i32 width, i32 height) {
   aspect_ratio = (f32)width / height;
 }
-} // namespace Helix
+} // namespace hlx

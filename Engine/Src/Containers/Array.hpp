@@ -4,7 +4,7 @@
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 
-namespace Helix {
+namespace hlx {
 
 // Array ///////////////////////////////////////////////////////
 template <typename T> struct Array {
@@ -239,4 +239,4 @@ template <typename T> inline size_t Array<T>::size_in_bytes() const {
 template <typename T> inline size_t Array<T>::capacity_in_bytes() const {
   return capacity * sizeof(T);
 }
-} // namespace Helix
+} // namespace hlx

@@ -1,7 +1,7 @@
 #include "Clock.hpp"
 #include "Platform/Platform.hpp"
 
-namespace Helix {
+namespace hlx {
 void Clock::start() {
   start_time = Platform::instance()->get_absolute_time_s();
   elapsed_time = 0.0;
@@ -25,4 +25,4 @@ f64 Clock::get_elapsed_time_ms() {
   return elapsed_time * 1000.0;
 }
 
-} // namespace Helix
+} // namespace hlx

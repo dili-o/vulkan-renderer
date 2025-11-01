@@ -6,7 +6,7 @@
 #include <cstring>
 #include <spirv_reflect.h>
 
-namespace Helix {
+namespace hlx {
 
 VkFormat get_unorm_variant(u32 component_count) {
   switch (component_count) {
@@ -196,4 +196,4 @@ void parse_binary(const u32 *data, size_t data_size,
     }
   }
 }
-} // namespace Helix
+} // namespace hlx

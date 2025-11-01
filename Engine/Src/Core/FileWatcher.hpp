@@ -3,7 +3,7 @@
 #include "Core/Defines.hpp"
 #include "Core/Service.hpp"
 
-namespace Helix {
+namespace hlx {
 
 struct FileWatcherService : public Service {
   virtual void init(void *config = nullptr) override;
@@ -15,4 +15,4 @@ struct FileWatcherService : public Service {
 
   cstring watch_dir = nullptr;
 };
-} // namespace Helix
+} // namespace hlx

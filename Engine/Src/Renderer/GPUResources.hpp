@@ -3,7 +3,7 @@
 #include "Core/Assert.hpp"
 #include "GPUResourceTypes.hpp"
 
-namespace Helix {
+namespace hlx {
 
 namespace BufferUsage {
 enum Enum {
@@ -298,4 +298,4 @@ struct RenderPass {
   AttachmentInfo depth_attachment{};
 };
 
-} // namespace Helix
+} // namespace hlx

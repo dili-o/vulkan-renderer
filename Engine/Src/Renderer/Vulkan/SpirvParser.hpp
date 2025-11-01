@@ -3,7 +3,7 @@
 #include "Renderer/GPUResources.hpp"
 #include "VulkanTypes.hpp"
 
-namespace Helix {
+namespace hlx {
 struct ParseResult {
   // TODO: For now assume only one descriptor binding
   VkVertexInputBindingDescription vertex_binding;
@@ -16,4 +16,4 @@ struct ParseResult {
 };
 
 void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result);
-} // namespace Helix
+} // namespace hlx

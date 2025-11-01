@@ -12,7 +12,7 @@
 // Vendor
 #include <stb_image.h>
 
-namespace Helix {
+namespace hlx {
 
 static RendererFrontEnd *s_renderer_frontend{nullptr};
 RendererFrontEnd *RendererFrontEnd::instance() { return s_renderer_frontend; }
@@ -174,12 +174,12 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
   if (bindless_textures_to_update.size) {
     u32 update_count =
         (bindless_textures_to_update.size < MAX_BINDLESS_UPDATE_PER_FRAME)
-            ? bindless_textures_to_update.size
+            ? (u32)bindless_textures_to_update.size
             : MAX_BINDLESS_UPDATE_PER_FRAME;
 
     BindingSetUpdateInfo infos[MAX_BINDLESS_UPDATE_PER_FRAME];
     u32 current_info = 0;
-    for (i32 it = bindless_textures_to_update.size - 1; it >= 0; it--) {
+    for (i32 it = (u32)bindless_textures_to_update.size - 1; it >= 0; it--) {
       BindingSetUpdateInfo &info = infos[current_info++];
       TextureHandle texture = bindless_textures_to_update[it];
       bindless_textures_to_update.pop();
@@ -330,7 +330,4 @@ void RendererFrontEnd::copy_data_to_buffer(void *data, BufferHandle dst_buffer,
 void RendererFrontEnd::copy_buffer_to_buffer(BufferHandle src_buffer,
                                              BufferHandle dst_buffer,
                                              u64 size) {}
-
-void RendererFrontEnd::print_gpu_stats() {}
-
-} // namespace Helix
+} // namespace hlx

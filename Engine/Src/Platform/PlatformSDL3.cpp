@@ -14,7 +14,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 
-namespace Helix {
+namespace hlx {
 
 static SDL_Window *window{nullptr};
 
@@ -163,5 +163,5 @@ const char *const *Platform::get_vulkan_extension_names(u32 *count) {
   return SDL_Vulkan_GetInstanceExtensions(count);
 }
 
-} // namespace Helix
+} // namespace hlx
 #endif

@@ -7,7 +7,7 @@
 // Vendor
 #include <imgui_internal.h>
 
-namespace Helix {
+namespace hlx {
 
 static ImguiFrontend *s_imgui_service{nullptr};
 ImguiFrontend *ImguiFrontend ::instance() { return s_imgui_service; }
@@ -253,4 +253,4 @@ void ImguiFrontend::render_frame() {
   }
 }
 
-} // namespace Helix
+} // namespace hlx

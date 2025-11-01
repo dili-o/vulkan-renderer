@@ -3,7 +3,7 @@
 #ifdef HELIX_PLATFORM_WINDOWS
 #include <windows.h>
 
-namespace Helix {
+namespace hlx {
 
 u64 Platform::get_current_processor_id() {
   return (u64)GetCurrentProcessorNumber();
@@ -21,5 +21,5 @@ i32 Platform::get_logical_processor_count() {
 
 // TODO: Rest of the Platform API
 
-} // namespace Helix
+} // namespace hlx
 #endif

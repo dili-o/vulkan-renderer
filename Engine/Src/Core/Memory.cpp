@@ -14,7 +14,7 @@
 
 #define DEBUG_ALLOCATIONS
 
-namespace Helix {
+namespace hlx {
 #pragma region Memory_Methods ////////////////////////////////////////
 char *get_memory_usage_str(size_t size, char *buffer) {
   f32 amount = 0.f;
@@ -218,4 +218,4 @@ void MemoryService::shutdown() {
 }
 
 #pragma endregion MemoryService
-} // namespace Helix
+} // namespace hlx

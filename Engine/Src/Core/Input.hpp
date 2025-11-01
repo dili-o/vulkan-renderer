@@ -4,7 +4,7 @@
 #include "Service.hpp"
 #include <SDL3/SDL_scancode.h>
 
-namespace Helix {
+namespace hlx {
 #pragma region KeyCodes
 enum Buttons {
   BUTTON_PADDING,
@@ -50,4 +50,4 @@ struct HLX_API InputService : public Service {
   void process_mouse_move(i16 x, i16 y);
   void process_mouse_wheel(i8 z_delta);
 };
-} // namespace Helix
+} // namespace hlx

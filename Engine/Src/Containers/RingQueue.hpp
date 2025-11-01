@@ -3,7 +3,7 @@
 #include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
 
-namespace Helix {
+namespace hlx {
 // First In First Out
 template <typename T> struct RingQueue {
 
@@ -91,4 +91,4 @@ template <typename T> inline bool RingQueue<T>::peek_head(T *out_element) {
   return true;
 }
 
-} // namespace Helix
+} // namespace hlx

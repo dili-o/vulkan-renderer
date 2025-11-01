@@ -8,7 +8,7 @@
 #include "Platform/HMutex.hpp"
 #include "Platform/Platform.hpp"
 #include <cstring>
-namespace Helix {
+namespace hlx {
 
 void job_type_to_string(JobType::Enum type, char *buffer, u32 buffer_size) {
   buffer[0] = '\0';
@@ -340,4 +340,4 @@ JobInfo create_job_info(PFN_job_on_start entry_point,
   return job;
 }
 
-} // namespace Helix
+} // namespace hlx

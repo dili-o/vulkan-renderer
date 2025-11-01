@@ -8,7 +8,7 @@
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_scancode.h>
 
-namespace Helix {
+namespace hlx {
 struct EventContext {
   // 128 bytes
   union {
@@ -46,4 +46,4 @@ struct HLX_API EventService : Service {
 
   bool fire_event(u16 code, void *sender, EventContext context);
 };
-} // namespace Helix
+} // namespace hlx

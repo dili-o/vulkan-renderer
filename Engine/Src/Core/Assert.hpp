@@ -7,7 +7,7 @@
 #define HASSERTIONS_ENABLED
 
 #ifdef HASSERTIONS_ENABLED
-namespace Helix {
+namespace hlx {
 void HLX_API ReportAssertionFailure(cstring expression, cstring message,
                                     cstring file, i32 line);
 

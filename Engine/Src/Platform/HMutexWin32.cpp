@@ -5,7 +5,7 @@
 #include "Core/Log.hpp"
 #include <windows.h>
 
-namespace Helix {
+namespace hlx {
 // TODO: Critical sections
 bool HMutex::create() {
 
@@ -54,6 +54,6 @@ bool HMutex::unlock() {
   return result != 0; // 0 is a failure
 }
 
-} // namespace Helix
+} // namespace hlx
 
 #endif // HELIX_PLATFORM_WINDOWS

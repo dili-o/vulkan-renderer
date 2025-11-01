@@ -8,7 +8,7 @@
 #include <Vendor/rapidhash/rapidhash.h>
 
 // https://github.com/jamesroutley/write-a-hash-table
-namespace Helix {
+namespace hlx {
 
 // TODO: Is this even needed, why not just use a bool in the Item struct to mark
 // if it is deleted or even a bitfield
@@ -187,4 +187,4 @@ public:
   Allocator *allocator{nullptr};
 };
 
-} // namespace Helix
+} // namespace hlx

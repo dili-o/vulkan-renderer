@@ -2,7 +2,7 @@
 #include "Renderer/RendererTypes.hpp"
 #include "Renderer/Vulkan/VkGpuDevice.hpp"
 
-namespace Helix {
+namespace hlx {
 void VkContext::begin(u32 cbuffer_index_) {
   cbuffer_index = cbuffer_index_;
   current_cb().begin();
@@ -172,4 +172,4 @@ void VkContext::copy_buffer_to_texture(TextureHandle dst_texture,
                                     vk_queue, false);
 }
 
-} // namespace Helix
+} // namespace hlx

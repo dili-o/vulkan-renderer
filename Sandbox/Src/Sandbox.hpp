@@ -1,7 +1,7 @@
 #include "Camera.hpp"
 #include "Core/Application.hpp"
 
-namespace Helix {
+namespace hlx {
 struct Sandbox : public Application {
   virtual void init() override;
   virtual void run() override;
@@ -14,4 +14,4 @@ struct Sandbox : public Application {
   bool limit_frames{true};
   Camera camera;
 };
-} // namespace Helix
+} // namespace hlx

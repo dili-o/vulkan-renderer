@@ -2,7 +2,7 @@
 #include "Core/Defines.hpp"
 #include "Core/Service.hpp"
 
-namespace Helix {
+namespace hlx {
 struct PlatformConfiguration {
 
   u32 width;
@@ -50,4 +50,4 @@ struct HLX_API Platform : public Service {
   i32 height{0};
   cstring name{nullptr};
 };
-} // namespace Helix
+} // namespace hlx

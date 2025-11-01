@@ -4,7 +4,7 @@
 #include "Renderer/GPUResourceTypes.hpp"
 #include "VulkanTypes.hpp"
 
-namespace Helix {
+namespace hlx {
 struct VkGpuDevice;
 
 namespace CommandBufferState {
@@ -95,4 +95,4 @@ struct VulkanCommandBuffer {
   PipelineHandle current_pipeline{};
   CommandBufferState::Enum state;
 };
-} // namespace Helix
+} // namespace hlx

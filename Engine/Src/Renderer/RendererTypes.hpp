@@ -11,7 +11,7 @@
 #define MAX_TEXTURES 1000
 #define MAX_MATERIALS 4000
 
-namespace Helix {
+namespace hlx {
 
 enum RendererBackendType {
   RENDERER_BACKEND_TYPE_VULKAN,
@@ -160,4 +160,4 @@ struct BarrierDescription {
   ResourceHandle resource_handle;
 };
 
-} // namespace Helix
+} // namespace hlx

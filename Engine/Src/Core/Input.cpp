@@ -5,7 +5,7 @@
 // Vendor
 #include <SDL3/SDL_events.h>
 
-namespace Helix {
+namespace hlx {
 struct KeyboardState {
   bool keys[256];
 };
@@ -179,4 +179,4 @@ void InputService::get_previous_frame_mouse_position(i32 *x, i32 *y) {
   *x = state.mouse_previous_state.x;
   *y = state.mouse_previous_state.y;
 }
-} // namespace Helix
+} // namespace hlx

@@ -1,10 +1,10 @@
 #pragma once
 #include "Core/Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 
 struct HLX_API Engine {
   static void init();
   static void shutdown();
 };
-} // namespace Helix
+} // namespace hlx

@@ -10,7 +10,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-namespace Helix {
+namespace hlx {
 struct HLX_API LogService : public Service {
 
   static LogService *instance();
@@ -39,4 +39,4 @@ struct HLX_API LogService : public Service {
 #define HELIX_SERVICE_SHUTDOWN_MSG(Type) HINFO(#Type " Shutdown")
 #define HELIX_SERVICE_RECREATE_MSG(Type) HERROR(#Type " already created!")
 };
-} // namespace Helix
+} // namespace hlx

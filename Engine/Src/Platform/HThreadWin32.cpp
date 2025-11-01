@@ -6,7 +6,7 @@
 #include "Platform/Platform.hpp"
 #include <windows.h>
 
-namespace Helix {
+namespace hlx {
 bool HThread::create(PFN_thread_start start_function_ptr, void *params,
                      bool auto_detach) {
   if (!start_function_ptr) {
@@ -89,6 +89,6 @@ bool HThread::is_active() {
 void HThread::sleep(u64 ms) { Platform::instance()->sleep(ms); }
 
 u64 HThread::get_id() { return (u64)GetCurrentThreadId(); }
-} // namespace Helix
+} // namespace hlx
 
 #endif // HELIX_PLATFORM_WINDOWS

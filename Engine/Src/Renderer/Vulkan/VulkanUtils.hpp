@@ -2,7 +2,7 @@
 #include "Renderer/GPUResources.hpp"
 #include "VulkanTypes.hpp"
 
-namespace Helix {
+namespace hlx {
 #define VK_CHECK(call)                                                         \
   do {                                                                         \
     VkResult result_ = call;                                                   \
@@ -65,4 +65,4 @@ inline bool has_depth_or_stencil(TextureFormat::Enum format) {
   return format == TextureFormat::D32;
 }
 
-} // namespace Helix
+} // namespace hlx

@@ -16,7 +16,7 @@
 #define FRUSTUM_PIPELINE_NAME "Frustum_Pipeline"
 #define CULLING_PIPELINE_NAME "Culling_Pipeline"
 
-namespace Helix {
+namespace hlx {
 
 const u32 max_frames_in_flight = 2;
 
@@ -71,8 +71,6 @@ struct HLX_API RendererFrontEnd : public Service {
   void copy_data_to_buffer(void *data, BufferHandle dst_buffer, u64 size);
   void copy_buffer_to_buffer(BufferHandle src_buffer, BufferHandle dst_buffer,
                              u64 size);
-  void print_gpu_stats();
-
   GpuDevice *device{nullptr};
   Context *graphics_context{nullptr};
   Context *transfer_context{nullptr};
@@ -95,4 +93,4 @@ struct HLX_API RendererFrontEnd : public Service {
   Array<TextureHandle> bindless_textures_to_update{};
 };
 
-} // namespace Helix
+} // namespace hlx

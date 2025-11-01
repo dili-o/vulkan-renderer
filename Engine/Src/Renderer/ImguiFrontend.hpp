@@ -4,7 +4,7 @@
 
 struct ImGuiContext;
 
-namespace Helix {
+namespace hlx {
 
 struct RendererFrontEnd;
 struct RendererBackend;
@@ -40,4 +40,4 @@ struct HLX_API ImguiFrontend : public Service {
   HELIX_DECLARE_SERVICE(ImguiFrontend);
 };
 
-} // namespace Helix
+} // namespace hlx

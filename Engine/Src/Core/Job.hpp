@@ -6,7 +6,7 @@
 #include "Platform/HMutex.hpp"
 #include "Platform/HThread.hpp"
 
-namespace Helix {
+namespace hlx {
 
 //                          Entry Data   Result Data
 typedef bool (*PFN_job_on_start)(void *, void *);
@@ -97,4 +97,4 @@ struct HLX_API JobService : public Service {
   Allocator *allocator;
 };
 
-} // namespace Helix
+} // namespace hlx

@@ -1,7 +1,7 @@
 #pragma once
 #include "Core/Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 
 struct HLX_API Clock {
 public:
@@ -18,4 +18,4 @@ private:
   f64 start_time{0.0};
   f64 elapsed_time{0.0};
 };
-} // namespace Helix
+} // namespace hlx

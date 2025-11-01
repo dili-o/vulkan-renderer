@@ -2,7 +2,7 @@
 #include "Log.hpp"
 #include "Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 std::shared_ptr<spdlog::logger> s_CoreLogger;
 
 static LogService *s_log_service{nullptr};
@@ -35,4 +35,4 @@ void HLX_API ReportAssertionFailure(cstring expression, cstring message, cstring
   HCRITICAL("Assertion Failure: {}, message: {}, in file: {}, line: {}",
             expression, message, file, line);
 }
-} // namespace Helix
+} // namespace hlx

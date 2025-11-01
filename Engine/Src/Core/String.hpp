@@ -2,7 +2,7 @@
 
 #include "Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 struct Allocator;
 
 char *string_concat(cstring a, cstring b, Allocator *allocator);
@@ -11,7 +11,7 @@ bool string_equals(cstring a, cstring b);
 
 u64 string_hash(const void *string, size_t len, u64 seed);
 
-struct StringBuffer {
+struct HLX_API StringBuffer {
 
   // Includes a null terminator
   void init(Allocator *allocator, size_t size);
@@ -56,4 +56,4 @@ struct StringView {
   bool operator==(const StringView &other) const;
   static u64 hash(const void *string, size_t len, u64 seed);
 };
-} // namespace Helix
+} // namespace hlx

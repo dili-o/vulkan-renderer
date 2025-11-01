@@ -1,7 +1,7 @@
 #include "Event.hpp"
 #include "Containers/Array.hpp"
 
-namespace Helix {
+namespace hlx {
 struct RegisteredEvent {
   void *listener{nullptr};
   PFN_on_event callback{nullptr};
@@ -121,4 +121,4 @@ bool EventService::fire_event(u16 code, void *sender, EventContext context) {
   return false;
 }
 
-} // namespace Helix
+} // namespace hlx

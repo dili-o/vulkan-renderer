@@ -2,7 +2,7 @@
 
 #include "Containers/ResourcePool.hpp"
 
-namespace Helix {
+namespace hlx {
 
 using BufferHandle = ResourceHandle;
 using PipelineHandle = ResourceHandle;
@@ -33,4 +33,4 @@ enum Enum { Buffer, Texture };
 namespace BindingType {
 enum Enum { CombinedSampler, UniformBuffer, StorageBuffer };
 }
-} // namespace Helix
+} // namespace hlx

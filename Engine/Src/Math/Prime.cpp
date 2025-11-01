@@ -1,6 +1,6 @@
 #include "Prime.hpp"
 
-namespace Helix {
+namespace hlx {
 bool is_prime(const i32 n) {
   if (n <= 1)
     return false;
@@ -19,4 +19,4 @@ i32 next_prime(i32 n) {
     ++n;
   return n;
 }
-} // namespace Helix
+} // namespace hlx

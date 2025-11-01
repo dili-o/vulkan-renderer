@@ -2,9 +2,9 @@
 
 #include "Core/Defines.hpp"
 
-namespace Helix {
+namespace hlx {
 bool is_prime(const i32 n);
 
 i32 next_prime(i32 n);
 
-} // namespace Helix
+} // namespace hlx
