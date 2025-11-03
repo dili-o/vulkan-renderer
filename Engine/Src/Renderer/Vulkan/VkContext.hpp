@@ -30,9 +30,9 @@ struct VkContext final : public Context {
   // Compute
   virtual void dispatch(u32 x, u32 y, u32 z) override;
   // Transfer
-  virtual void copy_buffer_to_buffer(BufferHandle dst_buffer,
-                                     BufferHandle src_buffer,
-                                     u64 size) override;
+  virtual void copy_buffer_to_buffer(BufferHandle src_buffer, u64 src_offset,
+                                     BufferHandle dst_buffer, u64 dst_offset,
+                                     u64 copy_size) override;
   virtual void copy_buffer_to_texture(TextureHandle dst_texture,
                                       BufferHandle src_buffer,
                                       u64 copy_size) override;

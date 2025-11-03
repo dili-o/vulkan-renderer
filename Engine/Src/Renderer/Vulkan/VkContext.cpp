@@ -147,7 +147,7 @@ void VkContext::draw_indexed(u32 index_count, u32 instance_count,
 }
 
 void VkContext::bind_renderpass(RenderPassHandle render_pass_handle,
-                               u32 extents[2], u32 offsets[2]) {
+                                u32 extents[2], u32 offsets[2]) {
   current_cb().bind_renderpass(render_pass_handle, extents, offsets);
 }
 
@@ -156,12 +156,13 @@ void VkContext::end_current_pass() { current_cb().end_current_renderpass(); }
 // Compute
 void VkContext::dispatch(u32 x, u32 y, u32 z) {};
 // Transfer
-void VkContext::copy_buffer_to_buffer(BufferHandle dst_buffer,
-                                      BufferHandle src_buffer, u64 size) {
+void VkContext::copy_buffer_to_buffer(BufferHandle src_buffer, u64 src_offset,
+                                      BufferHandle dst_buffer, u64 dst_offset,
+                                      u64 copy_size) {
   VulkanBuffer *src = device->access_buffer(src_buffer);
   VulkanBuffer *dst = device->access_buffer(dst_buffer);
-  current_cb().copy_buffer_to_buffer(dst->vk_handle, 0, src->vk_handle, 0, size,
-                                     vk_queue);
+  current_cb().copy_buffer_to_buffer(dst->vk_handle, dst_offset, src->vk_handle,
+                                     src_offset, copy_size, vk_queue);
 }
 
 void VkContext::copy_buffer_to_texture(TextureHandle dst_texture,

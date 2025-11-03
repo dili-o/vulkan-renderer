@@ -25,15 +25,15 @@ struct HLX_API LogService : public Service {
 #else
 #define HDEBUG(...)
 #endif
-#define HTRACE(...) LogService::GetCoreLogger()->trace(__VA_ARGS__)
-#define HINFO(...) LogService::GetCoreLogger()->info(__VA_ARGS__)
-#define HWARN(...) LogService::GetCoreLogger()->warn(__VA_ARGS__)
-#define HERROR(...) LogService::GetCoreLogger()->error(__VA_ARGS__)
+#define HTRACE(...) hlx::LogService::GetCoreLogger()->trace(__VA_ARGS__)
+#define HINFO(...) hlx::LogService::GetCoreLogger()->info(__VA_ARGS__)
+#define HWARN(...) hlx::LogService::GetCoreLogger()->warn(__VA_ARGS__)
+#define HERROR(...) hlx::LogService::GetCoreLogger()->error(__VA_ARGS__)
 #define HCRITICAL(...)                                                         \
-  LogService::GetCoreLogger()->critical(__VA_ARGS__);                          \
+  hlx::LogService::GetCoreLogger()->critical(__VA_ARGS__);                     \
   __debugbreak();
 #define HCRITICAL_NO_BREAK(...)                                                \
-  LogService::GetCoreLogger()->critical(__VA_ARGS__)
+  hlx::LogService::GetCoreLogger()->critical(__VA_ARGS__)
 
 #define HELIX_SERVICE_INIT_MSG(Type) HINFO(#Type " Initialised")
 #define HELIX_SERVICE_SHUTDOWN_MSG(Type) HINFO(#Type " Shutdown")

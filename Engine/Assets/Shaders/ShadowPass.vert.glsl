@@ -5,11 +5,16 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 viewProj;
-    mat4 lightViewProj;
+  mat4 viewProj;
+  mat4 lightViewProj;
+  vec4 lightDirection_shadowMap;
 } ubo;
 
+layout(push_constant) uniform constants {
+  mat4 model;
+};
+
 void main() {
-  gl_Position = ubo.lightViewProj * vec4(inPosition.xyz, 1.f);
+  gl_Position = ubo.lightViewProj * model * vec4(inPosition.xyz, 1.f);
 }
 

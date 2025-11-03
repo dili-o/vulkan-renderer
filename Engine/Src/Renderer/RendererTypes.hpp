@@ -99,9 +99,6 @@ struct MeshDraw {
   u32 primitive_count;
   u32 index_buffer_offset;
   u32 vertex_buffer_offset;
-
-  u32 material_index;
-  Transform transform;
 };
 
 struct GPUMeshDraw {
@@ -127,18 +124,6 @@ struct RenderPacket {
   Mesh *meshes{nullptr};
   u32 mesh_count{0};
   Game *game{nullptr};
-};
-
-struct alignas(16) Vertex {
-  glm::vec4 pos;
-  glm::vec4 normal;
-  glm::vec4 tangent;
-  glm::vec4 tex_coord;
-
-  bool operator==(const Vertex &other) const {
-    return pos == other.pos && normal == other.normal &&
-           tangent == other.tangent && tex_coord == other.tex_coord;
-  }
 };
 
 struct UniformBufferObject {

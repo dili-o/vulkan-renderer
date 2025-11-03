@@ -15,7 +15,7 @@ void HLX_API ReportAssertionFailure(cstring expression, cstring message,
   {                                                                            \
     if (expr) {                                                                \
     } else {                                                                   \
-      ReportAssertionFailure(#expr, "", __FILE__, __LINE__);                   \
+      hlx::ReportAssertionFailure(#expr, "", __FILE__, __LINE__);                   \
       HELIX_DEBUG_BREAK;                                                       \
     }                                                                          \
   }
@@ -24,7 +24,7 @@ void HLX_API ReportAssertionFailure(cstring expression, cstring message,
   {                                                                            \
     if (expr) {                                                                \
     } else {                                                                   \
-      ReportAssertionFailure(#expr, message, __FILE__, __LINE__);              \
+      hlx::ReportAssertionFailure(#expr, message, __FILE__, __LINE__);              \
       HELIX_DEBUG_BREAK;                                                       \
     }                                                                          \
   }
@@ -45,7 +45,7 @@ void HLX_API ReportAssertionFailure(cstring expression, cstring message,
   {                                                                            \
     if (expr) {                                                                \
     } else {                                                                   \
-      ReportAssertionFailure(#expr, "", __FILE__, __LINE__);                   \
+      hlx::ReportAssertionFailure(#expr, "", __FILE__, __LINE__);                   \
       HELIX_DEBUG_BREAK;                                                       \
     }                                                                          \
   }

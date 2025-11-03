@@ -11,14 +11,13 @@ layout(location = 3) flat in uint texId;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 1, binding = 0) uniform UniformBufferObject {
-    mat4 viewProj;
-    mat4 lightViewProj;
+  mat4 viewProj;
+  mat4 lightViewProj;
+  vec4 lightDirection_shadowMap;
 } ubo;
 
-layout(push_constant) uniform constants
-{
-  vec3 lightDirection;
-  uint shadowMapIndex;
+layout(push_constant) uniform constants {
+  mat4 model;
 };
 
 float ShadowCalculation(vec4 fragPosLightSpace)
@@ -28,7 +27,7 @@ float ShadowCalculation(vec4 fragPosLightSpace)
     // transform to [0,1] range
     projCoords.xy = projCoords.xy * 0.5f + 0.5f;
     // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
-    float closestDepth = texture(globalSamplers[nonuniformEXT(shadowMapIndex)], projCoords.st).r; 
+    float closestDepth = texture(globalSamplers[nonuniformEXT(uint(ubo.lightDirection_shadowMap.w))], projCoords.st).r; 
     // get depth of current fragment from light's perspective
     float currentDepth = projCoords.z;
     // check whether current frag pos is in shadow
@@ -44,7 +43,7 @@ void main() {
   // ambient
   vec3 ambient = 0.3f * lightColor;
   // diffuse
-  vec3 lightDir = normalize(-lightDirection);  
+  vec3 lightDir = normalize(-ubo.lightDirection_shadowMap.xyz);  
   float diff = max(dot(normal, lightDir), 0.f);
   vec3 diffuse = diff * lightColor;
 

@@ -101,12 +101,15 @@ void RendererFrontEnd::init(void *_config) {
   {
     SamplerCreation creation{};
     creation.name = "DefaultSampler";
+    creation.min_filter = SamplerFilter::Nearest;
+    creation.mag_filter = SamplerFilter::Nearest;
+    creation.mip_filter = SamplerFilter::Nearest;
     default_sampler = create_sampler(creation);
   }
   {
     i32 width, height, channels;
-    stbi_uc *pixels = stbi_load(ASSETS_PATH "/Textures/wood.png", &width,
-                                &height, &channels, 4);
+    stbi_uc *pixels = stbi_load(ASSETS_PATH "/Textures/grey_checkerboard.png",
+                                &width, &height, &channels, 4);
     HASSERT(pixels);
     TextureCreation creation{};
     creation.name = "WoodTexture";
@@ -308,16 +311,20 @@ void RendererFrontEnd::copy_data_to_image(void *data, TextureHandle texture,
   graphics_context->wait_on_queue();
 }
 
-void RendererFrontEnd::copy_data_to_buffer(void *data, BufferHandle dst_buffer,
-                                           u64 size) {
-  memcpy(get_buffer_map(staging_buffer), data, size);
+void RendererFrontEnd::copy_data_to_buffer(void *src_data,
+                                           BufferHandle dst_buffer,
+                                           u64 dst_offset, u64 copy_size) {
+  void* buffer_ptr = get_buffer_map(staging_buffer);
+  memcpy(buffer_ptr, src_data, copy_size);
 
   // TODO: Blocking
   transfer_context->wait_on_queue();
+  device->wait_on_work(frame_receipts[current_frame_in_flight]);
 
   transfer_context->begin(current_frame_in_flight);
 
-  transfer_context->copy_buffer_to_buffer(dst_buffer, staging_buffer, size);
+  transfer_context->copy_buffer_to_buffer(staging_buffer, 0, dst_buffer,
+                                          dst_offset, copy_size);
 
   transfer_context->end(current_frame_in_flight);
 
@@ -328,6 +335,7 @@ void RendererFrontEnd::copy_data_to_buffer(void *data, BufferHandle dst_buffer,
 }
 
 void RendererFrontEnd::copy_buffer_to_buffer(BufferHandle src_buffer,
+                                             u64 src_offset,
                                              BufferHandle dst_buffer,
-                                             u64 size) {}
+                                             u64 dst_offset, u64 copy_size) {}
 } // namespace hlx

@@ -6,6 +6,7 @@
 #include "Core/Job.hpp"
 #include "Core/Log.hpp"
 #include "Core/Profiler.hpp"
+#include "Platform/File.hpp"
 #include "Platform/Platform.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
@@ -21,24 +22,28 @@
 namespace hlx {
 
 Platform *platform = nullptr;
-Clock clock;
-PipelineHandle hello_triangle;
-PipelineHandle shadow_pipeline;
-RenderPassHandle shadow_pass;
-TextureHandle shadow_map;
-BufferHandle cube_vertex;
-BufferHandle cube_index;
-SamplerHandle shadow_map_sampler;
-Scene scene;
+static Clock clock;
+static PipelineHandle hello_triangle;
+static PipelineHandle shadow_pipeline;
+static RenderPassHandle shadow_pass;
+static TextureHandle shadow_map;
+static UnifiedBuffer<Vertex> vertex_buffer{};
+static UnifiedBuffer<u32> index_buffer{};
+static SamplerHandle shadow_map_sampler;
+static Scene scene;
+static SceneUI scene_ui;
+static Array<BufferHandle> uniforms;
+static BindingSetLayoutHandle scene_constants_set_layout;
+static Array<BindingSetHandle> scene_constants_sets;
+static Array<MeshDraw> mesh_draws;
+
+#define MESH_COUNT 2
 
 struct UniformData{
   glm::mat4 view_proj;
   glm::mat4 light_view_proj;
+  glm::vec4 light_dir_shadow_map;
 };
-
-Array<BufferHandle> uniforms;
-BindingSetLayoutHandle scene_constants_set_layout;
-Array<BindingSetHandle> scene_constants_sets;
 
 static bool application_on_event(u16 event_code, void *sender, void *listener,
                                  EventContext context);
@@ -48,6 +53,8 @@ static bool application_on_key(u16 event_code, void *sender, void *listener,
 
 static bool application_on_window_resize(u16 event_code, void *sender,
                                          void *listener, EventContext context);
+
+static void draw_scene(Scene &scene, Context *ctx);
 
 void Sandbox::init() {
   Engine::init();
@@ -218,9 +225,9 @@ void Sandbox::init() {
 
       // Plane
 			-25.f, -5.f, -25.f, 0.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-			 25.f, -5.f, -25.f, 0.0f,  1.0f, 0.0f, 1.0f, 0.0f,
-			-25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-			 25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f
+			 25.f, -5.f, -25.f, 0.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+			-25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f,
+			 25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 1.0f, 0.0f
     };
     std::array<uint32_t, 42> cube_indices = {
 			0, 1, 2, 2, 3, 0,         // Front face
@@ -237,38 +244,47 @@ void Sandbox::init() {
     creation.usage_flags =
         BufferUsage::Enum(BufferUsage::TransferDst | BufferUsage::Vertex);
     creation.name = "CubeVertexBuffer";
-    creation.size = sizeof(cube_vertices);
-    cube_vertex = rf->create_buffer(creation);
-    rf->copy_data_to_buffer(cube_vertices, cube_vertex, creation.size);
+    creation.size = sizeof(Vertex) * max_vertex_count;
+    vertex_buffer.handle = rf->create_buffer(creation);
+    vertex_buffer.current_size = 0;
+
+    rf->copy_data_to_buffer(cube_vertices, vertex_buffer.handle, 0, sizeof(Vertex) * 28);
+    vertex_buffer.current_size += 28;
 
     creation.mapped = false;
     creation.memory_access_flags = MemoryAccess::GPU_ONLY;
     creation.usage_flags =
         BufferUsage::Enum(BufferUsage::TransferDst | BufferUsage::Index);
     creation.name = "CubeIndexBuffer";
-    creation.size = sizeof(u32) * cube_indices.size();
-    cube_index = rf->create_buffer(creation);
-    rf->copy_data_to_buffer((void *)cube_indices.data(), cube_index,
-                            creation.size);
+    creation.size = sizeof(u32) * max_index_count;
+    index_buffer.handle = rf->create_buffer(creation);
+    rf->copy_data_to_buffer(cube_indices.data(), index_buffer.handle, 0,
+                            sizeof(u32) * cube_indices.size());
+    index_buffer.current_size += cube_indices.size();
   }
 
   CameraConfiguration cam_config{};
   camera.init(cam_config);
 
+  mesh_draws.init(&MemoryService::instance()->system_allocator, MESH_COUNT, MESH_COUNT);
+  mesh_draws[0] = {
+    36, 0, 0
+  };
+  mesh_draws[1] = {
+    6, 36, 24
+  };
+
   scene.init(&MemoryService::instance()->system_allocator);
+  i32 root = scene.add_node(-1, 0, "Root");
 
-  i32 root = add_node(scene, -1, 0);
-  for (u32 i = 0; i < 5; ++i) {
-    add_node(scene, root, 1);
-  }
+  i32 node = scene.add_node(root, 1, "Cube0");
+  scene.mesh_to_node[node] = 0;
 
-  for (u32 i = 0; i < 2; ++i) {
-    add_node(scene, 3, 2);
-  }
+  node = scene.add_node(root, 1, "Cube1");
+  scene.mesh_to_node[node] = 0;
 
-  scene.local_transforms[0] = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 5.f, 0.f));
-  scene.mark_changed_node(0);
-  scene.update_scene_transforms();
+  node = scene.add_node(root, 1, "Plane");
+  scene.mesh_to_node[node] = 1;
 }
 
 void Sandbox::run() {
@@ -324,13 +340,19 @@ void Sandbox::render_frame() {
     f32 near_plane = 1.0f, far_plane = 20.f;
     UniformData uniform_data{};
     uniform_data.view_proj = view_proj;
-    glm::mat4 ortho = glm::ortho(-10.0f, 10.0f,-10.0f, 10.0f,
+    glm::mat4 ortho = glm::ortho(-20.0f, 20.0f,-20.0f, 20.0f,
                           near_plane, far_plane);
     ortho[1][1] *= -1.f;
     uniform_data.light_view_proj =  ortho *
       glm::lookAt(light_pos, light_look_at, glm::vec3(0.f, 1.f, 0.f));
+    glm::vec3 light_dir = light_look_at - light_pos;
+    uniform_data.light_dir_shadow_map = glm::vec4(
+        light_dir.x, light_dir.y, light_dir.z, 
+         shadow_map.index);
+
     void *buffer_data = rf->get_buffer_map(uniforms[rf->current_frame_in_flight]);
     memcpy(buffer_data, &uniform_data, sizeof(UniformData));
+
 
     // Shadow Pass
     BarrierDescription barrier{};
@@ -346,17 +368,14 @@ void Sandbox::render_frame() {
     rf->graphics_context->bind_pipeline(shadow_pipeline);
     rf->graphics_context->bind_set(
         scene_constants_sets[rf->current_frame_in_flight], 0);
-    rf->graphics_context->bind_vertex_buffer(cube_vertex, 0, 1);
-    rf->graphics_context->bind_index_buffer(cube_index, 0, false);
+    rf->graphics_context->bind_vertex_buffer(vertex_buffer.handle, 0, 1);
+    rf->graphics_context->bind_index_buffer(index_buffer.handle, 0, false);
 
     rf->graphics_context->set_scissor(0.f, 0.f, 1024.f, 1024.f);
     rf->graphics_context->set_viewport(0.f, 0.f, 1024.f, 1024.f, 0.f,
                                        1.f);
 
-    // Cube
-    rf->graphics_context->draw_indexed(36, 1, 0, 0, rf->wood_texture.index);
-    // Plane
-    rf->graphics_context->draw_indexed(6, 1, 36, 24, rf->wood_texture.index);
+    draw_scene(scene, rf->graphics_context);
     rf->graphics_context->end_current_pass();
 
     // Main pass
@@ -396,12 +415,9 @@ void Sandbox::render_frame() {
       glm::vec3 light_dir;
       u32 shadow_map_index;
     };
-    Constants pc{(light_look_at - light_pos), shadow_map.index};
-    rf->graphics_context->push_shader_constants(sizeof(Constants), &pc);
-    // Cube
-    rf->graphics_context->draw_indexed(36, 1, 0, 0, rf->wood_texture.index);
-    // Plane
-    rf->graphics_context->draw_indexed(6, 1, 36, 24, rf->wood_texture.index);
+
+
+    draw_scene(scene, rf->graphics_context);
 
     // Imgui
     ImguiFrontend *imgui = ImguiFrontend::instance();
@@ -421,8 +437,29 @@ void Sandbox::render_frame() {
       ImGui::End();
     }
 
-    render_scene_tree_ui(scene, 0);
-    render_node_property_ui(scene, scene.selected_node);
+    ImGui::SetNextWindowPos(ImVec2(0, 96), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(94, 40), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Load Model", NULL, flags)) {
+      if (ImGui::Button("Load Model")) {
+        char *file_path = nullptr;
+        char *file_name = nullptr;
+        if (FileService::open_file_dialog(
+                &file_name, &file_path,
+                &MemoryService::instance()->system_allocator)) {
+          if (file_path && file_name) {
+            string_replace(file_path, '\\', '/');
+            load_gltf_scene(scene, mesh_draws, vertex_buffer, index_buffer, file_path, file_name);
+
+            MemoryService::instance()->system_allocator.deallocate(file_name);
+            MemoryService::instance()->system_allocator.deallocate(file_path);
+          }
+        }
+      }
+      ImGui::End();
+    }
+
+    scene_ui.render_scene_tree_ui(scene, 0);
+    scene_ui.render_node_property_ui(scene, scene_ui.selected_node);
 
     imgui->render_frame();
 
@@ -441,6 +478,7 @@ void Sandbox::render_frame() {
 }
 
 void Sandbox::shutdown() {
+  mesh_draws.shutdown();
   scene.shutdown();
   camera.shutdown();
   RendererFrontEnd *rf = RendererFrontEnd::instance();
@@ -456,8 +494,8 @@ void Sandbox::shutdown() {
   rf->destroy_pipeline(hello_triangle);
   rf->destroy_pipeline(shadow_pipeline);
   rf->destroy_render_pass(shadow_pass);
-  rf->destroy_buffer(cube_vertex);
-  rf->destroy_buffer(cube_index);
+  rf->destroy_buffer(vertex_buffer.handle);
+  rf->destroy_buffer(index_buffer.handle);
   rf->destroy_texture(shadow_map);
 
   EventService *event_service = EventService::instance();
@@ -524,4 +562,15 @@ bool application_on_window_resize(u16 event_code, void *sender, void *listener,
   return false;
 }
 
+static void draw_scene(Scene &scene, Context *ctx) {
+  for (i32 i = 0; i < scene.hierarchy.size; ++i) {
+    if (scene.mesh_to_node.count(i)) {
+      const i32 p_mesh_id = scene.mesh_to_node[i];
+      const MeshDraw &draw = mesh_draws[p_mesh_id];
+      ctx->push_shader_constants(sizeof(glm::mat4), &scene.global_transforms[i]);
+      ctx->draw_indexed(draw.primitive_count, 1, draw.index_buffer_offset,
+          draw.vertex_buffer_offset, RendererFrontEnd::instance()->wood_texture.index);
+      }
+    }
+  }
 } // namespace hlx

@@ -8,17 +8,17 @@ struct HMutex;
 
 static const u32 k_max_path = 512;
 
-struct Directory {
+struct HLX_API Directory {
   char path[k_max_path];
 }; // struct Directory
 
-struct FileReadResult {
+struct HLX_API FileReadResult {
   char *data{nullptr};
   size_t size{0};
   void *internal_handle{nullptr};
 };
 
-struct FileService : public Service {
+struct HLX_API FileService : public Service {
 
   virtual void init(void *config = nullptr) override;
   virtual void shutdown() override;

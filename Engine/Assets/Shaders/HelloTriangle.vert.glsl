@@ -10,20 +10,19 @@ layout(location = 2) out vec2 outTexCoord;
 layout(location = 3) flat out uint texId;
 
 layout(set = 1, binding = 0) uniform UniformBufferObject {
-    mat4 viewProj;
-    mat4 lightViewProj;
+  mat4 viewProj;
+  mat4 lightViewProj;
+  vec4 lightDirection_shadowMap;
 } ubo;
 
-layout(push_constant) uniform constants
-{
-  vec3 lightDirection;
-  uint shadowMapIndex;
+layout(push_constant) uniform constants {
+  mat4 model; 
 };
 
 void main() {
-  outFragPosLightSpace = ubo.lightViewProj * vec4(inPosition, 1.f);
+  outFragPosLightSpace = ubo.lightViewProj * model * vec4(inPosition, 1.f);
   outNormal = inNormal;
   outTexCoord = inTexCoord;
   texId = gl_InstanceIndex;
-  gl_Position = ubo.viewProj * vec4(inPosition.xyz, 1.f);
+  gl_Position = ubo.viewProj * model * vec4(inPosition.xyz, 1.f);
 }

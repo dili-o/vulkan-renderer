@@ -61,12 +61,12 @@ template <typename K, typename V> struct HashMap {
   }
 
   // TODO: Make templated
-  u64 hash(const K &key, const u64 data_length, const u64 seed) {
+  u64 hash(const K &key, const u64 data_length, const u64 seed) const {
     return hash_function(&key, sizeof(K), seed);
   }
 
   // TODO: Make templated
-  u64 get_hash_index(const K &key, const u64 num_buckets, const u64 attempt) {
+  u64 get_hash_index(const K &key, const u64 num_buckets, const u64 attempt) const {
     const u64 hash_a = hash(key, s_prime_1, num_buckets);
     const u64 hash_b = hash(key, s_prime_2, num_buckets);
     return (hash_a + (attempt * (hash_b + 1))) % num_buckets;
@@ -102,7 +102,7 @@ template <typename K, typename V> struct HashMap {
     }
   }
 
-  const V *search(const K &key) {
+  const V *search(const K &key) const {
     u64 i = 0;
     u64 index = get_hash_index(key, capacity, i);
 

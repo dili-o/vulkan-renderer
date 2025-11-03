@@ -67,10 +67,13 @@ struct HLX_API RendererFrontEnd : public Service {
                                 u32 set_index);
 
   void *get_buffer_map(BufferHandle handle);
-  void copy_data_to_image(void *data, TextureHandle texture, u64 texture_size);
-  void copy_data_to_buffer(void *data, BufferHandle dst_buffer, u64 size);
-  void copy_buffer_to_buffer(BufferHandle src_buffer, BufferHandle dst_buffer,
-                             u64 size);
+  void copy_data_to_image(void *src_data, TextureHandle texture,
+                          u64 texture_size);
+  void copy_data_to_buffer(void *src_data, BufferHandle dst_buffer,
+                           u64 dst_offset, u64 copy_size);
+  void copy_buffer_to_buffer(BufferHandle src_buffer, u64 src_offset,
+                             BufferHandle dst_buffer, u64 dst_offset,
+                             u64 copy_size);
   GpuDevice *device{nullptr};
   Context *graphics_context{nullptr};
   Context *transfer_context{nullptr};
