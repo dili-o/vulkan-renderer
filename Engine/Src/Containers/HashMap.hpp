@@ -4,8 +4,6 @@
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Math/Prime.hpp"
-// Vendor
-#include <Vendor/rapidhash/rapidhash.h>
 
 // https://github.com/jamesroutley/write-a-hash-table
 namespace hlx {
@@ -42,7 +40,7 @@ template <typename K, typename V> struct HashMap {
       return;
     }
 
-    hash_function = hash_function_ ? hash_function_ : rapidhash_withSeed;
+    hash_function = hash_function_ ? hash_function_ : hlx_hash;
 
     allocator = allocator_;
     size = 0;
@@ -145,7 +143,6 @@ template <typename K, typename V> struct HashMap {
   }
 
 private:
-  // TODO: Make templated
   void resize(const u64 new_base_capacity) {
     if (new_base_capacity < s_initial_base_capacity)
       return;

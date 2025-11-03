@@ -13,6 +13,7 @@
 #include "Renderer/RendererBackend.hpp"
 #include "Renderer/RendererFrontEnd.hpp"
 #include "Renderer/RendererTypes.hpp"
+#include "SceneGraph.hpp"
 // Vendors
 #include <imgui_internal.h>
 #include <stb_image.h>
@@ -28,6 +29,7 @@ TextureHandle shadow_map;
 BufferHandle cube_vertex;
 BufferHandle cube_index;
 SamplerHandle shadow_map_sampler;
+Scene scene;
 
 struct UniformData{
   glm::mat4 view_proj;
@@ -252,6 +254,21 @@ void Sandbox::init() {
 
   CameraConfiguration cam_config{};
   camera.init(cam_config);
+
+  scene.init(&MemoryService::instance()->system_allocator);
+
+  i32 root = add_node(scene, -1, 0);
+  for (u32 i = 0; i < 5; ++i) {
+    add_node(scene, root, 1);
+  }
+
+  for (u32 i = 0; i < 2; ++i) {
+    add_node(scene, 3, 2);
+  }
+
+  scene.local_transforms[0] = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 5.f, 0.f));
+  scene.mark_changed_node(0);
+  scene.update_scene_transforms();
 }
 
 void Sandbox::run() {
@@ -404,6 +421,9 @@ void Sandbox::render_frame() {
       ImGui::End();
     }
 
+    render_scene_tree_ui(scene, 0);
+    render_node_property_ui(scene, scene.selected_node);
+
     imgui->render_frame();
 
     rf->graphics_context->end_current_pass();
@@ -416,9 +436,12 @@ void Sandbox::render_frame() {
     rf->graphics_context->resource_barrier(&barrier);
     rf->end_frame(nullptr);
   }
+
+	scene.update_scene_transforms();
 }
 
 void Sandbox::shutdown() {
+  scene.shutdown();
   camera.shutdown();
   RendererFrontEnd *rf = RendererFrontEnd::instance();
 

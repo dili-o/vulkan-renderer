@@ -1,4 +1,6 @@
 #include "Prime.hpp"
+// Vendor
+#include <Vendor/rapidhash/rapidhash.h>
 
 namespace hlx {
 bool is_prime(const i32 n) {
@@ -18,5 +20,9 @@ i32 next_prime(i32 n) {
   while (!is_prime(n))
     ++n;
   return n;
+}
+
+u64 hlx_hash(const void *key, size_t len, u64 seed) {
+  return rapidhash_withSeed(key, len, seed);
 }
 } // namespace hlx

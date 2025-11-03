@@ -62,7 +62,7 @@ struct GPUIndexedDrawCommand {
   u32 mesh_id;
 };
 
-struct Transform {
+struct HLX_API Transform {
   glm::vec3 position{0.f};
   glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
   glm::vec3 scale{1.f};
