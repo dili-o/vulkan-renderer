@@ -5,7 +5,7 @@
 // Vendor
 #include "glm/fwd.hpp"
 
-#define MAX_NODE_LEVEL 10
+#define MAX_NODE_LEVEL 16
 struct Hierarchy {
   i32 parent = -1;
   i32 first_child = -1;

@@ -60,9 +60,7 @@ void Scene::shutdown() {
   node_names.shutdown();
 }
 
-cstring Scene::get_node_name(i32 node) {
-  return node_to_name[node];
-}
+cstring Scene::get_node_name(i32 node) { return node_to_name[node]; }
 
 void Scene::mark_changed_node(i32 node) {
   const i32 level = hierarchy[node].level;
@@ -163,70 +161,73 @@ i32 SceneUI::render_scene_tree_ui(Scene &scene, i32 node) {
 }
 
 void SceneUI::render_node_property_ui(Scene &scene, i32 node) {
-  if (node < 0)
-    return;
-  hlx::Transform local_transform;
-  local_transform.set_transform(scene.local_transforms[node]);
-  hlx::Transform world_transform;
-  world_transform.set_transform(scene.global_transforms[node]);
-  bool modified = false;
+  if (ImGui::Begin("Node Property")) {
+    if (node > -1) {
+      hlx::Transform local_transform;
+      local_transform.set_transform(scene.local_transforms[node]);
+      hlx::Transform world_transform;
+      world_transform.set_transform(scene.global_transforms[node]);
+      bool modified = false;
+      ImGui::Text("Local Transform");
+      ImGui::DragFloat3("Position", &local_transform.position.x, 0.5f, 0.f, 0.f,
+                        "%.3f");
+      modified |= ImGui::IsItemActive();
 
-  ImGui::Text("Local Transform");
-  ImGui::DragFloat3("Position", &local_transform.position.x, 0.5f, 0.f, 0.f,
-                    "%.3f");
-  modified |= ImGui::IsItemActive();
+      glm::vec3 euler_radians = glm::eulerAngles(local_transform.rotation);
+      glm::vec3 euler_degrees = glm::degrees(euler_radians);
 
-  glm::vec3 euler_radians = glm::eulerAngles(local_transform.rotation);
-  glm::vec3 euler_degrees = glm::degrees(euler_radians);
+      ImGui::DragFloat3("Rotation(Degrees)", &euler_degrees.x, 0.5f, 0.f, 0.f,
+                        "%.3f");
+      modified |= ImGui::IsItemActive();
+      ImGui::DragFloat3("Scale", &local_transform.scale.x, 0.5f, 0.f, 0.f,
+                        "%.3f");
+      modified |= ImGui::IsItemActive();
 
-  ImGui::DragFloat3("Rotation(Degrees)", &euler_degrees.x, 0.5f, 0.f, 0.f,
-                    "%.3f");
-  modified |= ImGui::IsItemActive();
-  ImGui::DragFloat3("Scale", &local_transform.scale.x, 0.5f, 0.f, 0.f, "%.3f");
-  modified |= ImGui::IsItemActive();
+      ImGui::Text("World Transform");
+      ImGui::BeginDisabled();
 
-  ImGui::Text("World Transform");
-  ImGui::BeginDisabled();
+      ImGui::PushItemWidth(ImGui::CalcItemWidth() / 3);
+      ImGui::InputFloat("##Position_X", &world_transform.position.x);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Position_Y", &world_transform.position.y);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Position_Z", &world_transform.position.z);
+      ImGui::SameLine();
+      ImGui::Text("World Position");
+      ImGui::PopItemWidth();
 
-  ImGui::PushItemWidth(ImGui::CalcItemWidth() / 3);
-  ImGui::InputFloat("##Position_X", &world_transform.position.x);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Position_Y", &world_transform.position.y);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Position_Z", &world_transform.position.z);
-  ImGui::SameLine();
-  ImGui::Text("World Position");
-  ImGui::PopItemWidth();
+      ImGui::PushItemWidth(ImGui::CalcItemWidth() / 4);
+      ImGui::InputFloat("##Rotation_X", &world_transform.rotation.x);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Rotation_Y", &world_transform.rotation.y);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Rotation_Z", &world_transform.rotation.z);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Rotation_W", &world_transform.rotation.w);
+      ImGui::SameLine();
+      ImGui::Text("World Rotation(Quat)");
+      ImGui::PopItemWidth();
 
-  ImGui::PushItemWidth(ImGui::CalcItemWidth() / 4);
-  ImGui::InputFloat("##Rotation_X", &world_transform.rotation.x);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Rotation_Y", &world_transform.rotation.y);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Rotation_Z", &world_transform.rotation.z);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Rotation_W", &world_transform.rotation.w);
-  ImGui::SameLine();
-  ImGui::Text("World Rotation(Quat)");
-  ImGui::PopItemWidth();
+      ImGui::PushItemWidth(ImGui::CalcItemWidth() / 3);
+      ImGui::InputFloat("##Scale_X", &world_transform.scale.x);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Scale_Y", &world_transform.scale.y);
+      ImGui::SameLine();
+      ImGui::InputFloat("##Scale_Z", &world_transform.scale.z);
+      ImGui::SameLine();
+      ImGui::Text("World Scale");
+      ImGui::PopItemWidth();
 
-  ImGui::PushItemWidth(ImGui::CalcItemWidth() / 3);
-  ImGui::InputFloat("##Scale_X", &world_transform.scale.x);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Scale_Y", &world_transform.scale.y);
-  ImGui::SameLine();
-  ImGui::InputFloat("##Scale_Z", &world_transform.scale.z);
-  ImGui::SameLine();
-  ImGui::Text("World Scale");
-  ImGui::PopItemWidth();
+      ImGui::EndDisabled();
 
-  ImGui::EndDisabled();
-
-  if (modified) {
-    local_transform.rotation = glm::quat(glm::radians(euler_degrees));
-    scene.local_transforms[node] = local_transform.get_mat4();
-    scene.mark_changed_node(node);
+      if (modified) {
+        local_transform.rotation = glm::quat(glm::radians(euler_degrees));
+        scene.local_transforms[node] = local_transform.get_mat4();
+        scene.mark_changed_node(node);
+      }
+    }
   }
+  ImGui::End();
 }
 
 bool load_gltf_scene(Scene &scene, hlx::Array<hlx::MeshDraw> &mesh_draws,
@@ -429,26 +430,22 @@ bool load_gltf_scene(Scene &scene, hlx::Array<hlx::MeshDraw> &mesh_draws,
         }
 
         mesh_draw.primitive_count = indexes.size - initial_idx;
-        mesh_draw.index_buffer_offset =
-            initial_idx + index_buffer.current_size;
-        mesh_draw.vertex_buffer_offset =
-            vertex_buffer.current_size;
+        mesh_draw.index_buffer_offset = initial_idx + index_buffer.current_size;
+        mesh_draw.vertex_buffer_offset = vertex_buffer.current_size;
       }
 
       if (vertices.size) {
         // TODO: Make a function in RendererFrontEnd
         u64 upload_size = sizeof(Vertex) * vertices.size;
         hlx::RendererFrontEnd::instance()->copy_data_to_buffer(
-            vertices.data, vertex_buffer.handle,
-            vertex_buffer.size_in_bytes(),
+            vertices.data, vertex_buffer.handle, vertex_buffer.size_in_bytes(),
             upload_size);
         vertex_buffer.current_size += vertices.size;
         HASSERT(vertex_buffer.current_size < hlx::max_vertex_count);
 
         upload_size = sizeof(u32) * indexes.size;
         hlx::RendererFrontEnd::instance()->copy_data_to_buffer(
-            indexes.data, index_buffer.handle,
-            index_buffer.size_in_bytes(),
+            indexes.data, index_buffer.handle, index_buffer.size_in_bytes(),
             upload_size);
         index_buffer.current_size += indexes.size;
       }

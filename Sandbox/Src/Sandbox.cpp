@@ -24,6 +24,7 @@ namespace hlx {
 Platform *platform = nullptr;
 static Clock clock;
 static PipelineHandle hello_triangle;
+static PipelineHandle shadow_map_debug;
 static PipelineHandle shadow_pipeline;
 static RenderPassHandle shadow_pass;
 static TextureHandle shadow_map;
@@ -55,6 +56,9 @@ static bool application_on_window_resize(u16 event_code, void *sender,
                                          void *listener, EventContext context);
 
 static void draw_scene(Scene &scene, Context *ctx);
+
+static glm::mat4 get_light_view_proj(
+  const glm::mat4 &inv_view_proj, const glm::vec3 &light_dir);
 
 void Sandbox::init() {
   Engine::init();
@@ -125,11 +129,12 @@ void Sandbox::init() {
 
     shadow_map_sampler = rf->create_sampler(creation);
   }
+#define SHADOW_MAP_SIZE 4096
   {
     TextureCreation creation{};
     creation.name = "ShadowMapTexture";
-    creation.width = 1024;
-    creation.height = 1024;
+    creation.width = SHADOW_MAP_SIZE;
+    creation.height = SHADOW_MAP_SIZE;
     creation.usage = TextureUsage::Enum(TextureUsage::Sampled | TextureUsage::Depth);
     creation.format = TextureFormat::D32;
     creation.sampler = shadow_map_sampler;
@@ -152,7 +157,7 @@ void Sandbox::init() {
                                        ShaderStage::Vertex};
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::None;
+    creation.cull_mode = CullMode::Back;
     creation.set_layout_count = 1;
     creation.set_layouts[0] = scene_constants_set_layout;
     creation.enable_depth_write = true;
@@ -173,7 +178,7 @@ void Sandbox::init() {
                                        ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
-    creation.cull_mode = CullMode::None;
+    creation.cull_mode = CullMode::Back;
     creation.set_layout_count = 2;
     creation.set_layouts[0] = rf->bindless_set_layout;
     creation.set_layouts[1] = scene_constants_set_layout;
@@ -183,6 +188,28 @@ void Sandbox::init() {
     creation.render_pass = rf->main_pass;
 
     hello_triangle = rf->create_pipeline(creation);
+  }
+  {
+    PipelineCreation creation;
+    creation.name = "ShadowMapDebug";
+    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+        sizeof(ShaderCreateInfo) * 2, stack_allocator);
+    creation.shader_create_infos[0] = {"ShadowMapDebug.vert",
+                                       ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"ShadowMapDebug.frag",
+                                       ShaderStage::Fragment};
+    creation.shader_count = 2;
+    creation.pipeline_type = PipelineType::Graphics;
+    creation.cull_mode = CullMode::None;
+    creation.set_layout_count = 2;
+    creation.set_layouts[0] = rf->bindless_set_layout;
+    creation.set_layouts[1] = scene_constants_set_layout;
+    creation.enable_depth_write = true;
+    creation.enable_depth_test = false;
+    creation.compare_op = CompareOp::Always;
+    creation.render_pass = rf->main_pass;
+
+    shadow_map_debug = rf->create_pipeline(creation);
   }
   {
     f32 cube_vertices[] = {
@@ -225,9 +252,9 @@ void Sandbox::init() {
 
       // Plane
 			-25.f, -5.f, -25.f, 0.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+			 25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 1.0f, 0.0f,
 			 25.f, -5.f, -25.f, 0.0f,  1.0f, 0.0f, 1.0f, 1.0f,
 			-25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f,
-			 25.f, -5.f,  25.f, 0.0f,  1.0f, 0.0f, 1.0f, 0.0f
     };
     std::array<uint32_t, 42> cube_indices = {
 			0, 1, 2, 2, 3, 0,         // Front face
@@ -236,7 +263,7 @@ void Sandbox::init() {
 			12, 13, 14, 14, 15, 12,   // Right face
 			16, 17, 18, 18, 19, 16,   // Bottom face
 			20, 21, 22, 21, 20, 23,   // Top face
-      0, 1, 2, 2, 1, 3          // Plane
+      0, 1, 2, 1, 0, 3          // Plane
     };
     BufferCreation creation{};
     creation.mapped = false;
@@ -335,24 +362,19 @@ void Sandbox::render_frame() {
     glm::mat4 view_proj = camera.get_projection() * camera.get_view();
     static glm::vec3 light_pos = glm::vec3(-2.5f, 4.f, -1.f);
     static glm::vec3 light_look_at = glm::vec3(0.f);
+    static bool show_shadow_map_debug = true;
 
     // Update Uniforms
-    f32 near_plane = 1.0f, far_plane = 20.f;
+    glm::vec3 light_dir = glm::vec3(0.5f, -1.f, 0.f); //light_look_at - light_pos;
     UniformData uniform_data{};
     uniform_data.view_proj = view_proj;
-    glm::mat4 ortho = glm::ortho(-20.0f, 20.0f,-20.0f, 20.0f,
-                          near_plane, far_plane);
-    ortho[1][1] *= -1.f;
-    uniform_data.light_view_proj =  ortho *
-      glm::lookAt(light_pos, light_look_at, glm::vec3(0.f, 1.f, 0.f));
-    glm::vec3 light_dir = light_look_at - light_pos;
+    uniform_data.light_view_proj = get_light_view_proj(glm::inverse(view_proj), light_dir);
     uniform_data.light_dir_shadow_map = glm::vec4(
         light_dir.x, light_dir.y, light_dir.z, 
          shadow_map.index);
 
     void *buffer_data = rf->get_buffer_map(uniforms[rf->current_frame_in_flight]);
     memcpy(buffer_data, &uniform_data, sizeof(UniformData));
-
 
     // Shadow Pass
     BarrierDescription barrier{};
@@ -363,7 +385,7 @@ void Sandbox::render_frame() {
     rf->graphics_context->resource_barrier(&barrier);
 
     u32 offsets[2] = {0, 0};
-    u32 extents[2] = {1024, 1024};
+    u32 extents[2] = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
     rf->graphics_context->bind_renderpass(shadow_pass, extents, offsets);
     rf->graphics_context->bind_pipeline(shadow_pipeline);
     rf->graphics_context->bind_set(
@@ -371,8 +393,8 @@ void Sandbox::render_frame() {
     rf->graphics_context->bind_vertex_buffer(vertex_buffer.handle, 0, 1);
     rf->graphics_context->bind_index_buffer(index_buffer.handle, 0, false);
 
-    rf->graphics_context->set_scissor(0.f, 0.f, 1024.f, 1024.f);
-    rf->graphics_context->set_viewport(0.f, 0.f, 1024.f, 1024.f, 0.f,
+    rf->graphics_context->set_scissor(0.f, 0.f, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+    rf->graphics_context->set_viewport(0.f, 0.f, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0.f,
                                        1.f);
 
     draw_scene(scene, rf->graphics_context);
@@ -411,13 +433,19 @@ void Sandbox::render_frame() {
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
                                        1.f);
 
-    struct Constants{
-      glm::vec3 light_dir;
-      u32 shadow_map_index;
-    };
-
-
     draw_scene(scene, rf->graphics_context);
+
+    // Shadow Map Debug
+    if (show_shadow_map_debug) {
+      rf->graphics_context->set_viewport(0.f, height / 2.f, width / 2.f, height / 2.f,
+                                   0.f, 1.f);
+      rf->graphics_context->set_scissor(0.f, height / 2.f, (f32)width / 2.f, (f32)height / 2.f);
+      rf->graphics_context->bind_pipeline(shadow_map_debug);
+      rf->graphics_context->bind_set(rf->bindless_set, 0);
+      rf->graphics_context->draw(3, 1, 0, shadow_map.index);
+
+    }
+
 
     // Imgui
     ImguiFrontend *imgui = ImguiFrontend::instance();
@@ -438,7 +466,7 @@ void Sandbox::render_frame() {
     }
 
     ImGui::SetNextWindowPos(ImVec2(0, 96), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(94, 40), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(256, 80), ImGuiCond_Always        );
     if (ImGui::Begin("Load Model", NULL, flags)) {
       if (ImGui::Button("Load Model")) {
         char *file_path = nullptr;
@@ -455,6 +483,7 @@ void Sandbox::render_frame() {
           }
         }
       }
+      ImGui::Checkbox("Show Shadow Map Debug", &show_shadow_map_debug);
       ImGui::End();
     }
 
@@ -492,6 +521,7 @@ void Sandbox::shutdown() {
   rf->destroy_binding_set_layout(scene_constants_set_layout);
   rf->destroy_sampler(shadow_map_sampler);
   rf->destroy_pipeline(hello_triangle);
+  rf->destroy_pipeline(shadow_map_debug);
   rf->destroy_pipeline(shadow_pipeline);
   rf->destroy_render_pass(shadow_pass);
   rf->destroy_buffer(vertex_buffer.handle);
@@ -573,4 +603,77 @@ static void draw_scene(Scene &scene, Context *ctx) {
       }
     }
   }
+
+static glm::mat4 get_light_view_proj(
+  const glm::mat4 &inv_view_proj,
+  const glm::vec3 &light_dir) {
+  // Get frustum corners
+  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  StackAllocator *stack_allocator = scope_allocator.allocator;
+  Array<glm::vec4> frustum_corners{};
+  frustum_corners.init(stack_allocator, 8);
+
+  for (i32 x = 0; x < 2; ++x) {
+    for (i32 y = 0; y < 2; ++y) {
+      for (i32 z = 0; z < 2; ++z) {
+        glm::vec4 p = glm::vec4(2.f * x - 1.f,
+                                2.f * y - 1.f,
+                                1.f * z,
+                                1.f);
+        p = inv_view_proj * p;
+        frustum_corners.push(p / p.w);
+      }
+    }
+  }
+
+  glm::vec3 frustum_center = glm::vec3(0, 0, 0);
+  for (const glm::vec4& v : frustum_corners) {
+      frustum_center += glm::vec3(v);
+  }
+  frustum_center /= frustum_corners.size;
+
+  glm::mat4 light_view = glm::lookAt(
+    frustum_center - light_dir,
+    frustum_center,
+    glm::vec3(0.0f, 1.0f, 0.0f));
+
+  f32 min_x = std::numeric_limits<f32>::max();
+  f32 max_x = std::numeric_limits<f32>::lowest();
+  f32 min_y = std::numeric_limits<f32>::max();
+  f32 max_y = std::numeric_limits<f32>::lowest();
+  f32 min_z = std::numeric_limits<f32>::max();
+  f32 max_z = std::numeric_limits<f32>::lowest();
+  for (const glm::vec4& v : frustum_corners) {
+    const glm::vec4 trf = light_view * v;
+    min_x = std::min(min_x, trf.x);
+    max_x = std::max(max_x, trf.x);
+    min_y = std::min(min_y, trf.y);
+    max_y = std::max(max_y, trf.y);
+    min_z = std::min(min_z, trf.z);
+    max_z = std::max(max_z, trf.z);
+  }
+  
+  // Tune this parameter according to the scene
+  constexpr f32 z_mult = 1.f;
+  if (min_z < 0.f)
+    min_z *= z_mult;
+  else
+    min_z /= z_mult;
+
+  if (max_z < 0.f)
+    max_z /= z_mult;
+  else
+    max_z *= z_mult;
+     
+  glm::mat4 light_proj = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
+  // f32 near_plane = 1.0f, far_plane = 20.f;
+  // glm::mat4 light_proj = glm::ortho(-20.0f, 20.0f,-20.0f, 20.0f,
+  //                       near_plane, far_plane);
+  light_proj[1][1] *= -1.f;
+
+  // glm::lookAt(light_pos, light_look_at, glm::vec3(0.f, 1.f, 0.f));
+
+  return light_proj  * light_view;
+}
+
 } // namespace hlx

@@ -20,20 +20,31 @@ layout(push_constant) uniform constants {
   mat4 model;
 };
 
-float ShadowCalculation(vec4 fragPosLightSpace)
-{
-    // perform perspective divide
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    // transform to [0,1] range
-    projCoords.xy = projCoords.xy * 0.5f + 0.5f;
-    // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
-    float closestDepth = texture(globalSamplers[nonuniformEXT(uint(ubo.lightDirection_shadowMap.w))], projCoords.st).r; 
-    // get depth of current fragment from light's perspective
-    float currentDepth = projCoords.z;
-    // check whether current frag pos is in shadow
-    float shadow = currentDepth - 0.005 > closestDepth ? 1.0 : 0.0;
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
+  uint shadowMap = uint(ubo.lightDirection_shadowMap.w);
 
-    return shadow;
+  // perform perspective divide
+  vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+  // transform to [0,1] range
+  projCoords.xy = projCoords.xy * 0.5f + 0.5f;
+  if(projCoords.z > 1.f)
+    return 0.f;
+
+  float closestDepth = texture(globalSamplers[nonuniformEXT(shadowMap)], projCoords.xy).r; 
+  float currentDepth = projCoords.z;
+  float bias = max(0.05f * (1.f - dot(normal, lightDir)), 0.005f);
+  float shadow = 0.f;
+  vec2 texelSize = 1.f / textureSize(globalSamplers[nonuniformEXT(shadowMap)], 0);
+  for(int x = -1; x <= 1; ++x) {
+    for(int y = -1; y <= 1; ++y) {
+      float pcfDepth = texture(globalSamplers[nonuniformEXT(shadowMap)],
+                               projCoords.xy + vec2(x, y) * texelSize).r; 
+      shadow += currentDepth - bias > pcfDepth  ? 1.f : 0.f;        
+    }    
+  }
+  shadow /= 9.f;
+
+  return shadow;
 }
 
 void main() {
@@ -47,7 +58,7 @@ void main() {
   float diff = max(dot(normal, lightDir), 0.f);
   vec3 diffuse = diff * lightColor;
 
-  float shadow = ShadowCalculation(inFragPosLightSpace);
+  float shadow = ShadowCalculation(inFragPosLightSpace, normal, lightDir);
   vec3 lighting = (ambient + (1.0 - shadow) * diffuse) * color;    
   
   outColor = vec4(lighting, 1.f);
