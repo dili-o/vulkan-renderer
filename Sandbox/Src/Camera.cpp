@@ -102,20 +102,20 @@ void Camera::shutdown() {
                                   camera_resize_event);
 }
 
-glm::mat4 Camera::get_rotation() {
+glm::mat4 Camera::get_rotation() const {
   glm::quat pitch_rotation = glm::angleAxis(pitch, glm::vec3{1.f, 0.f, 0.f});
   glm::quat yaw_rotation = glm::angleAxis(yaw, glm::vec3{0.f, -1.f, 0.f});
 
   return glm::toMat4(yaw_rotation) * glm::toMat4(pitch_rotation);
 }
 
-glm::mat4 Camera::get_view() {
+glm::mat4 Camera::get_view() const {
   glm::mat4 camera_translation = glm::translate(glm::mat4(1.f), position);
   glm::mat4 camera_rotation = get_rotation();
   return glm::inverse(camera_translation * camera_rotation);
 }
 
-glm::mat4 Camera::get_projection() {
+glm::mat4 Camera::get_projection() const {
   glm::mat4 projection =
       glm::perspective(glm::radians(fov), aspect_ratio, near_plane, far_plane);
   projection[1][1] *= -1.f;

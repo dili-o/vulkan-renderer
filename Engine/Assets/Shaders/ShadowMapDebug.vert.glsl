@@ -6,7 +6,9 @@ layout (location = 1) flat out uint texId;
 layout(set = 1, binding = 0) uniform UniformBufferObject {
   mat4 viewProj;
   mat4 lightViewProj;
+  mat4 lightViewProjs[4];
   vec4 lightDirection_shadowMap;
+  float cascadeSplits[4];
 } ubo;
 
 void main() {

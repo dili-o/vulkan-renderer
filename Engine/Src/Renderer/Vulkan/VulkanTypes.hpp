@@ -71,6 +71,7 @@ struct VulkanImage {
   VkExtent3D vk_extents;
   VkImageUsageFlags vk_usage;
   u32 mip_count = 1;
+  u32 array_count = 1;
   cstring name = nullptr;
 };
 

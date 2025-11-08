@@ -212,7 +212,7 @@ BufferHandle RendererFrontEnd::create_buffer(const BufferCreation &creation) {
 TextureHandle
 RendererFrontEnd::create_texture(const TextureCreation &creation) {
   TextureHandle handle = device->create_texture(creation);
-  if (creation.usage & TextureUsage::Sampled)
+  if (creation.usage & TextureUsage::Sampled && creation.array_layer_count == 1)
     bindless_textures_to_update.push(handle);
 
   return handle;

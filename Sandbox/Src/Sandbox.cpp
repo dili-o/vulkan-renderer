@@ -21,13 +21,25 @@
 
 namespace hlx {
 
+#define SHADOW_MAP_SIZE 4096
+#define CASCADE_COUNT 4
+
 Platform *platform = nullptr;
 static Clock clock;
 static PipelineHandle hello_triangle;
 static PipelineHandle shadow_map_debug;
 static PipelineHandle shadow_pipeline;
+static PipelineHandle frustum_debug;
 static RenderPassHandle shadow_pass;
 static TextureHandle shadow_map;
+static TextureHandle cascade_textures[CASCADE_COUNT];
+struct CascadesData {
+  glm::mat4 cascade_matrices[CASCADE_COUNT];
+  f32 cascade_splits[CASCADE_COUNT]; 
+};
+static CascadesData cascades_data;
+static f32 split_lambda = 0.9f;
+
 static UnifiedBuffer<Vertex> vertex_buffer{};
 static UnifiedBuffer<u32> index_buffer{};
 static SamplerHandle shadow_map_sampler;
@@ -40,10 +52,12 @@ static Array<MeshDraw> mesh_draws;
 
 #define MESH_COUNT 2
 
-struct UniformData{
+struct UniformData {
   glm::mat4 view_proj;
   glm::mat4 light_view_proj;
+  glm::mat4 light_view_projs[CASCADE_COUNT];
   glm::vec4 light_dir_shadow_map;
+  f32 cascade_splits[CASCADE_COUNT];
 };
 
 static bool application_on_event(u16 event_code, void *sender, void *listener,
@@ -55,10 +69,14 @@ static bool application_on_key(u16 event_code, void *sender, void *listener,
 static bool application_on_window_resize(u16 event_code, void *sender,
                                          void *listener, EventContext context);
 
-static void draw_scene(Scene &scene, Context *ctx);
+static void draw_scene(Scene &scene, Context *ctx, const Camera& camera);
+static void draw_scene_shadow(Scene &scene, Context *ctx, u32 cascade_level);
 
 static glm::mat4 get_light_view_proj(
-  const glm::mat4 &inv_view_proj, const glm::vec3 &light_dir);
+  Camera &camera, const glm::vec3 &light_dir, f32 near, f32 far);
+
+static void update_cascades(
+  Camera &camera, const glm::vec3 &light_dir, f32 near, f32 far);
 
 void Sandbox::init() {
   Engine::init();
@@ -129,7 +147,6 @@ void Sandbox::init() {
 
     shadow_map_sampler = rf->create_sampler(creation);
   }
-#define SHADOW_MAP_SIZE 4096
   {
     TextureCreation creation{};
     creation.name = "ShadowMapTexture";
@@ -138,15 +155,24 @@ void Sandbox::init() {
     creation.usage = TextureUsage::Enum(TextureUsage::Sampled | TextureUsage::Depth);
     creation.format = TextureFormat::D32;
     creation.sampler = shadow_map_sampler;
-
+    creation.array_layer_count = 4;
     shadow_map = rf->create_texture(creation);
+
+    creation.base_texture = shadow_map;
+    creation.array_layer_count = 1;
+    for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+      std::string name = "ShadowCascade_" + std::to_string(i);
+      creation.name = name.c_str();
+      creation.array_base_level = i;
+      cascade_textures[i] = rf->create_texture(creation);
+    }
   }
   {
     RenderPassCreation creation{};
     creation.add_depth_attachment(LoadOp::Clear, StoreOp::Store, shadow_map);
     shadow_pass = rf->create_render_pass(creation);
     rf->device->set_render_pass_texture(
-    shadow_pass, shadow_map, true, 0);
+    shadow_pass, cascade_textures[1]/* shadow_map */, true, 0);
   }
   {
     PipelineCreation creation{};
@@ -188,6 +214,28 @@ void Sandbox::init() {
     creation.render_pass = rf->main_pass;
 
     hello_triangle = rf->create_pipeline(creation);
+  }
+  {
+    PipelineCreation creation;
+    creation.name = "FrustumDebugPipeline";
+    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+        sizeof(ShaderCreateInfo) * 2, stack_allocator);
+    creation.shader_create_infos[0] = {"Frustum.vert",
+                                       ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"Frustum.frag",
+                                       ShaderStage::Fragment};
+    creation.shader_count = 2;
+    creation.pipeline_type = PipelineType::Graphics;
+    creation.cull_mode = CullMode::None;
+    creation.set_layout_count = 1;
+    creation.primitive_type = PrimitiveType::Line;
+    creation.set_layouts[0] = scene_constants_set_layout;
+    creation.enable_depth_write = false;
+    creation.enable_depth_test = false;
+    creation.compare_op = CompareOp::Always;
+    creation.render_pass = rf->main_pass;
+
+    frustum_debug = rf->create_pipeline(creation);
   }
   {
     PipelineCreation creation;
@@ -307,9 +355,6 @@ void Sandbox::init() {
   i32 node = scene.add_node(root, 1, "Cube0");
   scene.mesh_to_node[node] = 0;
 
-  node = scene.add_node(root, 1, "Cube1");
-  scene.mesh_to_node[node] = 0;
-
   node = scene.add_node(root, 1, "Plane");
   scene.mesh_to_node[node] = 1;
 }
@@ -360,18 +405,27 @@ void Sandbox::render_frame() {
     i32 width, height;
     Platform::instance()->get_window_size(&width, &height);
     glm::mat4 view_proj = camera.get_projection() * camera.get_view();
-    static glm::vec3 light_pos = glm::vec3(-2.5f, 4.f, -1.f);
-    static glm::vec3 light_look_at = glm::vec3(0.f);
-    static bool show_shadow_map_debug = true;
+    static bool show_shadow_map_debug = false;
+    static bool freeze_camera = false;
+    static glm::mat4 last_cam_view;
 
     // Update Uniforms
-    glm::vec3 light_dir = glm::vec3(0.5f, -1.f, 0.f); //light_look_at - light_pos;
+    static glm::vec3 light_dir = glm::vec3(0.5f, -1.f, 0.f);
+    glm::vec3 light_dir_norm = glm::normalize(light_dir);
+
+    if(!freeze_camera)
+      update_cascades(camera, light_dir_norm, camera.near_plane, camera.far_plane);
     UniformData uniform_data{};
     uniform_data.view_proj = view_proj;
-    uniform_data.light_view_proj = get_light_view_proj(glm::inverse(view_proj), light_dir);
+    uniform_data.light_view_proj = get_light_view_proj(camera, light_dir_norm, camera.near_plane, camera.far_plane);
+    for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+      uniform_data.light_view_projs[i] = 
+        cascades_data.cascade_matrices[i];
+      uniform_data.cascade_splits[i] = cascades_data.cascade_splits[i];
+    }
     uniform_data.light_dir_shadow_map = glm::vec4(
-        light_dir.x, light_dir.y, light_dir.z, 
-         shadow_map.index);
+        light_dir_norm.x, light_dir_norm.y, light_dir_norm.z, 
+         /* shadow_map.index */cascade_textures[0].index);
 
     void *buffer_data = rf->get_buffer_map(uniforms[rf->current_frame_in_flight]);
     memcpy(buffer_data, &uniform_data, sizeof(UniformData));
@@ -386,19 +440,24 @@ void Sandbox::render_frame() {
 
     u32 offsets[2] = {0, 0};
     u32 extents[2] = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
-    rf->graphics_context->bind_renderpass(shadow_pass, extents, offsets);
-    rf->graphics_context->bind_pipeline(shadow_pipeline);
-    rf->graphics_context->bind_set(
-        scene_constants_sets[rf->current_frame_in_flight], 0);
-    rf->graphics_context->bind_vertex_buffer(vertex_buffer.handle, 0, 1);
-    rf->graphics_context->bind_index_buffer(index_buffer.handle, 0, false);
+    for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+      rf->device->set_render_pass_texture(
+        shadow_pass, cascade_textures[i], true, 0);
 
-    rf->graphics_context->set_scissor(0.f, 0.f, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-    rf->graphics_context->set_viewport(0.f, 0.f, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0.f,
-                                       1.f);
+      rf->graphics_context->bind_renderpass(shadow_pass, extents, offsets);
+      rf->graphics_context->bind_pipeline(shadow_pipeline);
+      rf->graphics_context->bind_set(
+          scene_constants_sets[rf->current_frame_in_flight], 0);
+      rf->graphics_context->bind_vertex_buffer(vertex_buffer.handle, 0, 1);
+      rf->graphics_context->bind_index_buffer(index_buffer.handle, 0, false);
 
-    draw_scene(scene, rf->graphics_context);
-    rf->graphics_context->end_current_pass();
+      rf->graphics_context->set_scissor(0.f, 0.f, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+      rf->graphics_context->set_viewport(0.f, 0.f, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0.f,
+                                         1.f);
+
+      draw_scene_shadow(scene, rf->graphics_context, i);
+      rf->graphics_context->end_current_pass();
+    }
 
     // Main pass
     barrier.resource_type = ResourceType::Texture;
@@ -433,7 +492,43 @@ void Sandbox::render_frame() {
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
                                        1.f);
 
-    draw_scene(scene, rf->graphics_context);
+    draw_scene(scene, rf->graphics_context, camera);
+
+    if (freeze_camera) {
+      rf->graphics_context->bind_pipeline(frustum_debug);
+      rf->graphics_context->bind_set(
+        scene_constants_sets[rf->current_frame_in_flight], 0);
+      f32 near_plane = camera.near_plane;
+      glm::vec4 colors[CASCADE_COUNT] = {
+        glm::vec4(1.f, 0.f, 0.f, 1.f),
+        glm::vec4(0.f, 1.f, 0.f, 1.f),
+        glm::vec4(0.f, 0.f, 1.f, 1.f),
+        glm::vec4(1.f, 1.f, 1.f, 1.f),
+      };
+      for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+        f32 far_plane = -cascades_data.cascade_splits[i];
+        struct PC {
+          glm::mat4 invViewProjSplit;
+          glm::vec4 color;
+        } pc;
+        pc.color = colors[i];
+        glm::mat4 proj = glm::perspective(
+            camera.fov, camera.aspect_ratio,
+            near_plane, far_plane);
+        pc.invViewProjSplit = glm::inverse(proj * last_cam_view);
+        rf->graphics_context->push_shader_constants(sizeof(PC), &pc);
+        rf->graphics_context->draw(24, 1, 0, 0);
+        near_plane = far_plane;
+        // Light matrix
+        pc.color.w = 0.5f;
+        pc.invViewProjSplit = glm::inverse(cascades_data.cascade_matrices[i]);
+        rf->graphics_context->push_shader_constants(sizeof(PC), &pc);
+        rf->graphics_context->draw(24, 1, 0, 0);
+
+      }
+    } else {
+      last_cam_view = camera.get_view();
+    }
 
     // Shadow Map Debug
     if (show_shadow_map_debug) {
@@ -442,7 +537,7 @@ void Sandbox::render_frame() {
       rf->graphics_context->set_scissor(0.f, height / 2.f, (f32)width / 2.f, (f32)height / 2.f);
       rf->graphics_context->bind_pipeline(shadow_map_debug);
       rf->graphics_context->bind_set(rf->bindless_set, 0);
-      rf->graphics_context->draw(3, 1, 0, shadow_map.index);
+      rf->graphics_context->draw(3, 1, 0, /* shadow_map.index */cascade_textures[1].index);
 
     }
 
@@ -460,8 +555,8 @@ void Sandbox::render_frame() {
     if (ImGui::Begin("Frame time", NULL, flags)) {
       ImGui::Text("Frame time: %.3f ms", delta_time * 1000.f);
       ImGui::Checkbox("Limit Frames", &limit_frames);
-      ImGui::DragFloat3("LightPos", &light_pos.x);
-      ImGui::DragFloat3("LightLook", &light_look_at.x);
+      ImGui::DragFloat3("LightDir", &light_dir.x);
+      ImGui::SliderFloat("Split Lambda", &split_lambda, 0.1f, 1.f);
       ImGui::End();
     }
 
@@ -484,6 +579,7 @@ void Sandbox::render_frame() {
         }
       }
       ImGui::Checkbox("Show Shadow Map Debug", &show_shadow_map_debug);
+      ImGui::Checkbox("Freeze Camera", &freeze_camera);
       ImGui::End();
     }
 
@@ -523,10 +619,15 @@ void Sandbox::shutdown() {
   rf->destroy_pipeline(hello_triangle);
   rf->destroy_pipeline(shadow_map_debug);
   rf->destroy_pipeline(shadow_pipeline);
+  rf->destroy_pipeline(frustum_debug);
   rf->destroy_render_pass(shadow_pass);
   rf->destroy_buffer(vertex_buffer.handle);
   rf->destroy_buffer(index_buffer.handle);
   rf->destroy_texture(shadow_map);
+  for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+    rf->destroy_texture(cascade_textures[i]);
+  }
+
 
   EventService *event_service = EventService::instance();
   event_service->unregister_event(SDL_EVENT_QUIT, 0, application_on_event);
@@ -592,26 +693,55 @@ bool application_on_window_resize(u16 event_code, void *sender, void *listener,
   return false;
 }
 
-static void draw_scene(Scene &scene, Context *ctx) {
+static void draw_scene_shadow(Scene &scene, Context *ctx, u32 cascade_level) {
   for (i32 i = 0; i < scene.hierarchy.size; ++i) {
     if (scene.mesh_to_node.count(i)) {
       const i32 p_mesh_id = scene.mesh_to_node[i];
       const MeshDraw &draw = mesh_draws[p_mesh_id];
-      ctx->push_shader_constants(sizeof(glm::mat4), &scene.global_transforms[i]);
+      struct PC {
+        glm::mat4 model;
+        u32 cascade_level;
+      } pc;
+      pc.cascade_level = cascade_level;
+      pc.model = scene.global_transforms[i];
+      ctx->push_shader_constants(sizeof(PC), &pc);
       ctx->draw_indexed(draw.primitive_count, 1, draw.index_buffer_offset,
           draw.vertex_buffer_offset, RendererFrontEnd::instance()->wood_texture.index);
-      }
     }
   }
+}
 
-static glm::mat4 get_light_view_proj(
-  const glm::mat4 &inv_view_proj,
-  const glm::vec3 &light_dir) {
+static void draw_scene(Scene &scene, Context *ctx, const Camera& camera) {
+  glm::mat4 view = camera.get_view();
+  for (i32 i = 0; i < scene.hierarchy.size; ++i) {
+    if (scene.mesh_to_node.count(i)) {
+      const i32 p_mesh_id = scene.mesh_to_node[i];
+      const MeshDraw &draw = mesh_draws[p_mesh_id];
+      struct PC {
+        glm::mat4 model;
+        glm::mat4 view;
+      } pc;
+      pc.model = scene.global_transforms[i];
+      pc.view = view;
+      ctx->push_shader_constants(sizeof(PC), &pc);
+      ctx->draw_indexed(draw.primitive_count, 1, draw.index_buffer_offset,
+          draw.vertex_buffer_offset, RendererFrontEnd::instance()->wood_texture.index);
+    }
+  }
+}
+
+static glm::mat4 get_light_view_proj(Camera &camera,
+    const glm::vec3 &light_dir,
+    f32 near, f32 far) {
   // Get frustum corners
   ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
   StackAllocator *stack_allocator = scope_allocator.allocator;
   Array<glm::vec4> frustum_corners{};
   frustum_corners.init(stack_allocator, 8);
+
+  const glm::mat4 split_proj = glm::perspective(glm::radians(camera.fov),
+                                                camera.aspect_ratio, near, far);
+  glm::mat4 inv_view_proj = glm::inverse(split_proj * camera.get_view());
 
   for (i32 x = 0; x < 2; ++x) {
     for (i32 y = 0; y < 2; ++y) {
@@ -652,28 +782,85 @@ static glm::mat4 get_light_view_proj(
     min_z = std::min(min_z, trf.z);
     max_z = std::max(max_z, trf.z);
   }
-  
-  // Tune this parameter according to the scene
-  constexpr f32 z_mult = 1.f;
-  if (min_z < 0.f)
-    min_z *= z_mult;
-  else
-    min_z /= z_mult;
 
-  if (max_z < 0.f)
-    max_z /= z_mult;
-  else
-    max_z *= z_mult;
-     
   glm::mat4 light_proj = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
-  // f32 near_plane = 1.0f, far_plane = 20.f;
-  // glm::mat4 light_proj = glm::ortho(-20.0f, 20.0f,-20.0f, 20.0f,
-  //                       near_plane, far_plane);
-  light_proj[1][1] *= -1.f;
 
-  // glm::lookAt(light_pos, light_look_at, glm::vec3(0.f, 1.f, 0.f));
-
-  return light_proj  * light_view;
+  return light_proj * light_view;
 }
+
+static void update_cascades(
+  Camera &camera, const glm::vec3 &light_dir, f32 near, f32 far) {
+  // PSSM split algorithm (gpugems3)
+  f32 cascade_splits[CASCADE_COUNT];
+
+  // We split our camera's frustum (in world space) into separate
+  // cascades.
+  // We then convert the cascade split into the depth range [0, 1]
+  // NOTE: C_0 would always be the near plane and
+  //       C_m would always be the far plane
+  for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+    // NOTE: We skip C_0
+    f32 pwr = ((f32)i + 1) / CASCADE_COUNT; 
+    f32 split_log = near * std::pow(far / near, pwr);
+    f32 split_uniform = near + (far - near) * pwr;
+    f32 c_i = split_lambda * (split_log - split_uniform) + split_uniform;
+    cascades_data.cascade_splits[i] = -c_i;
+    cascade_splits[i] = (c_i - near) / (far - near);
+  }
+
+  f32 near_split = 0.f;
+  // Calculate the light matrix for each cascade
+  for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+    f32 far_split = cascade_splits[i];
+    glm::vec3 frustum_corners[8] = {
+      glm::vec3(-1.0f,  1.0f, 0.0f),
+      glm::vec3( 1.0f,  1.0f, 0.0f),
+      glm::vec3( 1.0f, -1.0f, 0.0f),
+      glm::vec3(-1.0f, -1.0f, 0.0f),
+      glm::vec3(-1.0f,  1.0f,  1.0f),
+      glm::vec3( 1.0f,  1.0f,  1.0f),
+      glm::vec3( 1.0f, -1.0f,  1.0f),
+      glm::vec3(-1.0f, -1.0f,  1.0f),
+    };
+    
+    glm::mat4 inv_view_proj = glm::inverse(camera.get_projection() * camera.get_view());
+    for (u32 j = 0; j < 8; ++j) {
+      glm::vec4 world_corner = inv_view_proj * glm::vec4(frustum_corners[j], 1.f);
+      frustum_corners[j] = world_corner / world_corner.w;
+    }
+
+    // Adjust the frustum to the cascade's scale
+    for (u32 j = 0; j < 4; ++j) {
+      glm::vec3 dist = frustum_corners[j + 4] - frustum_corners[j];
+      frustum_corners[j + 4] = frustum_corners[j] + (dist * far_split);
+      frustum_corners[j] = frustum_corners[j] + (dist * near_split);
+    }
+    
+    // Create light space view matrix based on the center of the frustum
+    glm::vec3 frustum_center = glm::vec3(0.f);
+    for (u32 j = 0; j < 8; ++j) {
+      frustum_center += frustum_corners[j];
+    }
+    frustum_center /= 8.f;
+
+    float radius = 0.0f;
+    for (uint32_t j = 0; j < 8; j++) {
+      float distance = glm::length(frustum_corners[j] - frustum_center);
+      radius = glm::max(radius, distance);
+    }
+    radius = std::ceil(radius * 16.0f) / 16.0f;
+
+    glm::vec3 max_extents = glm::vec3(radius);
+    glm::vec3 min_extents = -max_extents;
+
+    glm::mat4 light_view = glm::lookAt(frustum_center - light_dir * -min_extents.z, frustum_center, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 light_proj = glm::ortho(min_extents.x, max_extents.x, min_extents.y, max_extents.y, -10.f, max_extents.z - min_extents.z);
+    light_proj[1][1] *= -1.f;
+    cascades_data.cascade_matrices[i] = light_proj * light_view;
+    
+    near_split = far_split;
+  }
+}
+
 
 } // namespace hlx

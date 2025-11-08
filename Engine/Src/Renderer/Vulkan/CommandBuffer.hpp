@@ -20,14 +20,16 @@ struct VulkanCommandBuffer {
   void reset();
   void free();
 
+private:
   void transition_image(VulkanImage *image, VkImageLayout old_layout,
                         VkImageLayout new_layout,
                         VkPipelineStageFlags2 src_stage,
                         VkPipelineStageFlags2 dst_stage,
                         u32 src_queue_family_index = VK_QUEUE_FAMILY_IGNORED,
                         u32 dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED);
+public:
 
-  void transition_image(TextureHandle image_handle, VkImageLayout old_layout,
+  void transition_image(VkImageViewHandle image_view_handle, VkImageLayout old_layout,
                         VkImageLayout new_layout,
                         VkPipelineStageFlags2 src_stage,
                         VkPipelineStageFlags2 dst_stage,

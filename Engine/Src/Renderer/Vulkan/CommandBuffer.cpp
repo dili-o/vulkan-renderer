@@ -54,7 +54,7 @@ void VulkanCommandBuffer::end() {
   state = CommandBufferState::Executable;
 }
 
-void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
+void VulkanCommandBuffer::transition_image(VkImageViewHandle image_view_handle,
                                            VkImageLayout old_layout,
                                            VkImageLayout new_layout,
                                            VkPipelineStageFlags2 src_stage,
@@ -62,9 +62,19 @@ void VulkanCommandBuffer::transition_image(TextureHandle image_handle,
                                            u32 src_queue_family_index,
                                            u32 dst_queue_family_index) {
   // TODO: Better way to select src and dst stages
-  VulkanImage *image = device->images.obtain(image_handle);
-  transition_image(image, old_layout, new_layout, src_stage, dst_stage,
-                   src_queue_family_index, dst_queue_family_index);
+  VulkanImageView *view = device->image_views.obtain(image_view_handle);
+  VulkanImage *image = device->images.obtain(view->image);
+
+  VkImageMemoryBarrier2 image_barrier =
+      create_image_barrier(image, old_layout, new_layout, src_stage, dst_stage,
+                           src_queue_family_index, dst_queue_family_index);
+  image_barrier.subresourceRange.levelCount = image->mip_count;
+  image_barrier.subresourceRange.baseArrayLayer = view->base_array_level;
+  image_barrier.subresourceRange.layerCount = image->array_count;
+
+  pipeline_barrier(&image_barrier, 1);
+
+  image->current_layout = image_barrier.newLayout;
 }
 
 void VulkanCommandBuffer::transition_image(

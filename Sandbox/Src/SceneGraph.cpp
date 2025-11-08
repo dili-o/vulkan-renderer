@@ -44,7 +44,7 @@ void Scene::init(hlx::Allocator *allocator) {
 
   // mesh_to_node.init(allocator, 4);
   node_to_name.init(allocator, 4);
-  node_names.init(allocator, hkilo(5));
+  node_names.init(allocator, hmega(5));
 }
 
 void Scene::shutdown() {
@@ -222,6 +222,11 @@ void SceneUI::render_node_property_ui(Scene &scene, i32 node) {
 
       if (modified) {
         local_transform.rotation = glm::quat(glm::radians(euler_degrees));
+        local_transform.scale.x = local_transform.scale.x < 0.0016f ? 0.0016f : local_transform.scale.x;
+        local_transform.scale.y = std::max(0.0016f,
+                                           local_transform.scale.y);
+        local_transform.scale.z = std::max(0.0016f,
+                                           local_transform.scale.z);
         scene.local_transforms[node] = local_transform.get_mat4();
         scene.mark_changed_node(node);
       }

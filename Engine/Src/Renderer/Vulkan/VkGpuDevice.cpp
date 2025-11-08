@@ -491,6 +491,7 @@ GpuDevice *create_vulkan_device() {
   HASSERT(supported_features12.descriptorBindingPartiallyBound == VK_TRUE);
   HASSERT(supported_features12.timelineSemaphore == VK_TRUE);
   HASSERT(supported_features12.drawIndirectCount == VK_TRUE);
+  HASSERT(supported_features12.shaderOutputLayer == VK_TRUE);
 #ifdef VULKAN_EXTRA_VALIDATION
   HASSERT(supported_features12.vulkanMemoryModel == VK_TRUE);
   HASSERT(supported_features12.vulkanMemoryModelDeviceScope == VK_TRUE);
@@ -532,6 +533,7 @@ GpuDevice *create_vulkan_device() {
   features12.descriptorBindingPartiallyBound = VK_TRUE;
   features12.timelineSemaphore = VK_TRUE;
   features12.drawIndirectCount = VK_TRUE;
+  features12.shaderOutputLayer = VK_TRUE;
 #ifdef VULKAN_EXTRA_VALIDATION
   features12.vulkanMemoryModel = VK_TRUE;
   features12.vulkanMemoryModelDeviceScope = VK_TRUE;
@@ -865,7 +867,10 @@ BufferHandle VkGpuDevice::create_buffer(const BufferCreation &creation) {
 }
 
 TextureHandle VkGpuDevice::create_texture(const TextureCreation &creation) {
-  return create_image_view(creation, create_image(creation));
+  VkImageHandle image;
+  image = is_handle_valid(creation.base_texture) ? creation.base_texture
+                                                 : create_image(creation);
+  return create_image_view(creation, image);
 }
 
 VkImageHandle VkGpuDevice::create_image(const TextureCreation &creation) {
@@ -907,6 +912,7 @@ VkImageHandle VkGpuDevice::create_image(const TextureCreation &creation) {
   image->vk_format = to_vk_format(creation.format);
   image->vk_extents = {creation.width, creation.height, creation.depth};
   image->mip_count = creation.mip_level_count;
+  image->array_count = creation.array_layer_count;
   image->name = creation.name;
 
   return handle;
@@ -926,7 +932,9 @@ VkGpuDevice::create_image_view(const TextureCreation &creation,
   VkImageViewCreateInfo view_info{};
   view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   view_info.image = vk_image->vk_handle;
-  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.viewType = creation.array_layer_count > 1
+                           ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                           : VK_IMAGE_VIEW_TYPE_2D;
   view_info.format = to_vk_format(creation.format);
   view_info.subresourceRange.aspectMask = has_depth_or_stencil(creation.format)
                                               ? VK_IMAGE_ASPECT_DEPTH_BIT
@@ -1862,8 +1870,7 @@ bool VkGpuDevice::update_binding_set(BindingSetHandle set,
       descriptor_write.dstSet = d_set->vk_handle;
       descriptor_write.dstBinding = update_info.binding;
       descriptor_write.dstArrayElement = update_info.resource_index;
-      descriptor_write.descriptorType =
-          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
       descriptor_write.descriptorCount = 1;
       descriptor_write.pImageInfo = nullptr;
     } else {
@@ -2072,6 +2079,7 @@ void VkGpuDevice::create_swapchain() {
     image->vk_format = swapchain.vk_surface_format.format;
     image->vk_extents = {swapchain_extents.width, swapchain_extents.height, 1};
     image->mip_count = 1;
+    image->array_count = 1;
 
     VulkanImageView *image_view = access_image_view(swapchain.image_views[i]);
     image_view->image = swapchain.images[i];

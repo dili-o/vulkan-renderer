@@ -31,9 +31,9 @@ struct Camera {
 
   void init(CameraConfiguration &camera_config);
   void shutdown();
-  glm::mat4 get_rotation();
-  glm::mat4 get_view();
-  glm::mat4 get_projection();
+  glm::mat4 get_rotation() const;
+  glm::mat4 get_view() const;
+  glm::mat4 get_projection() const;
 
   void update(f32 delta_time);
 

@@ -163,6 +163,8 @@ struct TextureCreation {
   TextureType::Enum type = TextureType::Texture2D;
 
   SamplerHandle sampler;
+  // NOTE(Vulkan): Assigning this means we are only creating a VkImageView
+  TextureHandle base_texture;
 
   cstring name = nullptr;
 };
