@@ -81,7 +81,7 @@ struct VkGpuDevice final : public GpuDevice {
   inline VulkanBuffer *access_buffer(BufferHandle handle) {
     return buffers.obtain(handle);
   }
-  inline VulkanImage *access_image(TextureHandle handle) {
+  inline VulkanImage *access_image(VkImageHandle handle) {
     return images.obtain(handle);
   }
   inline VulkanImageView *access_image_view(TextureHandle handle) {
@@ -129,14 +129,14 @@ struct VkGpuDevice final : public GpuDevice {
 
   VulkanSwapchain swapchain{};
 
-  ResourcePool<VulkanBuffer> buffers{};
-  ResourcePool<VulkanImageView> image_views{};
-  ResourcePool<VulkanImage> images{};
-  ResourcePool<VulkanSampler> samplers{};
-  ResourcePool<VulkanDescriptorSet> descriptor_sets{};
-  ResourcePool<VulkanDescriptorSetLayout> descriptor_set_layouts{};
-  ResourcePool<VulkanPipeline> pipelines{};
-  ResourcePool<RenderPass> render_passes{};
+  ResourcePool<BufferHandle, VulkanBuffer> buffers{};
+  ResourcePool<VkImageViewHandle, VulkanImageView> image_views{};
+  ResourcePool<VkImageHandle, VulkanImage> images{};
+  ResourcePool<SamplerHandle, VulkanSampler> samplers{};
+  ResourcePool<BindingSetHandle, VulkanDescriptorSet> descriptor_sets{};
+  ResourcePool<BindingSetLayoutHandle, VulkanDescriptorSetLayout> descriptor_set_layouts{};
+  ResourcePool<PipelineHandle, VulkanPipeline> pipelines{};
+  ResourcePool<RenderPassHandle, RenderPass> render_passes{};
 
   Array<ResourceQueueObject> resource_deletion_queue{};
   StringBuffer string_buffer{};

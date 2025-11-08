@@ -209,19 +209,22 @@ struct BindingInfo {
 };
 
 struct BindingSetUpdateInfo {
-  ResourceHandle resource_handle;
   ResourceType::Enum resource_type;
   u32 binding = 0;
   u32 resource_index = 0;
   union {
     struct {
+      BufferHandle buffer;
       u32 offset;
       u32 range;
     } buffer_info;
 
     struct {
+      TextureHandle texture;
     } texture_info;
   };
+
+  BindingSetUpdateInfo() { memset(&buffer_info, 0, sizeof(buffer_info)); }
 };
 
 struct HLX_API BindingSetLayoutCreation {

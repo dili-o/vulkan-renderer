@@ -12,10 +12,12 @@ namespace hlx {
 
 #define MAX_SWAPCHAIN_IMAGES 3
 
-using VkDescriptorSetLayoutHandle = ResourceHandle;
-using VkDescriptorSetHandle = ResourceHandle;
-using VkImageViewHandle = ResourceHandle;
-using VkImageHandle = ResourceHandle;
+struct VkImageTag{};
+
+using VkDescriptorSetLayoutHandle = BindingSetLayoutHandle;
+using VkDescriptorSetHandle = BindingSetHandle;
+using VkImageViewHandle = TextureHandle;
+using VkImageHandle = ResourceHandle<VkImageTag>;
 
 struct QueueFamilyIndices {
   u32 graphics_family_index{UINT32_MAX};
@@ -31,7 +33,8 @@ struct QueueFamilyIndices {
 
 struct ResourceQueueObject {
   VkObjectType type;
-  ResourceHandle handle;
+  u32 index;
+  u32 generation;
 };
 
 struct VulkanBuffer {

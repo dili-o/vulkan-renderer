@@ -1,5 +1,4 @@
 #include "Renderer/RendererFrontEnd.hpp"
-#include "Containers/ResourcePool.hpp"
 #include "Core/Log.hpp"
 #include "Core/Memory.hpp"
 #include "Core/Profiler.hpp"
@@ -187,7 +186,7 @@ bool RendererFrontEnd::end_frame(RenderPacket *packet) {
       TextureHandle texture = bindless_textures_to_update[it];
       bindless_textures_to_update.pop();
 
-      info.resource_handle = texture;
+      info.texture_info.texture = texture;
       info.resource_type = ResourceType::Texture;
       info.binding = 0;
       info.resource_index = texture.index;

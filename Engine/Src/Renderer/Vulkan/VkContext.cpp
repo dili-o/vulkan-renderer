@@ -80,9 +80,9 @@ void VkContext::resource_barrier(const BarrierDescription *barrier) {
     }
     }
 
-    VulkanImageView *view = device->access_image_view(barrier->resource_handle);
+    VulkanImageView *view = device->access_image_view(barrier->resource.texture);
     VulkanImage *image = device->access_image(view->image);
-    current_cb().transition_image(barrier->resource_handle, image->current_layout, dst_layout,
+    current_cb().transition_image(barrier->resource.texture, image->current_layout, dst_layout,
                                   src_stage, dst_stage);
   } else {
     HASSERT_MSG(false, "Implement Buffer Resource Barriers");

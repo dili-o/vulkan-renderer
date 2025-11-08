@@ -8,26 +8,32 @@ namespace hlx {
 
 static const u32 k_invalid_index = 0xffffffff;
 
-struct ResourceHandle {
+template <typename Tag> struct ResourceHandle {
   u32 index{k_invalid_index};
   u32 generation{0};
+
+  using HandleTag = Tag; // useful for static_asserts
 };
 
-inline bool is_handle_valid(const ResourceHandle handle) {
+template <typename Tag>
+inline bool is_handle_valid(const ResourceHandle<Tag> handle) {
   return handle.index != k_invalid_index;
 }
 
-template <typename T> struct ResourcePool {
+template <typename THandle, typename TResource> struct ResourcePool {
+  static_assert(
+      std::is_same_v<THandle, ResourceHandle<typename THandle::HandleTag>>,
+      "THandle must be a ResourceHandle specialization");
 
   void init(Allocator *allocator, u32 pool_capacity);
   void shutdown();
   void grow();
 
-  ResourceHandle obtain_new();
-  T *obtain(ResourceHandle handle);
-  const T *obtain(ResourceHandle handle) const;
+  THandle obtain_new();
+  TResource *obtain(THandle handle);
+  const TResource *obtain(THandle handle) const;
 
-  void release(ResourceHandle handle);
+  void release(THandle handle);
   void release_all();
 
   u8 *memory = nullptr;
@@ -40,19 +46,20 @@ template <typename T> struct ResourcePool {
   u32 size = 0;
 }; // struct ResourcePool
 
-template <typename T>
-inline void ResourcePool<T>::init(Allocator *allocator_, u32 pool_capacity_) {
+template <typename THandle, typename TResource>
+inline void ResourcePool<THandle, TResource>::init(Allocator *allocator_,
+                                                   u32 pool_capacity_) {
   allocator = allocator_;
   capacity =
       pool_capacity_ < MIN_POOL_CAPACITY ? MIN_POOL_CAPACITY : pool_capacity_;
 
   // Group allocate ( resource size + u32 )
-  size_t allocation_size = capacity * (sizeof(T) + sizeof(ResourceHandle));
+  size_t allocation_size = capacity * (sizeof(TResource) + sizeof(THandle));
   memory = hallocam(allocation_size, allocator);
   memset(memory, 0, allocation_size);
 
   // Allocate and add free indices
-  free_indices = (u32 *)(memory + capacity * sizeof(T));
+  free_indices = (u32 *)(memory + capacity * sizeof(TResource));
   free_indices_head = 0;
 
   generations = free_indices + capacity;
@@ -65,7 +72,8 @@ inline void ResourcePool<T>::init(Allocator *allocator_, u32 pool_capacity_) {
   size = 0;
 }
 
-template <typename T> inline void ResourcePool<T>::shutdown() {
+template <typename THandle, typename TResource>
+inline void ResourcePool<THandle, TResource>::shutdown() {
   if (free_indices_head != 0) {
     HERROR("Resource pool has unfreed resources. {} resources unfreed!", size);
   }
@@ -74,20 +82,22 @@ template <typename T> inline void ResourcePool<T>::shutdown() {
   allocator->deallocate(memory);
 }
 
-template <typename T> inline void ResourcePool<T>::grow() {
+template <typename THandle, typename TResource>
+inline void ResourcePool<THandle, TResource>::grow() {
   u32 new_capacity = capacity * 2;
 
-  size_t allocation_size = new_capacity * (sizeof(T) + sizeof(ResourceHandle));
+  size_t allocation_size = new_capacity * (sizeof(TResource) + sizeof(THandle));
 
   u8 *new_memory = hallocam(allocation_size, allocator);
   memset(new_memory, 0, allocation_size);
 
-  u32 *new_free_indices = (u32 *)(new_memory + new_capacity * sizeof(T));
+  u32 *new_free_indices =
+      (u32 *)(new_memory + new_capacity * sizeof(TResource));
 
   u32 *new_generations = new_free_indices + new_capacity;
 
   // Copy the resources into new memory
-  memory_copy((void *)new_memory, (void *)memory, capacity * sizeof(T));
+  memory_copy((void *)new_memory, (void *)memory, capacity * sizeof(TResource));
   // Copy the free indices into new memory
   memory_copy((void *)new_free_indices, (void *)free_indices,
               sizeof(u32) * capacity);
@@ -108,24 +118,27 @@ template <typename T> inline void ResourcePool<T>::grow() {
   generations = new_generations;
 }
 
-template <typename T> inline ResourceHandle ResourcePool<T>::obtain_new() {
+template <typename THandle, typename TResource>
+inline THandle ResourcePool<THandle, TResource>::obtain_new() {
   if (free_indices_head < capacity) {
     u32 free_index = free_indices[free_indices_head++];
-    const ResourceHandle free_handle = {free_index, generations[free_index]};
+    const THandle free_handle = {free_index, generations[free_index]};
 
     ++size;
     return free_handle;
   }
+
   // Error: no more resources left!
   HWARN("No more resources left, creating a larger pool");
   grow();
   return obtain_new();
 }
 
-template <typename T> inline T *ResourcePool<T>::obtain(ResourceHandle handle) {
+template <typename THandle, typename TResource>
+inline TResource *ResourcePool<THandle, TResource>::obtain(THandle handle) {
   if (handle.index != k_invalid_index) {
     if (handle.generation == generations[handle.index]) {
-      return (T *)&memory[handle.index * sizeof(T)];
+      return (TResource *)&memory[handle.index * sizeof(TResource)];
     } else {
       HWARN("Generation mismatch in Handle");
       return nullptr;
@@ -135,11 +148,12 @@ template <typename T> inline T *ResourcePool<T>::obtain(ResourceHandle handle) {
   return nullptr;
 }
 
-template <typename T>
-inline const T *ResourcePool<T>::obtain(ResourceHandle handle) const {
+template <typename THandle, typename TResource>
+inline const TResource *
+ResourcePool<THandle, TResource>::obtain(THandle handle) const {
   if (handle.index != k_invalid_index) {
     if (handle.generation == generations[handle.index]) {
-      return &memory[handle.index * sizeof(T)];
+      return &memory[handle.index * sizeof(TResource)];
     } else {
       HWARN("Generation mismatch in Handle");
       return nullptr;
@@ -149,8 +163,8 @@ inline const T *ResourcePool<T>::obtain(ResourceHandle handle) const {
   return nullptr;
 }
 
-template <typename T>
-inline void ResourcePool<T>::release(ResourceHandle handle) {
+template <typename THandle, typename TResource>
+inline void ResourcePool<THandle, TResource>::release(THandle handle) {
   if (handle.index != k_invalid_index &&
       handle.generation == generations[handle.index]) {
     free_indices[--free_indices_head] = handle.index;
@@ -161,7 +175,8 @@ inline void ResourcePool<T>::release(ResourceHandle handle) {
   HWARN("Attempting to release invalid index");
 }
 
-template <typename T> inline void ResourcePool<T>::release_all() {
+template <typename THandle, typename TResource>
+inline void ResourcePool<THandle, TResource>::release_all() {
   free_indices_head = 0;
   size = 0;
 

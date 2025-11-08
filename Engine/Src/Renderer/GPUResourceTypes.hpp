@@ -3,15 +3,23 @@
 #include "Containers/ResourcePool.hpp"
 
 namespace hlx {
+struct BufferTag {};
+struct PipelineTag {};
+struct TextureTag {};
+struct SamplerTag {};
+struct BindingSetLayoutTag {};
+struct BindingSetTag {};
+struct RenderPassTag {};
+struct CommandBufferTag {};
 
-using BufferHandle = ResourceHandle;
-using PipelineHandle = ResourceHandle;
-using TextureHandle = ResourceHandle;
-using SamplerHandle = ResourceHandle;
-using BindingSetLayoutHandle = ResourceHandle;
-using BindingSetHandle = ResourceHandle;
-using RenderPassHandle = ResourceHandle;
-using CommandBufferHandle = ResourceHandle;
+using BufferHandle = ResourceHandle<BufferTag>;
+using PipelineHandle = ResourceHandle<PipelineTag>;
+using TextureHandle = ResourceHandle<TextureTag>;
+using SamplerHandle = ResourceHandle<SamplerTag>;
+using BindingSetLayoutHandle = ResourceHandle<BindingSetLayoutTag>;
+using BindingSetHandle = ResourceHandle<BindingSetTag>;
+using RenderPassHandle = ResourceHandle<RenderPassTag>;
+using CommandBufferHandle = ResourceHandle<CommandBufferTag>;
 
 namespace ShaderStage {
 enum Enum {

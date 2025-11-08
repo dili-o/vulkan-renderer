@@ -142,7 +142,10 @@ struct BarrierDescription {
   ResourceType::Enum resource_type;
   ResourceState::Enum src_state;
   ResourceState::Enum dst_state;
-  ResourceHandle resource_handle;
+  union {
+    TextureHandle texture;
+    BufferHandle buffer;
+  } resource;
 };
 
 } // namespace hlx

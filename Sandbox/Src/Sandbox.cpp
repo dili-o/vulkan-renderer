@@ -129,7 +129,7 @@ void Sandbox::init() {
       scene_constants_sets[i] = rf->create_binding_set(set_creation);
       BindingSetUpdateInfo info{};
       info.resource_type = ResourceType::Buffer;
-      info.resource_handle = uniforms[i];
+      info.buffer_info.buffer = uniforms[i];
       info.resource_index = 0;
       info.binding = 0;
       info.buffer_info.offset = 0;
@@ -435,7 +435,7 @@ void Sandbox::render_frame() {
     barrier.resource_type = ResourceType::Texture;
     barrier.src_state = ResourceState::Sampled;
     barrier.dst_state = ResourceState::DepthAttachment;
-    barrier.resource_handle = shadow_map;
+    barrier.resource.texture = shadow_map;
     rf->graphics_context->resource_barrier(&barrier);
 
     u32 offsets[2] = {0, 0};
@@ -463,19 +463,19 @@ void Sandbox::render_frame() {
     barrier.resource_type = ResourceType::Texture;
     barrier.src_state = ResourceState::DepthAttachment;
     barrier.dst_state = ResourceState::Sampled;
-    barrier.resource_handle = shadow_map;
+    barrier.resource.texture = shadow_map;
     rf->graphics_context->resource_barrier(&barrier);
 
     barrier.resource_type = ResourceType::Texture;
     barrier.src_state = ResourceState::Present;
     barrier.dst_state = ResourceState::RenderTarget;
-    barrier.resource_handle = rf->backbuffers[rf->backbuffer_index];
+    barrier.resource.texture = rf->backbuffers[rf->backbuffer_index];
     rf->graphics_context->resource_barrier(&barrier);
 
     barrier.resource_type = ResourceType::Texture;
     barrier.src_state = ResourceState::DepthAttachment;
     barrier.dst_state = ResourceState::DepthAttachment;
-    barrier.resource_handle = rf->depth_texture;
+    barrier.resource.texture = rf->depth_texture;
     rf->graphics_context->resource_barrier(&barrier);
 
     rf->device->set_render_pass_texture(
@@ -593,7 +593,7 @@ void Sandbox::render_frame() {
     barrier.resource_type = ResourceType::Texture;
     barrier.src_state = ResourceState::RenderTarget;
     barrier.dst_state = ResourceState::Present;
-    barrier.resource_handle = rf->backbuffers[rf->backbuffer_index];
+    barrier.resource.texture = rf->backbuffers[rf->backbuffer_index];
 
     rf->graphics_context->resource_barrier(&barrier);
     rf->end_frame(nullptr);

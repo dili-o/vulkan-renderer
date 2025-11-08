@@ -867,15 +867,20 @@ BufferHandle VkGpuDevice::create_buffer(const BufferCreation &creation) {
 }
 
 TextureHandle VkGpuDevice::create_texture(const TextureCreation &creation) {
+  VulkanImageView *view = is_handle_valid(creation.base_texture)
+                              ? access_image_view(creation.base_texture)
+                              : nullptr;
   VkImageHandle image;
-  image = is_handle_valid(creation.base_texture) ? creation.base_texture
-                                                 : create_image(creation);
+  if (view)
+    image = view->image;
+  else
+    image = create_image(creation);
   return create_image_view(creation, image);
 }
 
 VkImageHandle VkGpuDevice::create_image(const TextureCreation &creation) {
   HASSERT(creation.mip_level_count != 0);
-  TextureHandle handle = images.obtain_new();
+  VkImageHandle handle = images.obtain_new();
   if (!is_handle_valid(handle)) {
     HERROR("Failed to obtain a Vulkan image Resource!");
     return handle;
@@ -1350,8 +1355,9 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
       depth_format = depth_image->vk_format;
     }
     for (u32 i = 0; i < render_pass->num_colour_attachments; i++) {
-      VulkanImage *image =
-          access_image(render_pass->colour_attachments[i].texture_handle);
+      VulkanImageView *view =
+          access_image_view(render_pass->colour_attachments[i].texture_handle);
+      VulkanImage *image = access_image(view->image);
       color_formats[i] = image->vk_format;
     }
 
@@ -1447,7 +1453,8 @@ void VkGpuDevice::destroy_buffer(BufferHandle handle) {
     HWARN("Attempting to free an invalid VulkanBuffer");
     return;
   }
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_BUFFER, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_BUFFER, handle.index,
+                               handle.generation};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1468,7 +1475,8 @@ void VkGpuDevice::destroy_image(VkImageHandle handle) {
     return;
   }
 
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE, handle.index,
+                               handle.generation};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1478,7 +1486,8 @@ void VkGpuDevice::destroy_image_view(VkImageViewHandle handle) {
     return;
   }
 
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE_VIEW, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_IMAGE_VIEW, handle.index,
+                               handle.generation};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1488,7 +1497,8 @@ void VkGpuDevice::destroy_sampler(SamplerHandle handle) {
     return;
   }
 
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_SAMPLER, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_SAMPLER, handle.index,
+                               handle.generation};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1506,7 +1516,8 @@ void VkGpuDevice::destroy_binding_set_layout(BindingSetLayoutHandle handle) {
     return;
   }
 
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                               handle.index, handle.generation};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1516,7 +1527,8 @@ void VkGpuDevice::destroy_pipeline(PipelineHandle handle) {
     return;
   }
 
-  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle};
+  ResourceQueueObject q_object{VK_OBJECT_TYPE_PIPELINE, handle.index,
+                               handle.generation};
   resource_deletion_queue.push(q_object);
 }
 
@@ -1676,22 +1688,22 @@ void VkGpuDevice::free_queued_resources() {
       ResourceQueueObject &queue_object = resource_deletion_queue[i];
       switch (queue_object.type) {
       case VK_OBJECT_TYPE_BUFFER:
-        destroy_buffer_instant(queue_object.handle);
+        destroy_buffer_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT:
-        destroy_binding_set_layout_instant(queue_object.handle);
+        destroy_binding_set_layout_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_PIPELINE:
-        destroy_pipeline_instant(queue_object.handle);
+        destroy_pipeline_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_IMAGE:
-        destroy_image_instant(queue_object.handle);
+        destroy_image_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_IMAGE_VIEW:
-        destroy_image_view_instant(queue_object.handle);
+        destroy_image_view_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_SAMPLER:
-        destroy_sampler_instant(queue_object.handle);
+        destroy_sampler_instant({queue_object.index, queue_object.generation});
         break;
       default:
         HERROR("Trying to delete an unknown type");
@@ -1834,7 +1846,7 @@ bool VkGpuDevice::update_binding_set(BindingSetHandle set,
     BindingSetUpdateInfo &update_info = update_infos[i];
     if (update_info.resource_type == ResourceType::Texture) {
       VulkanImageView *image_view =
-          access_image_view(update_info.resource_handle);
+          access_image_view(update_info.texture_info.texture);
       VulkanSampler *sampler = access_sampler(image_view->sampler);
 
       VkDescriptorImageInfo &image_info = image_infos[i];
@@ -1855,7 +1867,7 @@ bool VkGpuDevice::update_binding_set(BindingSetHandle set,
       descriptor_write.descriptorCount = 1;
       descriptor_write.pBufferInfo = nullptr;
     } else if (update_info.resource_type == ResourceType::Buffer) {
-      VulkanBuffer *buffer = access_buffer(update_info.resource_handle);
+      VulkanBuffer *buffer = access_buffer(update_info.buffer_info.buffer);
 
       VkDescriptorBufferInfo &buffer_info = buffer_infos[i];
       buffer_info.range = update_info.buffer_info.range;
