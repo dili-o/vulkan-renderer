@@ -21,24 +21,31 @@
 
 namespace hlx {
 
-#define SHADOW_MAP_SIZE 4096
-#define CASCADE_COUNT 4
+#define SHADOW_MAP_SIZE 1024
+#define MAX_CASCADE_COUNT 4
 
 Platform *platform = nullptr;
 static Clock clock;
 static PipelineHandle hello_triangle;
+static PipelineHandle cascade_debug;
 static PipelineHandle shadow_map_debug;
 static PipelineHandle shadow_pipeline;
 static PipelineHandle frustum_debug;
 static RenderPassHandle shadow_pass;
 static TextureHandle shadow_map;
-static TextureHandle cascade_textures[CASCADE_COUNT];
+static TextureHandle cascade_textures[MAX_CASCADE_COUNT];
 struct CascadesData {
-  glm::mat4 cascade_matrices[CASCADE_COUNT];
-  f32 cascade_splits[CASCADE_COUNT]; 
+  glm::mat4 cascade_matrices[MAX_CASCADE_COUNT];
+  f32 cascade_splits[MAX_CASCADE_COUNT]; 
 };
 static CascadesData cascades_data;
 static f32 split_lambda = 0.9f;
+
+static bool show_shadow_settings = false;
+static bool show_shadow_map_debug = false;
+static bool show_cascade_debug = false;
+static bool freeze_camera = false;
+static i32 cascade_count = MAX_CASCADE_COUNT;
 
 static UnifiedBuffer<Vertex> vertex_buffer{};
 static UnifiedBuffer<u32> index_buffer{};
@@ -55,9 +62,10 @@ static Array<MeshDraw> mesh_draws;
 struct UniformData {
   glm::mat4 view_proj;
   glm::mat4 light_view_proj;
-  glm::mat4 light_view_projs[CASCADE_COUNT];
+  glm::mat4 light_view_projs[MAX_CASCADE_COUNT];
   glm::vec4 light_dir_shadow_map;
-  f32 cascade_splits[CASCADE_COUNT];
+  f32 cascade_splits[MAX_CASCADE_COUNT];
+  u32 cascade_count;
 };
 
 static bool application_on_event(u16 event_code, void *sender, void *listener,
@@ -76,7 +84,10 @@ static glm::mat4 get_light_view_proj(
   Camera &camera, const glm::vec3 &light_dir, f32 near, f32 far);
 
 static void update_cascades(
-  Camera &camera, const glm::vec3 &light_dir, f32 near, f32 far);
+  const glm::mat4 &cam_proj, const glm::mat4 &cam_view,
+  const glm::vec3 &light_dir, f32 near, f32 far);
+
+static void shadow_settings_ui();
 
 void Sandbox::init() {
   Engine::init();
@@ -160,7 +171,7 @@ void Sandbox::init() {
 
     creation.base_texture = shadow_map;
     creation.array_layer_count = 1;
-    for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+    for (u32 i = 0; i < MAX_CASCADE_COUNT; ++i) {
       std::string name = "ShadowCascade_" + std::to_string(i);
       creation.name = name.c_str();
       creation.array_base_level = i;
@@ -184,8 +195,9 @@ void Sandbox::init() {
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::Back;
-    creation.set_layout_count = 1;
-    creation.set_layouts[0] = scene_constants_set_layout;
+    creation.set_layout_count = 2;
+    creation.set_layouts[0] = rf->bindless_set_layout;
+    creation.set_layouts[1] = scene_constants_set_layout;
     creation.enable_depth_write = true;
     creation.enable_depth_test = true;
     creation.compare_op = CompareOp::Less;
@@ -214,6 +226,27 @@ void Sandbox::init() {
     creation.render_pass = rf->main_pass;
 
     hello_triangle = rf->create_pipeline(creation);
+  }{
+    PipelineCreation creation;
+    creation.name = "CascadeDebug";
+    creation.shader_create_infos = (ShaderCreateInfo *)halloca(
+        sizeof(ShaderCreateInfo) * 2, stack_allocator);
+    creation.shader_create_infos[0] = {"HelloTriangle.vert",
+                                       ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"CascadeDebug.frag",
+                                       ShaderStage::Fragment};
+    creation.shader_count = 2;
+    creation.pipeline_type = PipelineType::Graphics;
+    creation.cull_mode = CullMode::Back;
+    creation.set_layout_count = 2;
+    creation.set_layouts[0] = rf->bindless_set_layout;
+    creation.set_layouts[1] = scene_constants_set_layout;
+    creation.enable_depth_write = true;
+    creation.enable_depth_test = true;
+    creation.compare_op = CompareOp::Less;
+    creation.render_pass = rf->main_pass;
+
+    cascade_debug = rf->create_pipeline(creation);
   }
   {
     PipelineCreation creation;
@@ -227,9 +260,10 @@ void Sandbox::init() {
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::None;
-    creation.set_layout_count = 1;
     creation.primitive_type = PrimitiveType::Line;
-    creation.set_layouts[0] = scene_constants_set_layout;
+    creation.set_layout_count = 2;
+    creation.set_layouts[0] = rf->bindless_set_layout;
+    creation.set_layouts[1] = scene_constants_set_layout;
     creation.enable_depth_write = false;
     creation.enable_depth_test = false;
     creation.compare_op = CompareOp::Always;
@@ -339,6 +373,7 @@ void Sandbox::init() {
   }
 
   CameraConfiguration cam_config{};
+  cam_config.near_plane = 0.5f;
   camera.init(cam_config);
 
   mesh_draws.init(&MemoryService::instance()->system_allocator, MESH_COUNT, MESH_COUNT);
@@ -404,28 +439,28 @@ void Sandbox::render_frame() {
   if (rf->begin_frame(nullptr)) {
     i32 width, height;
     Platform::instance()->get_window_size(&width, &height);
-    glm::mat4 view_proj = camera.get_projection() * camera.get_view();
-    static bool show_shadow_map_debug = false;
-    static bool freeze_camera = false;
+    glm::mat4 cam_proj = camera.get_projection();
+    glm::mat4 cam_view = camera.get_view();
+    glm::mat4 view_proj = cam_proj * cam_view;
     static glm::mat4 last_cam_view;
 
     // Update Uniforms
     static glm::vec3 light_dir = glm::vec3(0.5f, -1.f, 0.f);
     glm::vec3 light_dir_norm = glm::normalize(light_dir);
 
-    if(!freeze_camera)
-      update_cascades(camera, light_dir_norm, camera.near_plane, camera.far_plane);
+    update_cascades(cam_proj, last_cam_view, light_dir_norm, camera.near_plane, camera.far_plane);
     UniformData uniform_data{};
     uniform_data.view_proj = view_proj;
     uniform_data.light_view_proj = get_light_view_proj(camera, light_dir_norm, camera.near_plane, camera.far_plane);
-    for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+    for (u32 i = 0; i < cascade_count; ++i) {
       uniform_data.light_view_projs[i] = 
         cascades_data.cascade_matrices[i];
       uniform_data.cascade_splits[i] = cascades_data.cascade_splits[i];
     }
     uniform_data.light_dir_shadow_map = glm::vec4(
         light_dir_norm.x, light_dir_norm.y, light_dir_norm.z, 
-         /* shadow_map.index */cascade_textures[0].index);
+        cascade_textures[0].index);
+    uniform_data.cascade_count = cascade_count;
 
     void *buffer_data = rf->get_buffer_map(uniforms[rf->current_frame_in_flight]);
     memcpy(buffer_data, &uniform_data, sizeof(UniformData));
@@ -440,14 +475,17 @@ void Sandbox::render_frame() {
 
     u32 offsets[2] = {0, 0};
     u32 extents[2] = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
-    for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+
+    rf->graphics_context->bind_pipeline(shadow_pipeline);
+    rf->graphics_context->bind_set(rf->bindless_set, 0);
+    rf->graphics_context->bind_set(
+        scene_constants_sets[rf->current_frame_in_flight], 1);
+
+    for (u32 i = 0; i < cascade_count; ++i) {
       rf->device->set_render_pass_texture(
         shadow_pass, cascade_textures[i], true, 0);
 
       rf->graphics_context->bind_renderpass(shadow_pass, extents, offsets);
-      rf->graphics_context->bind_pipeline(shadow_pipeline);
-      rf->graphics_context->bind_set(
-          scene_constants_sets[rf->current_frame_in_flight], 0);
       rf->graphics_context->bind_vertex_buffer(vertex_buffer.handle, 0, 1);
       rf->graphics_context->bind_index_buffer(index_buffer.handle, 0, false);
 
@@ -484,10 +522,11 @@ void Sandbox::render_frame() {
     extents[0] = width;
     extents[1] = height;
     rf->graphics_context->bind_renderpass(rf->main_pass, extents, offsets);
-    rf->graphics_context->bind_pipeline(hello_triangle);
-    rf->graphics_context->bind_set(rf->bindless_set, 0);
-    rf->graphics_context->bind_set(
-        scene_constants_sets[rf->current_frame_in_flight], 1);
+    if (show_cascade_debug) {
+      rf->graphics_context->bind_pipeline(cascade_debug);
+    } else {
+      rf->graphics_context->bind_pipeline(hello_triangle);
+    }
     rf->graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
                                        1.f);
@@ -496,16 +535,14 @@ void Sandbox::render_frame() {
 
     if (freeze_camera) {
       rf->graphics_context->bind_pipeline(frustum_debug);
-      rf->graphics_context->bind_set(
-        scene_constants_sets[rf->current_frame_in_flight], 0);
       f32 near_plane = camera.near_plane;
-      glm::vec4 colors[CASCADE_COUNT] = {
+      glm::vec4 colors[MAX_CASCADE_COUNT] = {
         glm::vec4(1.f, 0.f, 0.f, 1.f),
         glm::vec4(0.f, 1.f, 0.f, 1.f),
         glm::vec4(0.f, 0.f, 1.f, 1.f),
         glm::vec4(1.f, 1.f, 1.f, 1.f),
       };
-      for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+      for (u32 i = 0; i < cascade_count; ++i) {
         f32 far_plane = -cascades_data.cascade_splits[i];
         struct PC {
           glm::mat4 invViewProjSplit;
@@ -527,7 +564,7 @@ void Sandbox::render_frame() {
 
       }
     } else {
-      last_cam_view = camera.get_view();
+      last_cam_view = cam_view;
     }
 
     // Shadow Map Debug
@@ -536,8 +573,7 @@ void Sandbox::render_frame() {
                                    0.f, 1.f);
       rf->graphics_context->set_scissor(0.f, height / 2.f, (f32)width / 2.f, (f32)height / 2.f);
       rf->graphics_context->bind_pipeline(shadow_map_debug);
-      rf->graphics_context->bind_set(rf->bindless_set, 0);
-      rf->graphics_context->draw(3, 1, 0, /* shadow_map.index */cascade_textures[1].index);
+      rf->graphics_context->draw(3, 1, 0, cascade_textures[0].index);
 
     }
 
@@ -555,8 +591,8 @@ void Sandbox::render_frame() {
     if (ImGui::Begin("Frame time", NULL, flags)) {
       ImGui::Text("Frame time: %.3f ms", delta_time * 1000.f);
       ImGui::Checkbox("Limit Frames", &limit_frames);
+      ImGui::Checkbox("Show Shadow Settings", &show_shadow_settings);
       ImGui::DragFloat3("LightDir", &light_dir.x);
-      ImGui::SliderFloat("Split Lambda", &split_lambda, 0.1f, 1.f);
       ImGui::End();
     }
 
@@ -578,9 +614,11 @@ void Sandbox::render_frame() {
           }
         }
       }
-      ImGui::Checkbox("Show Shadow Map Debug", &show_shadow_map_debug);
-      ImGui::Checkbox("Freeze Camera", &freeze_camera);
       ImGui::End();
+    }
+
+    if (show_shadow_settings) {
+      shadow_settings_ui();
     }
 
     scene_ui.render_scene_tree_ui(scene, 0);
@@ -617,6 +655,7 @@ void Sandbox::shutdown() {
   rf->destroy_binding_set_layout(scene_constants_set_layout);
   rf->destroy_sampler(shadow_map_sampler);
   rf->destroy_pipeline(hello_triangle);
+  rf->destroy_pipeline(cascade_debug);
   rf->destroy_pipeline(shadow_map_debug);
   rf->destroy_pipeline(shadow_pipeline);
   rf->destroy_pipeline(frustum_debug);
@@ -624,7 +663,7 @@ void Sandbox::shutdown() {
   rf->destroy_buffer(vertex_buffer.handle);
   rf->destroy_buffer(index_buffer.handle);
   rf->destroy_texture(shadow_map);
-  for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+  for (u32 i = 0; i < MAX_CASCADE_COUNT; ++i) {
     rf->destroy_texture(cascade_textures[i]);
   }
 
@@ -789,18 +828,19 @@ static glm::mat4 get_light_view_proj(Camera &camera,
 }
 
 static void update_cascades(
-  Camera &camera, const glm::vec3 &light_dir, f32 near, f32 far) {
+  const glm::mat4 &cam_proj, const glm::mat4 &cam_view,
+  const glm::vec3 &light_dir, f32 near, f32 far) {
   // PSSM split algorithm (gpugems3)
-  f32 cascade_splits[CASCADE_COUNT];
+  f32 cascade_splits[MAX_CASCADE_COUNT];
 
   // We split our camera's frustum (in world space) into separate
   // cascades.
   // We then convert the cascade split into the depth range [0, 1]
   // NOTE: C_0 would always be the near plane and
   //       C_m would always be the far plane
-  for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+  for (u32 i = 0; i < cascade_count; ++i) {
     // NOTE: We skip C_0
-    f32 pwr = ((f32)i + 1) / CASCADE_COUNT; 
+    f32 pwr = ((f32)i + 1) / cascade_count; 
     f32 split_log = near * std::pow(far / near, pwr);
     f32 split_uniform = near + (far - near) * pwr;
     f32 c_i = split_lambda * (split_log - split_uniform) + split_uniform;
@@ -810,7 +850,7 @@ static void update_cascades(
 
   f32 near_split = 0.f;
   // Calculate the light matrix for each cascade
-  for (u32 i = 0; i < CASCADE_COUNT; ++i) {
+  for (u32 i = 0; i < cascade_count; ++i) {
     f32 far_split = cascade_splits[i];
     glm::vec3 frustum_corners[8] = {
       glm::vec3(-1.0f,  1.0f, 0.0f),
@@ -823,7 +863,7 @@ static void update_cascades(
       glm::vec3(-1.0f, -1.0f,  1.0f),
     };
     
-    glm::mat4 inv_view_proj = glm::inverse(camera.get_projection() * camera.get_view());
+    glm::mat4 inv_view_proj = glm::inverse(cam_proj * cam_view);
     for (u32 j = 0; j < 8; ++j) {
       glm::vec4 world_corner = inv_view_proj * glm::vec4(frustum_corners[j], 1.f);
       frustum_corners[j] = world_corner / world_corner.w;
@@ -862,5 +902,15 @@ static void update_cascades(
   }
 }
 
+static void shadow_settings_ui() {
+  if(ImGui::Begin("Shadow Settings")) {
+    ImGui::SliderFloat("Split Lambda", &split_lambda, 0.1f, 1.f);
+    ImGui::Checkbox("Show Shadow Map Debug", &show_shadow_map_debug);
+    ImGui::Checkbox("Show Cascade Debug", &show_cascade_debug);
+    ImGui::Checkbox("Freeze Camera", &freeze_camera);
+    ImGui::SliderInt("Cascade Count", &cascade_count, 1, MAX_CASCADE_COUNT);
+  }
+  ImGui::End();
+}
 
 } // namespace hlx

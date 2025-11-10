@@ -1,16 +1,11 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform UniformBufferObject {
-  mat4 viewProj;
-  mat4 lightViewProj;
-  mat4 lightViewProjs[4];
-  vec4 lightDirection_shadowMap;
-  float cascadeSplits[4];
-} ubo;
+#extension GL_GOOGLE_include_directive : require
+#include "Globals.glsl"
 
 layout(push_constant) uniform constants
 {
-  mat4 invViewProjSplit;
+  mat4 invViewProj;
   vec4 color;
 };
 
@@ -66,7 +61,7 @@ vec4 positions [] = {
 
 void main() {
   vec4 position = positions[gl_VertexIndex];
-  gl_Position = ubo.viewProj * vec4(ndc_to_world_space(invViewProjSplit, position.x, position.y, position.z), 1.f);
+  gl_Position = ubo.viewProj * vec4(ndc_to_world_space(invViewProj, position.x, position.y, position.z), 1.f);
   outColor = color;
 }
 

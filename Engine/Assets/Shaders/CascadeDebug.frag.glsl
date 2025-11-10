@@ -41,17 +41,14 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir, uint
   return shadow;
 }
 
-void main() {
-  vec3 color = texture(globalSamplers[nonuniformEXT(texId)], inTexCoord.st).rgb;
-  vec3 normal = normalize(inNormal);
-  vec3 lightColor = vec3(0.3f);
-  // ambient
-  vec3 ambient = 0.3f * lightColor;
-  // diffuse
-  vec3 lightDir = normalize(-ubo.lightDirection_shadowMap.xyz);  
-  float diff = max(dot(normal, lightDir), 0.f);
-  vec3 diffuse = diff * lightColor;
+const vec3 colors[4] = {
+  vec3(1.f, 0.f, 0.f),
+  vec3(0.f, 1.f, 0.f),
+  vec3(0.f, 0.f, 1.f),
+  vec3(1.f, 1.f, 1.f)
+};
 
+void main() {
   uint cascadeIndex = 0;
 	for(uint i = 0; i < ubo.cascadeCount - 1; ++i) {
 		if(inWorldPos_ViewZ.w < ubo.cascadeSplits[i]) {	
@@ -59,8 +56,16 @@ void main() {
     }
   }
 
-  float shadow = ShadowCalculation(ubo.lightViewProjs[cascadeIndex] * vec4(inWorldPos_ViewZ.xyz, 1.f), normal, lightDir, cascadeIndex);
-  vec3 lighting = (ambient + (1.0 - shadow) * diffuse) * color;    
+  vec3 normal = normalize(inNormal);
+  vec3 lightDir = normalize(-ubo.lightDirection_shadowMap.xyz);  
+  vec3 diffuse = colors[cascadeIndex];
+
+  float shadow = ShadowCalculation(
+    ubo.lightViewProjs[cascadeIndex] * vec4(inWorldPos_ViewZ.xyz, 1.f),
+    normal, lightDir, cascadeIndex);
+
+  vec3 lighting = ((1.0 - shadow) * diffuse);
   
   outColor = vec4(lighting, 1.f);
 }
+

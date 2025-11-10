@@ -1193,6 +1193,8 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   pipeline_layout_info.pSetLayouts = layouts;
   if (parse_result.push_constant.size != 0) {
     pipeline_layout_info.pushConstantRangeCount = 1;
+    // TODO: Right now we just use up all the size
+    parse_result.push_constant.size = 128;
     pipeline_layout_info.pPushConstantRanges = &parse_result.push_constant;
   }
 

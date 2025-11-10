@@ -95,7 +95,8 @@ void VkContext::bind_set(BindingSetHandle set_handle, u32 set_index) {
 }
 
 void VkContext::push_shader_constants(u32 size, void *data) {
-  current_cb().push_constants(0, size, data);
+  // TODO: Right now we just use up all the size
+  current_cb().push_constants(0, 128, data);
 }
 
 // Graphics

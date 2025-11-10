@@ -8,14 +8,6 @@ layout (location = 1) flat in uint texId;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 1, binding = 0) uniform UniformBufferObject {
-  mat4 viewProj;
-  mat4 lightViewProj;
-  mat4 lightViewProjs[4];
-  vec4 lightDirection_shadowMap;
-  float cascadeSplits[4];
-} ubo;
-
 void main() {
   vec2 texCoord = vTexCoord;
   texCoord.y = 1.f - texCoord.y;
