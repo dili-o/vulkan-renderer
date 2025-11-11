@@ -1127,10 +1127,11 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   // Create shader spv and extract shader data from them
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
+    cstring defines = shader.defines ? shader.defines : "";
     cstring shader_args = temp_string_buffer.append_use_f(
-        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.3 %s -D_GLSL",
+        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.4 %s -D_GLSL %s",
         to_compiler_stage(shader.stage), shader.filename, shader.filename,
-        compiler_debug);
+        compiler_debug, defines);
     HASSERT(process_execute(".", glsl_compiler_path, shader_args));
 
     // TODO: Maybe create a timestamp system for checking shaders.

@@ -130,6 +130,7 @@ struct BufferCreation {
 struct ShaderCreateInfo {
   cstring filename;
   ShaderStage::Enum stage;
+  cstring defines = nullptr;
 };
 
 struct PipelineCreation {

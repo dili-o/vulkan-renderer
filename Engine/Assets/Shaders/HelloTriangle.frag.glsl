@@ -27,8 +27,9 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir, uint
 
   float closestDepth = texture(globalSamplers[nonuniformEXT(shadowMap)], projCoords.xy).r; 
   float currentDepth = projCoords.z;
-  float bias = max(0.0005f * (1.f - dot(normal, lightDir)) * (1.f + cascadeIndex), 0.0005f);
   float shadow = 0.f;
+#ifdef ENABLE_PCF
+  float bias = max(0.0005f * (1.f - dot(normal, lightDir)) * (1.f + cascadeIndex), 0.0005f);
   vec2 texelSize = 1.f / textureSize(globalSamplers[nonuniformEXT(shadowMap)], 0);
   for(int x = -1; x <= 1; ++x) {
     for(int y = -1; y <= 1; ++y) {
@@ -38,6 +39,11 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir, uint
     }    
   }
   shadow /= 9.f;
+#else
+  float bias = max(0.05f * (1.f - dot(normal, lightDir)), 0.005f);
+  shadow = currentDepth - bias > closestDepth ? 1.f : 0.f;
+#endif // ENABLE_PCF
+
   return shadow;
 }
 

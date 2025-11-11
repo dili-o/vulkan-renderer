@@ -17,7 +17,6 @@
 #include "SceneGraph.hpp"
 // Vendors
 #include <imgui_internal.h>
-#include <stb_image.h>
 
 namespace hlx {
 
@@ -27,6 +26,7 @@ namespace hlx {
 Platform *platform = nullptr;
 static Clock clock;
 static PipelineHandle hello_triangle;
+static PipelineHandle hello_triangle_pcf;
 static PipelineHandle cascade_debug;
 static PipelineHandle shadow_map_debug;
 static PipelineHandle shadow_pipeline;
@@ -45,6 +45,7 @@ static bool show_shadow_settings = false;
 static bool show_shadow_map_debug = false;
 static bool show_cascade_debug = false;
 static bool freeze_camera = false;
+static bool enable_pcf = false;
 static i32 cascade_count = MAX_CASCADE_COUNT;
 
 static UnifiedBuffer<Vertex> vertex_buffer{};
@@ -226,6 +227,9 @@ void Sandbox::init() {
     creation.render_pass = rf->main_pass;
 
     hello_triangle = rf->create_pipeline(creation);
+    cstring defines = "-DENABLE_PCF";
+    creation.shader_create_infos[1].defines = defines;
+    hello_triangle_pcf = rf->create_pipeline(creation);
   }{
     PipelineCreation creation;
     creation.name = "CascadeDebug";
@@ -525,7 +529,10 @@ void Sandbox::render_frame() {
     if (show_cascade_debug) {
       rf->graphics_context->bind_pipeline(cascade_debug);
     } else {
-      rf->graphics_context->bind_pipeline(hello_triangle);
+      if (enable_pcf)
+        rf->graphics_context->bind_pipeline(hello_triangle_pcf);
+      else
+        rf->graphics_context->bind_pipeline(hello_triangle);
     }
     rf->graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
@@ -655,6 +662,7 @@ void Sandbox::shutdown() {
   rf->destroy_binding_set_layout(scene_constants_set_layout);
   rf->destroy_sampler(shadow_map_sampler);
   rf->destroy_pipeline(hello_triangle);
+  rf->destroy_pipeline(hello_triangle_pcf);
   rf->destroy_pipeline(cascade_debug);
   rf->destroy_pipeline(shadow_map_debug);
   rf->destroy_pipeline(shadow_pipeline);
@@ -908,6 +916,7 @@ static void shadow_settings_ui() {
     ImGui::Checkbox("Show Shadow Map Debug", &show_shadow_map_debug);
     ImGui::Checkbox("Show Cascade Debug", &show_cascade_debug);
     ImGui::Checkbox("Freeze Camera", &freeze_camera);
+    ImGui::Checkbox("Enable PCF", &enable_pcf);
     ImGui::SliderInt("Cascade Count", &cascade_count, 1, MAX_CASCADE_COUNT);
   }
   ImGui::End();
