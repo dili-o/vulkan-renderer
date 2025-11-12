@@ -25,8 +25,8 @@ namespace hlx {
 
 Platform *platform = nullptr;
 static Clock clock;
-static PipelineHandle hello_triangle;
-static PipelineHandle hello_triangle_pcf;
+static PipelineHandle scene_mesh;
+static PipelineHandle scene_mesh_pcf;
 static PipelineHandle cascade_debug;
 static PipelineHandle shadow_map_debug;
 static PipelineHandle shadow_pipeline;
@@ -189,9 +189,9 @@ void Sandbox::init() {
     creation.name = "ShadowPassPipeline";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"ShadowPass.vert",
+    creation.shader_create_infos[0] = {"ShadowPass.slang",
                                        ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"ShadowPass.geom",
+    creation.shader_create_infos[1] = {"ShadowPass.slang",
                                        ShaderStage::Geometry};
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
@@ -211,9 +211,9 @@ void Sandbox::init() {
     creation.name = "HelloTriangle";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"HelloTriangle.vert",
+    creation.shader_create_infos[0] = {"SceneMesh_vert.slang",
                                        ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"HelloTriangle.frag",
+    creation.shader_create_infos[1] = {"SceneMesh_frag.slang",
                                        ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
@@ -226,18 +226,18 @@ void Sandbox::init() {
     creation.compare_op = CompareOp::Less;
     creation.render_pass = rf->main_pass;
 
-    hello_triangle = rf->create_pipeline(creation);
+    scene_mesh = rf->create_pipeline(creation);
     cstring defines = "-DENABLE_PCF";
     creation.shader_create_infos[1].defines = defines;
-    hello_triangle_pcf = rf->create_pipeline(creation);
+    scene_mesh_pcf = rf->create_pipeline(creation);
   }{
     PipelineCreation creation;
     creation.name = "CascadeDebug";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"HelloTriangle.vert",
+    creation.shader_create_infos[0] = {"SceneMesh_vert.slang",
                                        ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"CascadeDebug.frag",
+    creation.shader_create_infos[1] = {"CascadeDebug.slang",
                                        ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
@@ -257,9 +257,9 @@ void Sandbox::init() {
     creation.name = "FrustumDebugPipeline";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"Frustum.vert",
+    creation.shader_create_infos[0] = {"FrustumDebug.slang",
                                        ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"Frustum.frag",
+    creation.shader_create_infos[1] = {"FrustumDebug.slang",
                                        ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
@@ -280,9 +280,9 @@ void Sandbox::init() {
     creation.name = "ShadowMapDebug";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
         sizeof(ShaderCreateInfo) * 2, stack_allocator);
-    creation.shader_create_infos[0] = {"ShadowMapDebug.vert",
+    creation.shader_create_infos[0] = {"ShadowMapDebug.slang",
                                        ShaderStage::Vertex};
-    creation.shader_create_infos[1] = {"ShadowMapDebug.frag",
+    creation.shader_create_infos[1] = {"ShadowMapDebug.slang",
                                        ShaderStage::Fragment};
     creation.shader_count = 2;
     creation.pipeline_type = PipelineType::Graphics;
@@ -529,9 +529,9 @@ void Sandbox::render_frame() {
       rf->graphics_context->bind_pipeline(cascade_debug);
     } else {
       if (enable_pcf)
-        rf->graphics_context->bind_pipeline(hello_triangle_pcf);
+        rf->graphics_context->bind_pipeline(scene_mesh_pcf);
       else
-        rf->graphics_context->bind_pipeline(hello_triangle);
+        rf->graphics_context->bind_pipeline(scene_mesh);
     }
     rf->graphics_context->set_scissor(0.f, 0.f, (f32)width, (f32)height);
     rf->graphics_context->set_viewport(0.f, 0.f, (f32)width, (f32)height, 0.f,
@@ -660,8 +660,8 @@ void Sandbox::shutdown() {
   scene_constants_sets.shutdown();
   rf->destroy_binding_set_layout(scene_constants_set_layout);
   rf->destroy_sampler(shadow_map_sampler);
-  rf->destroy_pipeline(hello_triangle);
-  rf->destroy_pipeline(hello_triangle_pcf);
+  rf->destroy_pipeline(scene_mesh);
+  rf->destroy_pipeline(scene_mesh_pcf);
   rf->destroy_pipeline(cascade_debug);
   rf->destroy_pipeline(shadow_map_debug);
   rf->destroy_pipeline(shadow_pipeline);

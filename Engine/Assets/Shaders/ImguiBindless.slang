@@ -7,17 +7,16 @@ struct VSInput {
 };
 
 struct VSOutput {
-    float4 pos : SV_POSITION;
-    float4 frag_color;
-    float2 frag_uv;
-    nointerpolation uint texture_id;
+	float4 pos : SV_POSITION;
+	float4 frag_color;
+	float2 frag_uv;
+	nointerpolation uint texture_id;
 };
 
 [shader("vertex")]
-VSOutput vertMain(
-  VSInput input,
-	uniform float4 scale_translate,
-	uint instance_id: SV_VulkanInstanceID) {
+VSOutput vertMain(VSInput input,
+									uniform float4 scale_translate,
+									uint instance_id: SV_VulkanInstanceID) {
 	VSOutput output;
   output.frag_uv = input.uv;
   output.frag_color = input.color_UNORM;
