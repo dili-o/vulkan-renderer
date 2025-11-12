@@ -31,14 +31,14 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir, uint
 #ifdef ENABLE_PCF
   float bias = max(0.0005f * (1.f - dot(normal, lightDir)) * (1.f + cascadeIndex), 0.0005f);
   vec2 texelSize = 1.f / textureSize(globalSamplers[nonuniformEXT(shadowMap)], 0);
-  for(int x = -1; x <= 1; ++x) {
-    for(int y = -1; y <= 1; ++y) {
+  for(int x = -4; x <= 4; ++x) {
+    for(int y = -4; y <= 4; ++y) {
       float pcfDepth = texture(globalSamplers[nonuniformEXT(shadowMap)],
                                projCoords.xy + vec2(x, y) * texelSize).r; 
       shadow += currentDepth - bias > pcfDepth  ? 1.f : 0.f;        
     }    
   }
-  shadow /= 9.f;
+  shadow /= 81.f;
 #else
   float bias = max(0.05f * (1.f - dot(normal, lightDir)), 0.005f);
   shadow = currentDepth - bias > closestDepth ? 1.f : 0.f;

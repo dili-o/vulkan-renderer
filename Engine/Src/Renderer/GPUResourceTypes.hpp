@@ -23,10 +23,11 @@ using CommandBufferHandle = ResourceHandle<CommandBufferTag>;
 
 namespace ShaderStage {
 enum Enum {
-  Vertex = 1 << 0,
+  Vertex   = 1 << 0,
   Fragment = 1 << 1,
-  Compute = 1 << 2,
-  AllStage = 1 << 3
+  Compute  = 1 << 2,
+  Geometry = 1 << 3,
+  AllStage = 1 << 4
 };
 }
 

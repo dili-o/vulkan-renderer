@@ -84,6 +84,7 @@ struct VulkanImageView {
   SamplerHandle sampler;
   u32 base_mip_level = 0;
   u32 base_array_level = 0;
+  u32 array_count = 1;
   cstring name = nullptr;
 };
 

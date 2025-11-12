@@ -169,6 +169,8 @@ cstring to_compiler_stage(ShaderStage::Enum stage) {
     return "frag";
   case ShaderStage::Compute:
     return "comp";
+  case ShaderStage::Geometry:
+    return "geom";
   default:
     HERROR("Unknown shader stage!");
     return nullptr;
@@ -177,7 +179,7 @@ cstring to_compiler_stage(ShaderStage::Enum stage) {
 
 VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage_) {
   VkShaderStageFlags stage{};
-  if (stage_ == ShaderStage::AllStage)
+  if (stage_ & ShaderStage::AllStage)
     return VK_SHADER_STAGE_ALL;
   if (stage_ & ShaderStage::Vertex)
     stage |= VK_SHADER_STAGE_VERTEX_BIT;
@@ -185,6 +187,8 @@ VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage_) {
     stage |= VK_SHADER_STAGE_FRAGMENT_BIT;
   if (stage_ & ShaderStage::Compute)
     stage |= VK_SHADER_STAGE_COMPUTE_BIT;
+  if (stage_ & ShaderStage::Geometry)
+    stage |= VK_SHADER_STAGE_GEOMETRY_BIT;
 
   HASSERT(stage);
   return stage;

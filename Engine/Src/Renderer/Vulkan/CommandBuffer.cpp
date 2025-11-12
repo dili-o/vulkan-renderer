@@ -110,6 +110,7 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
 
   VkRenderingAttachmentInfo color_attachment_infos[MAX_COLOR_ATTACHMENTS];
 
+  u32 layer_count = 1;
   for (u32 i = 0; i < render_pass->num_colour_attachments; ++i) {
     VkRenderingAttachmentInfo &color_attachment_info =
         color_attachment_infos[i];
@@ -121,16 +122,16 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color_attachment_info.loadOp =
         to_vk_load_op(render_pass->colour_attachments[i].load_op);
-
     color_attachment_info.storeOp =
         to_vk_store_op(render_pass->colour_attachments[i].store_op);
-
     color_attachment_info.clearValue = {{{0.f, 0.f, 0.1f, 1.0f}}};
     color_attachment_info.clearValue.color.uint32[0] = UINT32_MAX;
     color_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
     color_attachment_info.pNext = nullptr;
     color_attachment_info.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     color_attachment_info.resolveImageView = VK_NULL_HANDLE;
+
+    layer_count = std::max(layer_count, view->array_count);
   }
 
   VkRenderingAttachmentInfo depth_attachment_info{
@@ -151,10 +152,12 @@ void VulkanCommandBuffer::bind_renderpass(RenderPassHandle render_pass_handle,
     depth_attachment_info.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
     depth_attachment_info.clearValue.depthStencil = {1.f, 0};
     depth_attachment_info.resolveMode = VK_RESOLVE_MODE_NONE;
+
+    layer_count = std::max(layer_count, depth_image_view->array_count);
   }
 
   VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
-  render_info.layerCount = 1;
+  render_info.layerCount = layer_count;
   render_info.renderArea = {
       {(i32)offsets[0], (i32)offsets[1]},
       {extents[0], extents[1]}};

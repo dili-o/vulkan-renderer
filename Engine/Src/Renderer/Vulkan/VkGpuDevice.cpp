@@ -957,6 +957,7 @@ VkGpuDevice::create_image_view(const TextureCreation &creation,
   view->name = name;
   view->base_array_level = creation.array_base_level;
   view->base_mip_level = creation.mip_base_level;
+  view->array_count = creation.array_layer_count;
 
   if (creation.usage & TextureUsage::Sampled) {
     view->sampler = creation.sampler;

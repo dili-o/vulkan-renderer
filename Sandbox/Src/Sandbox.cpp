@@ -20,7 +20,7 @@
 
 namespace hlx {
 
-#define SHADOW_MAP_SIZE 1024
+#define SHADOW_MAP_SIZE 4096
 #define MAX_CASCADE_COUNT 4
 
 Platform *platform = nullptr;
@@ -183,16 +183,16 @@ void Sandbox::init() {
     RenderPassCreation creation{};
     creation.add_depth_attachment(LoadOp::Clear, StoreOp::Store, shadow_map);
     shadow_pass = rf->create_render_pass(creation);
-    rf->device->set_render_pass_texture(
-    shadow_pass, cascade_textures[1]/* shadow_map */, true, 0);
   }
   {
     PipelineCreation creation{};
     creation.name = "ShadowPassPipeline";
     creation.shader_create_infos = (ShaderCreateInfo *)halloca(
-        sizeof(ShaderCreateInfo) * 1, stack_allocator);
+        sizeof(ShaderCreateInfo) * 2, stack_allocator);
     creation.shader_create_infos[0] = {"ShadowPass.vert",
                                        ShaderStage::Vertex};
+    creation.shader_create_infos[1] = {"ShadowPass.geom",
+                                       ShaderStage::Geometry};
     creation.shader_count = 1;
     creation.pipeline_type = PipelineType::Graphics;
     creation.cull_mode = CullMode::Back;
@@ -488,7 +488,6 @@ void Sandbox::render_frame() {
     for (u32 i = 0; i < cascade_count; ++i) {
       rf->device->set_render_pass_texture(
         shadow_pass, cascade_textures[i], true, 0);
-
       rf->graphics_context->bind_renderpass(shadow_pass, extents, offsets);
       rf->graphics_context->bind_vertex_buffer(vertex_buffer.handle, 0, 1);
       rf->graphics_context->bind_index_buffer(index_buffer.handle, 0, false);
@@ -902,7 +901,7 @@ static void update_cascades(
     glm::vec3 min_extents = -max_extents;
 
     glm::mat4 light_view = glm::lookAt(frustum_center - light_dir * -min_extents.z, frustum_center, glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 light_proj = glm::ortho(min_extents.x, max_extents.x, min_extents.y, max_extents.y, -10.f, max_extents.z - min_extents.z);
+    glm::mat4 light_proj = glm::ortho(min_extents.x, max_extents.x, min_extents.y, max_extents.y, -100.f, max_extents.z - min_extents.z);
     light_proj[1][1] *= -1.f;
     cascades_data.cascade_matrices[i] = light_proj * light_view;
     
