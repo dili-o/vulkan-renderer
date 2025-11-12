@@ -1,7 +1,7 @@
 #include "SpirvParser.hpp"
+#include "Containers/Array.hpp"
 #include "Core/Assert.hpp"
 #include "Core/Memory.hpp"
-#include "Renderer/Vulkan/VulkanTypes.hpp"
 // Vendor
 #include <cstring>
 #include <spirv_reflect.h>
@@ -17,26 +17,6 @@ VkFormat get_unorm_variant(u32 component_count) {
     return VK_FORMAT_UNDEFINED;
   }
 }
-
-// Returns a new set layout if one does not already exist in the ParseResult
-// VulkanDescriptorSetLayout &
-// get_set(Array<VulkanDescriptorSetLayout> &set_layouts, u32 set_index) {
-//  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-//  if (set_layouts.size == 0) {
-//    VulkanDescriptorSetLayout &layout = set_layouts.push_use();
-//    layout.vk_bindings.init(allocator, 4);
-//    return layout;
-//  }
-//
-//  for (u32 i = 0; i < set_layouts.size; ++i) {
-//    if (set_layouts[i].set_index == set_index)
-//      return set_layouts[i];
-//  }
-//
-//  VulkanDescriptorSetLayout &layout = set_layouts.push_use();
-//  layout.vk_bindings.init(allocator, 4);
-//  return layout;
-//}
 
 // Returns a new set binding if one does not already exist in the ParseResult
 VkDescriptorSetLayoutBinding &
@@ -57,8 +37,8 @@ get_binding(Array<VkDescriptorSetLayoutBinding> &set_bindings,
   is_unique = true;
   return set_bindings.push_use();
 }
-void parse_binary(const u32 *data, size_t data_size,
-                  ParseResult &parse_result) {
+void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result,
+                  char **entry_point_name) {
   // NOTE: StackAllocator clearing is handled by VulkanBackend::create_pipeline
   SpvReflectShaderModule module = {};
   SpvReflectResult result =
@@ -75,34 +55,6 @@ void parse_binary(const u32 *data, size_t data_size,
 
   // Descriptor Sets
   StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
-
-  // for (u32 i = 0; i < (u32)sets.size(); ++i) {
-  //   // Check if set == 0 (Reserved for bindless set)
-  //   if (sets[i]->set == 0)
-  //     continue;
-  //   // Check if we've already added the set
-  //   VulkanDescriptorSetLayout &set_layout =
-  //       get_set(parse_result.set_layouts, sets[i]->set);
-  //   set_layout.set_index = sets[i]->set;
-
-  //  for (u32 j = 0; j < sets[i]->binding_count; ++j) {
-  //    SpvReflectDescriptorBinding *spirv_binding = sets[i]->bindings[j];
-  //    bool is_unique = false;
-  //    VkDescriptorSetLayoutBinding &vk_binding = get_binding(
-  //        set_layout.vk_bindings, spirv_binding->binding, is_unique);
-  //    // First pass
-  //    if (is_unique) {
-  //      vk_binding.binding = spirv_binding->binding;
-  //      vk_binding.descriptorType =
-  //          (VkDescriptorType)spirv_binding->descriptor_type;
-  //      vk_binding.descriptorCount = 1;
-  //      vk_binding.stageFlags = (VkShaderStageFlagBits)module.shader_stage;
-  //      vk_binding.pImmutableSamplers = nullptr;
-  //    } else {
-  //      vk_binding.stageFlags |= (VkShaderStageFlagBits)module.shader_stage;
-  //    }
-  //  }
-  //}
 
   // Push Constants
   u32 push_count = 0;
@@ -122,8 +74,17 @@ void parse_binary(const u32 *data, size_t data_size,
         VK_SHADER_STAGE_ALL; // TODO: Make stage specific
   }
 
+  // Entry point
+  *entry_point_name =
+      (char *)halloca(strlen(module.entry_point_name) + 1,
+                      &MemoryService::instance()->system_allocator);
+  memset(*entry_point_name, 0, strlen(module.entry_point_name) + 1);
+  memcpy(*entry_point_name, module.entry_point_name,
+         strlen(module.entry_point_name));
+
   // VERTEX ONLY (Vertex bindings and attributes)
   if (module.shader_stage != SPV_REFLECT_SHADER_STAGE_VERTEX_BIT) {
+    spvReflectDestroyShaderModule(&module);
     return;
   }
 
@@ -159,6 +120,10 @@ void parse_binary(const u32 *data, size_t data_size,
             });
 
   for (auto input_variable : input_variables) {
+    if (!input_variable->name) {
+      --parse_result.vertex_attribute_count;
+      continue;
+    }
     if (!strcmp(input_variable->name, "gl_VertexIndex")) {
       --parse_result.vertex_attribute_count;
       continue;
@@ -195,5 +160,6 @@ void parse_binary(const u32 *data, size_t data_size,
            (input_variable->numeric.scalar.width / 8));
     }
   }
+  spvReflectDestroyShaderModule(&module);
 }
 } // namespace hlx

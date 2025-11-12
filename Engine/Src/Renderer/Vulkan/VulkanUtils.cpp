@@ -161,7 +161,23 @@ VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type) {
   }
 }
 
-cstring to_compiler_stage(ShaderStage::Enum stage) {
+cstring to_compiler_stage_slang(ShaderStage::Enum stage) {
+  switch (stage) {
+  case ShaderStage::Vertex:
+    return "vertMain";
+  case ShaderStage::Fragment:
+    return "fragMain";
+  case ShaderStage::Compute:
+    return "compMain";
+  case ShaderStage::Geometry:
+    return "geomMain";
+  default:
+    HERROR("Unknown shader stage!");
+    return nullptr;
+  }
+}
+
+cstring to_compiler_stage_glsl(ShaderStage::Enum stage) {
   switch (stage) {
   case ShaderStage::Vertex:
     return "vert";

@@ -1,0 +1,183 @@
+; SPIR-V
+; Version: 1.4
+; Generator: Khronos; 40
+; Bound: 133
+; Schema: 0
+               OpCapability ShaderNonUniform
+               OpCapability Shader
+               OpExtension "SPV_KHR_non_semantic_info"
+               OpExtension "SPV_EXT_descriptor_indexing"
+          %2 = OpExtInstImport "NonSemantic.Shader.DebugInfo.100"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %fragMain "fragMain" %global_samplers %entryPointParam_fragMain %gl_FragCoord %input_frag_uv %input_frag_color %input_texture_id
+               OpExecutionMode %fragMain OriginUpperLeft
+          %1 = OpString "#include \"Globals.slang\"
+
+struct VSInput {
+	float2 pos : POSITION0;
+	float2 uv;
+	float4 color_unorm; // NOTE: This should be changed to a uint
+};
+
+struct VSOutput {
+    float4 pos : SV_POSITION;
+    float2 frag_uv;
+    float4 frag_color;
+    nointerpolation uint texture_id;
+};
+
+[shader(\"vertex\")]
+VSOutput vertMain(
+  VSInput input,
+	uint instance_id : SV_InstanceID,
+	uniform float4 scale_translate) {
+	VSOutput output;
+  output.frag_uv = input.uv;
+  output.frag_color = input.color_unorm;
+  output.texture_id = instance_id;
+  float2 scale = scale_translate.xy;
+  float2 translate = scale_translate.zw;
+  output.pos = float4(input.pos * scale + translate, 0.f, 1.f);
+
+  return output;
+}
+
+[shader(\"fragment\")]
+float4 fragMain(VSOutput input) {
+  return input.frag_color *
+         global_samplers[NonUniformResourceIndex(input.texture_id)].Sample(input.frag_uv.xy);
+}
+"
+          %5 = OpString "D:\\vulkan-renderer-rhi\\Engine\\Assets\\Shaders\\ImguiBindless.slang"
+               OpSource Slang 1
+         %23 = OpString "fragMain"
+         %29 = OpString "slangc"
+         %30 = OpString "-target spirv  -I \"C:\\VulkanSDK\\1.4.304.0\\Bin\" -matrix-layout-column-major -fvk-use-entrypoint-name -stage pixel -entry fragMain -g2"
+         %44 = OpString "float"
+         %51 = OpString "pos"
+         %57 = OpString "frag_uv"
+         %60 = OpString "frag_color"
+         %63 = OpString "uint"
+         %66 = OpString "texture_id"
+         %69 = OpString "VSOutput"
+         %73 = OpString "input"
+               OpName %input_frag_uv "input.frag_uv"
+               OpName %input_frag_color "input.frag_color"
+               OpName %input_texture_id "input.texture_id"
+               OpName %input "input"
+               OpName %global_samplers "global_samplers"
+               OpName %sampled "sampled"
+               OpName %entryPointParam_fragMain "entryPointParam_fragMain"
+               OpName %fragMain "fragMain"
+               OpDecorate %gl_FragCoord BuiltIn FragCoord
+               OpDecorate %input_frag_uv Location 0
+               OpDecorate %input_frag_color Location 1
+               OpDecorate %input_texture_id Location 2
+               OpDecorate %input_texture_id Flat
+               OpDecorate %_arr_83_int_100 ArrayStride 8
+               OpDecorate %global_samplers Binding 0
+               OpDecorate %global_samplers DescriptorSet 0
+               OpDecorate %92 NonUniform
+               OpDecorate %entryPointParam_fragMain Location 0
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+    %uint_11 = OpConstant %uint 11
+     %uint_5 = OpConstant %uint 5
+   %uint_100 = OpConstant %uint 100
+         %12 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+    %v2float = OpTypeVector %float 2
+     %uint_0 = OpConstant %uint 0
+    %uint_33 = OpConstant %uint 33
+     %uint_8 = OpConstant %uint 8
+%_ptr_Input_v4float = OpTypePointer Input %v4float
+%_ptr_Input_v2float = OpTypePointer Input %v2float
+%_ptr_Input_uint = OpTypePointer Input %uint
+    %uint_32 = OpConstant %uint 32
+     %uint_3 = OpConstant %uint 3
+%uint_131072 = OpConstant %uint 131072
+     %uint_4 = OpConstant %uint 4
+     %uint_9 = OpConstant %uint 9
+   %uint_128 = OpConstant %uint 128
+     %uint_2 = OpConstant %uint 2
+    %uint_64 = OpConstant %uint 64
+   %uint_192 = OpConstant %uint 192
+     %uint_6 = OpConstant %uint 6
+   %uint_320 = OpConstant %uint 320
+     %uint_1 = OpConstant %uint 1
+   %uint_352 = OpConstant %uint 352
+    %uint_34 = OpConstant %uint 34
+         %82 = OpTypeImage %float 2D 2 0 0 1 Unknown
+         %83 = OpTypeSampledImage %82
+        %int = OpTypeInt 32 1
+    %int_100 = OpConstant %int 100
+%_arr_83_int_100 = OpTypeArray %83 %int_100
+%_ptr_UniformConstant__arr_83_int_100 = OpTypePointer UniformConstant %_arr_83_int_100
+%_ptr_UniformConstant_83 = OpTypePointer UniformConstant %83
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+%gl_FragCoord = OpVariable %_ptr_Input_v4float Input
+%input_frag_uv = OpVariable %_ptr_Input_v2float Input
+%input_frag_color = OpVariable %_ptr_Input_v4float Input
+%input_texture_id = OpVariable %_ptr_Input_uint Input
+%global_samplers = OpVariable %_ptr_UniformConstant__arr_83_int_100 UniformConstant
+%entryPointParam_fragMain = OpVariable %_ptr_Output_v4float Output
+%_ptr_Function_v4float = OpTypePointer Function %v4float
+%_ptr_Function_v2float = OpTypePointer Function %v2float
+%_ptr_Function_uint = OpTypePointer Function %uint
+      %int_0 = OpConstant %int 0
+      %int_1 = OpConstant %int 1
+      %int_2 = OpConstant %int 2
+      %int_3 = OpConstant %int 3
+        %120 = OpExtInst %void %2 DebugOperation %uint_0
+          %4 = OpExtInst %void %2 DebugSource %5 %1
+         %10 = OpExtInst %void %2 DebugCompilationUnit %uint_100 %uint_5 %4 %uint_11
+         %20 = OpExtInst %void %2 DebugTypeFunction %uint_0 %void
+         %22 = OpExtInst %void %2 DebugFunction %23 %20 %4 %uint_33 %uint_8 %10 %23 %uint_0 %uint_33
+         %28 = OpExtInst %void %2 DebugEntryPoint %22 %10 %29 %30
+         %43 = OpExtInst %void %2 DebugTypeBasic %44 %uint_32 %uint_3 %uint_131072
+         %48 = OpExtInst %void %2 DebugTypeVector %43 %uint_4
+         %50 = OpExtInst %void %2 DebugTypeMember %51 %48 %4 %uint_9 %uint_8 %uint_0 %uint_128 %uint_0
+         %54 = OpExtInst %void %2 DebugTypeVector %43 %uint_2
+         %56 = OpExtInst %void %2 DebugTypeMember %57 %54 %4 %uint_9 %uint_8 %uint_128 %uint_64 %uint_0
+         %59 = OpExtInst %void %2 DebugTypeMember %60 %48 %4 %uint_9 %uint_8 %uint_192 %uint_128 %uint_0
+         %62 = OpExtInst %void %2 DebugTypeBasic %63 %uint_32 %uint_6 %uint_131072
+         %65 = OpExtInst %void %2 DebugTypeMember %66 %62 %4 %uint_9 %uint_8 %uint_320 %uint_32 %uint_0
+         %68 = OpExtInst %void %2 DebugTypeComposite %69 %uint_1 %4 %uint_9 %uint_8 %10 %69 %uint_352 %uint_131072 %50 %56 %59 %65
+      %input = OpExtInst %void %2 DebugLocalVariable %73 %68 %4 %uint_33 %uint_8 %22 %uint_0 %uint_0
+        %119 = OpExtInst %void %2 DebugExpression %120
+   %fragMain = OpFunction %void None %12
+         %13 = OpLabel
+        %118 = OpVariable %_ptr_Function_uint Function
+        %116 = OpVariable %_ptr_Function_v4float Function
+        %115 = OpVariable %_ptr_Function_v2float Function
+        %113 = OpVariable %_ptr_Function_v4float Function
+        %129 = OpExtInst %void %2 DebugScope %22
+        %127 = OpExtInst %void %2 DebugValue %input %118 %119 %int_3
+        %125 = OpExtInst %void %2 DebugValue %input %116 %119 %int_2
+        %123 = OpExtInst %void %2 DebugValue %input %115 %119 %int_1
+        %121 = OpExtInst %void %2 DebugValue %input %113 %119 %int_0
+        %130 = OpExtInst %void %2 DebugNoScope
+         %26 = OpExtInst %void %2 DebugFunctionDefinition %22 %fragMain
+        %131 = OpExtInst %void %2 DebugScope %22
+         %31 = OpLoad %v4float %gl_FragCoord
+         %34 = OpLoad %v2float %input_frag_uv
+         %37 = OpLoad %v4float %input_frag_color
+         %39 = OpLoad %uint %input_texture_id
+               OpStore %113 %31
+               OpStore %115 %34
+               OpStore %116 %37
+               OpStore %118 %39
+         %77 = OpExtInst %void %2 DebugLine %4 %uint_34 %uint_34 %uint_3 %uint_4
+         %80 = OpLoad %uint %input_texture_id
+         %89 = OpAccessChain %_ptr_UniformConstant_83 %global_samplers %80
+         %90 = OpLoad %v2float %input_frag_uv
+         %91 = OpVectorShuffle %v2float %90 %90 0 1
+         %92 = OpLoad %83 %89
+    %sampled = OpImageSampleImplicitLod %v4float %92 %91 None
+         %95 = OpLoad %v4float %input_frag_color
+         %96 = OpFMul %v4float %95 %sampled
+               OpStore %entryPointParam_fragMain %96
+               OpReturn
+        %132 = OpExtInst %void %2 DebugNoScope
+               OpFunctionEnd

@@ -34,7 +34,8 @@ VkCompareOp to_vk_compare_op(CompareOp::Enum compare_op);
 
 VkDescriptorType to_vk_descriptor_type(BindingType::Enum binding_type);
 
-cstring to_compiler_stage(ShaderStage::Enum stage);
+cstring to_compiler_stage_slang(ShaderStage::Enum stage);
+cstring to_compiler_stage_glsl(ShaderStage::Enum stage);
 
 VkShaderStageFlags to_vk_shader_stage(ShaderStage::Enum stage);
 

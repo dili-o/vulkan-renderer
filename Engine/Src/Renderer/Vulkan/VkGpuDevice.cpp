@@ -539,7 +539,7 @@ GpuDevice *create_vulkan_device() {
   features12.vulkanMemoryModelDeviceScope = VK_TRUE;
   features12.storageBuffer8BitAccess = VK_TRUE;
 #endif
-  // features12.descriptorBindingVariableDescriptorCount   = VK_TRUE;
+  features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
   features12.pNext = &features11;
 
   // Enable Dynamic Rendering and Synchronization 2
@@ -1099,14 +1099,13 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
 
   // Parse shaders
   StringBuffer temp_string_buffer{};
-  temp_string_buffer.init(stack_allocator, hkilo(1));
+  temp_string_buffer.init(stack_allocator, hkilo(3));
 
   char *vulkan_sdk_path = temp_string_buffer.reserve(512);
   FileService::expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path, 512);
-  cstring glsl_compiler_path = temp_string_buffer.append_use_f(
-      "%s\\Bin\\glslangValidator.exe", vulkan_sdk_path);
+
 #ifdef SHADER_DEBUG_SYMBOLS
-  cstring compiler_debug = "-gVS";
+  cstring compiler_debug = "-g";
 #else
   cstring compiler_debug = "";
 #endif
@@ -1124,35 +1123,54 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
 
   ParseResult parse_result{};
   parse_result.push_constant.size = 0;
+  cstring glsl_compiler_path = temp_string_buffer.append_use_f(
+      "%s\\Bin\\glslangValidator.exe", vulkan_sdk_path);
+  cstring slang_compiler_path =
+      temp_string_buffer.append_use_f("%s\\Bin\\slangc.exe", vulkan_sdk_path);
 
   // Create shader spv and extract shader data from them
+  
+  char* entry_point_names[] = { nullptr, nullptr, nullptr };
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
+    cstring shader_extension = FileService::get_file_extension(shader.filename);
+
     cstring defines = shader.defines ? shader.defines : "";
-    cstring shader_args = temp_string_buffer.append_use_f(
-        " -V -S %s %s.glsl -o %s.spv --target-env vulkan1.4 %s -D_GLSL %s",
-        to_compiler_stage(shader.stage), shader.filename, shader.filename,
-        compiler_debug, defines);
-    HASSERT(process_execute(".", glsl_compiler_path, shader_args));
+    cstring shader_args = nullptr;
+    cstring stage_name = nullptr;
+    if (string_equals(shader_extension, "slang")) {
+      stage_name = to_compiler_stage_slang(shader.stage);
+      shader_args = temp_string_buffer.append_use_f(
+          "  %s -profile spirv_1_4+SPV_KHR_non_semantic_info -matrix-layout-column-major -target spirv "
+          "-o %s_%s.spv -warnings-disable 41012 -fvk-use-entrypoint-name -entry %s %s %s",
+          shader.filename, shader.filename, stage_name, stage_name,
+          compiler_debug, defines);
+      HASSERT(process_execute(".", slang_compiler_path, shader_args));
+    } else {
+      stage_name = to_compiler_stage_glsl(shader.stage);
+      shader_args = temp_string_buffer.append_use_f(
+          " -V -S %s %s.glsl -o %s_%s.spv --target-env vulkan1.4 %s -D_GLSL %s",
+          stage_name, shader.filename, shader.filename, stage_name,
+          compiler_debug, defines);
+      HASSERT(process_execute(".", glsl_compiler_path, shader_args));
+    }
 
     // TODO: Maybe create a timestamp system for checking shaders.
-    cstring binary_name =
-        temp_string_buffer.append_use_f("%s.spv", shader.filename);
+    cstring binary_name = temp_string_buffer.append_use_f(
+        "%s_%s.spv", shader.filename, stage_name);
     FileReadResult shader_binary{};
     FileService::open_read_file_binary(binary_name, &shader_binary,
                                        stack_allocator);
 
     if (shader_binary.data == nullptr) {
-      FileReadResult glsl_code{};
+      FileReadResult shader_code{};
       FileService::open_read_file_binary(
-          temp_string_buffer.append_use_f("%s.glsl", shader.filename),
-          &glsl_code, stack_allocator);
-      if (glsl_code.data)
-        HTRACE("\n{}", glsl_code.data);
+          temp_string_buffer.append_use_f("%s", shader.filename), &shader_code,
+          stack_allocator);
+      if (shader_code.data)
+        HTRACE("\n{}", shader_code.data);
       HERROR("\n{}", process_get_output());
     }
-
-    FileService::delete_file(binary_name);
 
     VkShaderModuleCreateInfo shader_create_info{
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -1162,6 +1180,8 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     VK_CHECK(vkCreateShaderModule(vk_device, &shader_create_info,
                                   vk_allocation_callbacks,
                                   &vk_shader_modules[i]));
+    FileService::delete_file(binary_name);
+    parse_binary((u32 *)shader_binary.data, shader_binary.size, parse_result, &entry_point_names[i]);
 
     VkPipelineShaderStageCreateInfo &pipeline_stage_info = vk_shader_stages[i];
     pipeline_stage_info.sType =
@@ -1169,12 +1189,10 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     pipeline_stage_info.stage =
         (VkShaderStageFlagBits)to_vk_shader_stage(shader.stage);
     pipeline_stage_info.module = vk_shader_modules[i];
-    pipeline_stage_info.pName = "main";
+    pipeline_stage_info.pName = entry_point_names[i];
     pipeline_stage_info.pSpecializationInfo = nullptr;
     pipeline_stage_info.flags = 0;
     pipeline_stage_info.pNext = nullptr;
-
-    parse_binary((u32 *)shader_binary.data, shader_binary.size, parse_result);
   }
 
   temp_string_buffer.clear();
@@ -1425,6 +1443,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   for (u32 i = 0; i < creation.shader_count; ++i) {
     vkDestroyShaderModule(vk_device, vk_shader_modules[i],
                           vk_allocation_callbacks);
+    allocator->deallocate(entry_point_names[i]);
   }
 
   pipeline->name = creation.name;
@@ -1695,7 +1714,8 @@ void VkGpuDevice::free_queued_resources() {
         destroy_buffer_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT:
-        destroy_binding_set_layout_instant({queue_object.index, queue_object.generation});
+        destroy_binding_set_layout_instant(
+            {queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_PIPELINE:
         destroy_pipeline_instant({queue_object.index, queue_object.generation});
@@ -1704,7 +1724,8 @@ void VkGpuDevice::free_queued_resources() {
         destroy_image_instant({queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_IMAGE_VIEW:
-        destroy_image_view_instant({queue_object.index, queue_object.generation});
+        destroy_image_view_instant(
+            {queue_object.index, queue_object.generation});
         break;
       case VK_OBJECT_TYPE_SAMPLER:
         destroy_sampler_instant({queue_object.index, queue_object.generation});

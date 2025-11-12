@@ -1,4 +1,3 @@
-#include "Containers/Array.hpp"
 #include "Core/Defines.hpp"
 #include "Renderer/GPUResources.hpp"
 #include "VulkanTypes.hpp"
@@ -11,9 +10,7 @@ struct ParseResult {
   u32 vertex_attribute_count = 0;
   VkPushConstantRange push_constant{}; // NOTE: only assuming one push constant
                                        // in whole pipeline
-
-  // Array<VulkanDescriptorSetLayout> set_layouts;
 };
 
-void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result);
+void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result, char **entry_point_name);
 } // namespace hlx

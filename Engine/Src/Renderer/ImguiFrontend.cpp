@@ -85,9 +85,9 @@ void ImguiFrontend::init(void *config_) {
   pipeline_creation.name = IMGUI_PIPELINE_NAME;
   pipeline_creation.shader_create_infos = (ShaderCreateInfo *)halloca(
       sizeof(ShaderCreateInfo) * 2, stack_allocator);
-  pipeline_creation.shader_create_infos[0] = {"ImguiBindless.vert",
+  pipeline_creation.shader_create_infos[0] = {"ImguiBindless.slang",
                                               ShaderStage::Vertex};
-  pipeline_creation.shader_create_infos[1] = {"ImguiBindless.frag",
+  pipeline_creation.shader_create_infos[1] = {"ImguiBindless.slang",
                                               ShaderStage::Fragment};
   pipeline_creation.shader_count = 2;
   pipeline_creation.pipeline_type = PipelineType::Graphics;
