@@ -1,3 +1,4 @@
+#include "Core/Assert.hpp"
 #include "Platform.hpp"
 
 #ifdef HELIX_PLATFORM_SDL3
@@ -16,16 +17,20 @@
 
 namespace hlx {
 
+struct PlatformState {
+  bool is_suspended{false};
+  bool is_fullscreen{false};
+  i32 width{0};
+  i32 height{0};
+  cstring name{nullptr};
+};
+static PlatformState platform_state{};
 static SDL_Window *window{nullptr};
+static bool is_initialized{false};
 
-static Platform *s_platform_service{nullptr};
-
-Platform *Platform::instance() { return s_platform_service; }
-
-void Platform::init(void *configuration_) {
-
-  if (s_platform_service) {
-    HELIX_SERVICE_RECREATE_MSG(PlatformService);
+void Platform::init(const PlatformConfiguration &config) {
+  if (is_initialized) {
+    HELIX_SERVICE_RECREATE_MSG(Platform);
     return;
   }
 
@@ -35,28 +40,30 @@ void Platform::init(void *configuration_) {
   }
 
   // Create window
-  PlatformConfiguration *config = (PlatformConfiguration *)configuration_;
   SDL_WindowFlags window_flags =
       (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
                         SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
-  window = SDL_CreateWindow(config->name, config->width, config->height,
-                            window_flags);
+  window =
+      SDL_CreateWindow(config.name, config.width, config.height, window_flags);
   if (!window) {
     HCRITICAL("SDL window could not be created! SDL error: {}", SDL_GetError());
   }
-  HELIX_SERVICE_INIT_MSG(PlatformService);
+  HELIX_SERVICE_INIT_MSG(Platform);
 
-  platform_handle = window;
-  requested_exit = false;
-  width = config->width;
-  height = config->height;
-  name = config->name;
+  platform_state.width = config.width;
+  platform_state.height = config.height;
+  platform_state.name = config.name;
 
-  s_platform_service = this;
+  is_initialized = true;
 }
 
+void *Platform::get_platform_handle() { return window; }
+
+bool Platform::is_suspended() { return platform_state.is_suspended; }
+
 void Platform::handle_os_messages() {
+  HASSERT(is_initialized);
   HELIX_PROFILER_FUNCTION();
   SDL_Event e;
   SDL_zero(e);
@@ -69,43 +76,43 @@ void Platform::handle_os_messages() {
     switch (e.type) {
     case SDL_EVENT_QUIT: {
       EventContext context{};
-      EventService::instance()->fire_event(SDL_EVENT_QUIT, 0, context);
+      EventSys::fire_event(SDL_EVENT_QUIT, 0, context);
     } break;
     case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
     case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
     case SDL_EVENT_WINDOW_RESIZED: {
       HINFO("Fullscreen");
-      SDL_GetWindowSize(window, &width, &height);
+      SDL_GetWindowSize(window, &platform_state.width, &platform_state.height);
       EventContext context{};
-      context.data.i32[0] = width;
-      context.data.i32[1] = height;
-      RendererFrontEnd::instance()->on_resize(width, height);
-      EventService::instance()->fire_event(SDL_EVENT_WINDOW_RESIZED, 0,
-                                           context);
+      context.data.i32[0] = platform_state.width;
+      context.data.i32[1] = platform_state.height;
+      RendererFrontEnd::instance()->on_resize(platform_state.width,
+                                              platform_state.height);
+      EventSys::fire_event(SDL_EVENT_WINDOW_RESIZED, 0, context);
     } break;
     case SDL_EVENT_KEY_UP:
     case SDL_EVENT_KEY_DOWN: {
       Keys key = (Keys)e.key.scancode;
       bool pressed = e.type == SDL_EVENT_KEY_DOWN;
-      InputService::instance()->process_key(key, pressed);
+      InputSys::process_key(key, pressed);
     } break;
     case SDL_EVENT_MOUSE_MOTION: {
       i32 x_pos = e.motion.xrel;
       i32 y_pos = e.motion.yrel;
-      InputService::instance()->process_mouse_move(x_pos, y_pos);
+      InputSys::process_mouse_move(x_pos, y_pos);
     } break;
     case SDL_EVENT_MOUSE_WHEEL: {
       i32 z_delta = e.wheel.y;
       if (z_delta != 0) {
         z_delta = z_delta < 0 ? -1 : 1;
       }
-      InputService::instance()->process_mouse_wheel(z_delta);
+      InputSys::process_mouse_wheel(z_delta);
     } break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
     case SDL_EVENT_MOUSE_BUTTON_DOWN: {
       Buttons button = (Buttons)e.button.button;
       bool pressed = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-      InputService::instance()->process_mouse_button(button, pressed);
+      InputSys::process_mouse_button(button, pressed);
     } break;
     }
   }
@@ -126,8 +133,8 @@ void Platform::get_mouse_position(f32 *mouseX, f32 *mouseY) {
 }
 
 void Platform::get_window_size(i32 *width_, i32 *height_) {
-  *width_ = width;
-  *height_ = height;
+  *width_ = platform_state.width;
+  *height_ = platform_state.height;
 }
 
 void Platform::sleep(u64 ms) { SDL_Delay(ms); }
@@ -135,8 +142,8 @@ void Platform::sleep(u64 ms) { SDL_Delay(ms); }
 void Platform::set_title(cstring title) { SDL_SetWindowTitle(window, title); }
 
 bool Platform::toggle_fullscreen() {
-  is_fullscreen = !is_fullscreen;
-  return SDL_SetWindowFullscreen(window, is_fullscreen);
+  platform_state.is_fullscreen = !platform_state.is_fullscreen;
+  return SDL_SetWindowFullscreen(window, platform_state.is_fullscreen);
 }
 
 i32 Platform::get_logical_processor_count() {
@@ -144,16 +151,19 @@ i32 Platform::get_logical_processor_count() {
 }
 
 void Platform::shutdown() {
+  if (!is_initialized) {
+    return;
+  }
+
   SDL_DestroyWindow(window);
   window = nullptr;
-  s_platform_service = nullptr;
+  is_initialized = false;
   SDL_Quit();
 
-  HELIX_SERVICE_SHUTDOWN_MSG(PlatformService);
+  HELIX_SERVICE_SHUTDOWN_MSG(Platform);
 }
 
 bool Platform::create_vulkan_surface(VkGpuDevice *device) {
-  SDL_Window *window = (SDL_Window *)platform_handle;
   return SDL_Vulkan_CreateSurface(window, device->vk_instance,
                                   device->vk_allocation_callbacks,
                                   &device->vk_surface);

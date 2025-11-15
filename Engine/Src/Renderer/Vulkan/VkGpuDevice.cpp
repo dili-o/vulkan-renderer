@@ -39,7 +39,7 @@ select_physical_device(VkInstance instance, VkPhysicalDevice &_physical_device,
     return false;
   }
 
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
 
   Array<VkPhysicalDevice> physical_devices{};
@@ -130,7 +130,7 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
                                     VkSurfaceKHR surface,
                                     VulkanSwapchain &swapchain,
                                     VkExtent2D &swapchain_extents) {
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
 
   VkSurfaceCapabilitiesKHR capabilities{};
@@ -199,8 +199,9 @@ static void query_swapchain_support(VkPhysicalDevice physical_device,
   if (capabilities.currentExtent.width != UINT32_MAX) {
     swapchain_extents = capabilities.currentExtent;
   } else {
-    Platform *platform = Platform::instance();
-    VkExtent2D extents = {(u32)platform->width, (u32)platform->height};
+    i32 width, height;
+    Platform::get_window_size(&width, &height);
+    VkExtent2D extents = {(u32)width, (u32)height};
 
     swapchain_extents.width =
         glm::clamp(extents.width, capabilities.minImageExtent.width,
@@ -241,7 +242,7 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 
 GpuDevice *create_vulkan_device() {
   void *memory = halloca(sizeof(VkGpuDevice),
-                         &MemoryService::instance()->system_allocator);
+                         MemorySys::system_allocator());
   VkGpuDevice *device = new (memory) VkGpuDevice();
 
   VkResult res = volkInitialize();
@@ -251,8 +252,8 @@ GpuDevice *create_vulkan_device() {
     return nullptr;
   }
 
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  HeapAllocator *allocator = MemorySys::system_allocator();
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
 
   VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -270,7 +271,7 @@ GpuDevice *create_vulkan_device() {
 
   u32 platform_extension_count = 0;
   const char *const *platform_extensions =
-      Platform::instance()->get_vulkan_extension_names(
+      Platform::get_vulkan_extension_names(
           &platform_extension_count);
 
   for (u32 i = 0; i < platform_extension_count; ++i) {
@@ -390,7 +391,7 @@ GpuDevice *create_vulkan_device() {
 #endif
 
   // Surface
-  if (!Platform::instance()->create_vulkan_surface(device)) {
+  if (!Platform::create_vulkan_surface(device)) {
     HERROR("Failed to create surface!");
     return nullptr;
   }
@@ -789,7 +790,7 @@ u32 VkGpuDevice::create_backbuffers(u32 width, u32 height, u32 count) {
   create_swapchain();
 
   vk_render_finished_semaphores.init(
-      &MemoryService::instance()->system_allocator, count, count);
+      MemorySys::system_allocator(), count, count);
   VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
   for (u32 i = 0; i < vk_render_finished_semaphores.size; ++i) {
 
@@ -1093,8 +1094,8 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   VulkanPipeline *pipeline = access_pipeline(handle);
   pipeline->vk_handle = VK_NULL_HANDLE;
 
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  HeapAllocator *allocator = MemorySys::system_allocator();
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
 
   // Parse shaders
@@ -1102,7 +1103,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   temp_string_buffer.init(stack_allocator, hkilo(3));
 
   char *vulkan_sdk_path = temp_string_buffer.reserve(512);
-  FileService::expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path, 512);
+  FileSys::expand_enviroment_variable("%VULKAN_SDK%", vulkan_sdk_path, 512);
 
 #ifdef SHADER_DEBUG_SYMBOLS
   cstring compiler_debug = "-g";
@@ -1118,8 +1119,8 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
           stack_allocator);
 
   Directory dir{};
-  FileService::current_directory(&dir);
-  FileService::change_directory(ASSETS_PATH "/Shaders/");
+  FileSys::current_directory(&dir);
+  FileSys::change_directory(ASSETS_PATH "/Shaders/");
 
   ParseResult parse_result{};
   parse_result.push_constant.size = 0;
@@ -1133,7 +1134,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   char* entry_point_names[] = { nullptr, nullptr, nullptr };
   for (u32 i = 0; i < creation.shader_count; ++i) {
     ShaderCreateInfo shader = creation.shader_create_infos[i];
-    cstring shader_extension = FileService::get_file_extension(shader.filename);
+    cstring shader_extension = FileSys::get_file_extension(shader.filename);
 
     cstring defines = shader.defines ? shader.defines : "";
     cstring shader_args = nullptr;
@@ -1159,12 +1160,12 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     cstring binary_name = temp_string_buffer.append_use_f(
         "%s_%s.spv", shader.filename, stage_name);
     FileReadResult shader_binary{};
-    FileService::open_read_file_binary(binary_name, &shader_binary,
+    FileSys::open_read_file_binary(binary_name, &shader_binary,
                                        stack_allocator);
 
     if (shader_binary.data == nullptr) {
       FileReadResult shader_code{};
-      FileService::open_read_file_binary(
+      FileSys::open_read_file_binary(
           temp_string_buffer.append_use_f("%s", shader.filename), &shader_code,
           stack_allocator);
       if (shader_code.data)
@@ -1180,7 +1181,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     VK_CHECK(vkCreateShaderModule(vk_device, &shader_create_info,
                                   vk_allocation_callbacks,
                                   &vk_shader_modules[i]));
-    FileService::delete_file(binary_name);
+    FileSys::delete_file(binary_name);
     parse_binary((u32 *)shader_binary.data, shader_binary.size, parse_result, &entry_point_names[i]);
 
     VkPipelineShaderStageCreateInfo &pipeline_stage_info = vk_shader_stages[i];
@@ -1229,10 +1230,10 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
 
   cstring cache_path =
       temp_string_buffer.append_use_f("%s\\%s.cache", "Caches", creation.name);
-  bool cache_exists = FileService::file_exists(cache_path);
+  bool cache_exists = FileSys::file_exists(cache_path);
   if (cache_exists) {
     FileReadResult read_result{};
-    FileService::open_read_file_binary(cache_path, &read_result, allocator);
+    FileSys::open_read_file_binary(cache_path, &read_result, allocator);
     VkPipelineCacheHeaderVersionOne *cache_header =
         (VkPipelineCacheHeaderVersionOne *)read_result.data;
 
@@ -1433,7 +1434,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
     VK_CHECK(vkGetPipelineCacheData(vk_device, pipeline_cache, &cache_data_size,
                                     cache_data));
 
-    FileService::write_file_binary(cache_path, cache_data, cache_data_size);
+    FileSys::write_file_binary(cache_path, cache_data, cache_data_size);
 
     stack_allocator->deallocate(cache_data);
   }
@@ -1450,7 +1451,7 @@ PipelineHandle VkGpuDevice::create_pipeline(const PipelineCreation &creation) {
   set_resource_name(VK_OBJECT_TYPE_PIPELINE, (u64)pipeline->vk_handle,
                     creation.name);
 
-  FileService::change_directory(dir.path);
+  FileSys::change_directory(dir.path);
   return handle;
 }
 
@@ -1741,7 +1742,7 @@ void VkGpuDevice::free_queued_resources() {
 
 Context *VkGpuDevice::create_context(ContextType::Enum type) {
   void *memory =
-      halloca(sizeof(VkContext), &MemoryService::instance()->system_allocator);
+      halloca(sizeof(VkContext), MemorySys::system_allocator());
   VkContext *context = new (memory) VkContext();
   context->device = this;
   context->wait_semaphore = VK_NULL_HANDLE;
@@ -1768,7 +1769,7 @@ Context *VkGpuDevice::create_context(ContextType::Enum type) {
   }
   default: {
     HERROR("Failed to create Context: Unkown ContextType!");
-    MemoryService::instance()->system_allocator.deallocate(memory);
+    MemorySys::system_allocator()->deallocate(memory);
     context = nullptr;
   }
   }
@@ -1802,12 +1803,12 @@ void VkGpuDevice::destroy_context(Context *context) {
 
   vkDestroyCommandPool(vk_device, vk_context->vk_command_pool,
                        vk_allocation_callbacks);
-  MemoryService::instance()->system_allocator.deallocate(context);
+  MemorySys::system_allocator()->deallocate(context);
 }
 
 WorkReceipt *VkGpuDevice::create_receipt() {
   void *memory = halloca(sizeof(VkWorkReceipt),
-                         &MemoryService::instance()->system_allocator);
+                         MemorySys::system_allocator());
   VkWorkReceipt *receipt = new (memory) VkWorkReceipt();
   receipt->wait_value = 0;
   receipt->vk_timeline_semaphore = VK_NULL_HANDLE;
@@ -1826,7 +1827,7 @@ void VkGpuDevice::destroy_receipt(WorkReceipt *receipt) {
   if (!receipt)
     return;
 
-  MemoryService::instance()->system_allocator.deallocate(receipt);
+  MemorySys::system_allocator()->deallocate(receipt);
 }
 
 u32 VkGpuDevice::get_next_image_index(Context *context,
@@ -1922,7 +1923,7 @@ bool VkGpuDevice::update_binding_set(BindingSetHandle set,
 }
 
 void VkGpuDevice::submit_work(Context *context_, WorkReceipt *receipt) {
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
   VkContext *vk_context = (VkContext *)context_;
   // Submit
@@ -2098,7 +2099,7 @@ void VkGpuDevice::create_swapchain() {
   VK_CHECK(vkCreateSwapchainKHR(vk_device, &create_info,
                                 vk_allocation_callbacks, &swapchain.vk_handle));
 
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
   HASSERT(swapchain.image_count <= MAX_SWAPCHAIN_IMAGES);
   vkGetSwapchainImagesKHR(vk_device, swapchain.vk_handle,

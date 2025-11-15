@@ -86,7 +86,7 @@ bool HThread::is_active() {
   return false;
 }
 
-void HThread::sleep(u64 ms) { Platform::instance()->sleep(ms); }
+void HThread::sleep(u64 ms) { Platform::sleep(ms); }
 
 u64 HThread::get_id() { return (u64)GetCurrentThreadId(); }
 } // namespace hlx

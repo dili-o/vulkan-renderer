@@ -69,36 +69,32 @@ void Camera::init(CameraConfiguration &config) {
   fov = config.fov;
   aspect_ratio = config.aspect_ratio;
 
-  EventService *event_service = EventService::instance();
-
-  event_service->register_event(SDL_EVENT_KEY_DOWN, this, camera_move_event);
-  event_service->register_event(SDL_EVENT_KEY_UP, this, camera_move_event);
-  event_service->register_event(SDL_EVENT_MOUSE_MOTION, this,
+  EventSys::register_event(SDL_EVENT_KEY_DOWN, this, camera_move_event);
+  EventSys::register_event(SDL_EVENT_KEY_UP, this, camera_move_event);
+  EventSys::register_event(SDL_EVENT_MOUSE_MOTION, this,
                                 camera_mouse_event);
-  event_service->register_event(SDL_EVENT_MOUSE_BUTTON_DOWN, this,
+  EventSys::register_event(SDL_EVENT_MOUSE_BUTTON_DOWN, this,
                                 camera_mouse_button_event);
-  event_service->register_event(SDL_EVENT_MOUSE_BUTTON_UP, this,
+  EventSys::register_event(SDL_EVENT_MOUSE_BUTTON_UP, this,
                                 camera_mouse_button_event);
-  event_service->register_event(SDL_EVENT_MOUSE_WHEEL, this,
+  EventSys::register_event(SDL_EVENT_MOUSE_WHEEL, this,
                                 camera_scroll_event);
-  event_service->register_event(SDL_EVENT_WINDOW_RESIZED, this,
+  EventSys::register_event(SDL_EVENT_WINDOW_RESIZED, this,
                                 camera_resize_event);
 }
 
 void Camera::shutdown() {
-  EventService *event_service = EventService::instance();
-
-  event_service->unregister_event(SDL_EVENT_KEY_DOWN, this, camera_move_event);
-  event_service->unregister_event(SDL_EVENT_KEY_UP, this, camera_move_event);
-  event_service->unregister_event(SDL_EVENT_MOUSE_MOTION, this,
+  EventSys::unregister_event(SDL_EVENT_KEY_DOWN, this, camera_move_event);
+  EventSys::unregister_event(SDL_EVENT_KEY_UP, this, camera_move_event);
+  EventSys::unregister_event(SDL_EVENT_MOUSE_MOTION, this,
                                   camera_mouse_event);
-  event_service->unregister_event(SDL_EVENT_MOUSE_BUTTON_DOWN, this,
+  EventSys::unregister_event(SDL_EVENT_MOUSE_BUTTON_DOWN, this,
                                   camera_mouse_button_event);
-  event_service->unregister_event(SDL_EVENT_MOUSE_BUTTON_UP, this,
+  EventSys::unregister_event(SDL_EVENT_MOUSE_BUTTON_UP, this,
                                   camera_mouse_button_event);
-  event_service->unregister_event(SDL_EVENT_MOUSE_WHEEL, this,
+  EventSys::unregister_event(SDL_EVENT_MOUSE_WHEEL, this,
                                   camera_scroll_event);
-  event_service->unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
+  EventSys::unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
                                   camera_resize_event);
 }
 
@@ -175,15 +171,14 @@ void Camera::on_mouse_event(i16 x, i16 y) {
 }
 
 void Camera::on_mouse_button_event(bool key_down, u16 key_code) {
-  Platform *platform = Platform::instance();
   if (key_down) {
     if (key_code == BUTTON_RIGHT) {
-      platform->set_window_relative_mouse_mode(true);
+      Platform::set_window_relative_mouse_mode(true);
       is_active = true;
     }
   } else {
     if (key_code == BUTTON_RIGHT) {
-      platform->set_window_relative_mouse_mode(false);
+      Platform::set_window_relative_mouse_mode(false);
       is_active = false;
       velocity = glm::vec3(0.f);
     }
@@ -191,7 +186,7 @@ void Camera::on_mouse_button_event(bool key_down, u16 key_code) {
 }
 
 void Camera::on_mouse_scroll_event(i8 direction) {
-  if (InputService::instance()->is_key_down(SDL_SCANCODE_LSHIFT)) {
+  if (InputSys::is_key_down(SDL_SCANCODE_LSHIFT)) {
     move_speed = direction > 0 ? (move_speed + 0.5f) : (move_speed - 0.5f);
 
     move_speed = glm::clamp(move_speed, 0.5f, 100.f);

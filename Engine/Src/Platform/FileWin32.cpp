@@ -20,36 +20,36 @@ static long file_get_size(FILE *f) {
   return fileSizeSigned;
 }
 
-static FileService *s_file_service{nullptr};
-FileService *FileService::instance() { return s_file_service; }
+static bool is_initialized{false};
 
-void FileService::init(void *_config) {
-  if (s_file_service) {
-    HELIX_SERVICE_RECREATE_MSG(FileService);
+
+void FileSys::init() {
+  if (is_initialized) {
+    HELIX_SERVICE_RECREATE_MSG(FileSys);
     return;
   }
 
-  s_file_service = this;
-  HELIX_SERVICE_INIT_MSG(FileService);
+  HELIX_SERVICE_INIT_MSG(FileSys);
+  is_initialized = true;
 }
 
-void FileService::shutdown() {
-  s_file_service = nullptr;
-  HELIX_SERVICE_SHUTDOWN_MSG(FileService);
+void FileSys::shutdown() {
+  HELIX_SERVICE_SHUTDOWN_MSG(FileSys);
+  is_initialized = false;
 }
 
-void FileService::current_directory(Directory *directory) {
+void FileSys::current_directory(Directory *directory) {
   DWORD written_chars = GetCurrentDirectoryA(k_max_path, directory->path);
   directory->path[written_chars] = 0;
 }
 
-void FileService::change_directory(cstring path) {
+void FileSys::change_directory(cstring path) {
   if (!SetCurrentDirectoryA(path)) {
     HERROR("Cannot change current directory to {}", path);
   }
 }
 
-bool FileService::directory_exists(cstring path) {
+bool FileSys::directory_exists(cstring path) {
   DWORD attributes = GetFileAttributesA(path);
 
   if (attributes == INVALID_FILE_ATTRIBUTES) {
@@ -59,7 +59,7 @@ bool FileService::directory_exists(cstring path) {
   return (attributes & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-cstring FileService::get_file_extension(cstring file_path) {
+cstring FileSys::get_file_extension(cstring file_path) {
   // TODO: Maybe check if the '.' comes after the '/' or '\'
   cstring last_fullstop = strrchr(file_path, '.');
   if (last_fullstop) {
@@ -69,7 +69,7 @@ cstring FileService::get_file_extension(cstring file_path) {
   return nullptr;
 }
 
-cstring FileService::get_file_from_path(cstring path) {
+cstring FileSys::get_file_from_path(cstring path) {
   cstring last_forward_separator = strrchr(path, '/');
   cstring last_backward_separator = strrchr(path, '\\');
 
@@ -87,18 +87,18 @@ cstring FileService::get_file_from_path(cstring path) {
   return path;
 }
 
-bool FileService::file_exists(cstring path) {
+bool FileSys::file_exists(cstring path) {
   WIN32_FILE_ATTRIBUTE_DATA unused;
   return GetFileAttributesExA(path, GetFileExInfoStandard, &unused);
 }
 
-void FileService::delete_file(cstring path) {
+void FileSys::delete_file(cstring path) {
   int result = remove(path);
   if (result)
     HERROR("Failed to delete file: {}", path);
 }
 
-bool FileService::open_file_dialog(char **file_name, char **path,
+bool FileSys::open_file_dialog(char **file_name, char **path,
                                    Allocator *allocator) {
   HRESULT hr =
       CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -161,7 +161,7 @@ bool FileService::open_file_dialog(char **file_name, char **path,
   return true;
 }
 
-bool FileService::open_file_binary(cstring filename,
+bool FileSys::open_file_binary(cstring filename,
                                    FileReadResult *read_result) {
   FILE *file = fopen(filename, "rb");
   if (!file) {
@@ -175,7 +175,7 @@ bool FileService::open_file_binary(cstring filename,
   return true;
 }
 
-bool FileService::open_read_file_binary(cstring filename,
+bool FileSys::open_read_file_binary(cstring filename,
                                         FileReadResult *read_result,
                                         Allocator *allocator) {
   if (!open_file_binary(filename, read_result)) {
@@ -191,14 +191,14 @@ bool FileService::open_read_file_binary(cstring filename,
   return true;
 }
 
-void FileService::close_file(FileReadResult *read_result) {
+void FileSys::close_file(FileReadResult *read_result) {
   if (read_result->internal_handle) {
     fclose((FILE *)read_result->internal_handle);
     read_result->internal_handle = nullptr;
   }
 }
 
-bool FileService::read_file_binary(cstring filename,
+bool FileSys::read_file_binary(cstring filename,
                                    FileReadResult *read_result) {
   if (read_result->internal_handle) {
     if (read_result->size > 0) {
@@ -216,7 +216,7 @@ bool FileService::read_file_binary(cstring filename,
   return true;
 }
 
-FileReadResult FileService::read_file_text(cstring filename,
+FileReadResult FileSys::read_file_text(cstring filename,
                                            Allocator *allocator) {
   FileReadResult result{nullptr, 0};
 
@@ -239,7 +239,7 @@ FileReadResult FileService::read_file_text(cstring filename,
   return result;
 }
 
-void FileService::write_file_binary(cstring filename, void *memory,
+void FileSys::write_file_binary(cstring filename, void *memory,
                                     size_t size) {
   FILE *file = fopen(filename, "wb");
   if (!file) {
@@ -250,7 +250,7 @@ void FileService::write_file_binary(cstring filename, void *memory,
   fclose(file);
 }
 
-void FileService::expand_enviroment_variable(cstring variable, char *dst_string,
+void FileSys::expand_enviroment_variable(cstring variable, char *dst_string,
                                              u32 size) {
   ExpandEnvironmentStringsA(variable, dst_string, size);
 }

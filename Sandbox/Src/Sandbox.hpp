@@ -12,6 +12,7 @@ struct Sandbox : public Application {
   f64 last_time{0.0};
   f32 delta_time{0.f};
   bool limit_frames{true};
+  bool end_application{false};
   Camera camera;
 };
 } // namespace hlx

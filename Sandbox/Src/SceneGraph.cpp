@@ -240,11 +240,11 @@ bool load_gltf_scene(Scene &scene, hlx::Array<hlx::MeshDraw> &mesh_draws,
                      hlx::UnifiedBuffer<u32> &index_buffer, cstring path,
                      cstring file_name) {
   hlx::Directory current_dir{};
-  hlx::FileService::current_directory(&current_dir);
-  hlx::FileService::change_directory(path);
+  hlx::FileSys::current_directory(&current_dir);
+  hlx::FileSys::change_directory(path);
 
   hlx::HeapAllocator *allocator =
-      &hlx::MemoryService::instance()->system_allocator;
+      hlx::MemorySys::system_allocator();
   char *file_full_path = string_concat(path, file_name, allocator);
   std::filesystem::path std_path(file_full_path);
 
@@ -272,7 +272,7 @@ bool load_gltf_scene(Scene &scene, hlx::Array<hlx::MeshDraw> &mesh_draws,
   allocator->deallocate(file_full_path);
 
   hlx::ScopedAllocator scope_allocator(
-      &hlx::MemoryService::instance()->stack_allocator);
+      hlx::MemorySys::stack_allocator());
   hlx::StackAllocator *stack_allocator = scope_allocator.allocator;
 
   hlx::Array<i32> node_parents{};
@@ -462,6 +462,6 @@ bool load_gltf_scene(Scene &scene, hlx::Array<hlx::MeshDraw> &mesh_draws,
 
   scene.mark_changed_node(root_node_parent);
 
-  hlx::FileService::change_directory(current_dir.path);
+  hlx::FileSys::change_directory(current_dir.path);
   return true;
 }

@@ -10,9 +10,12 @@
 namespace hlx {
 
 static ImguiFrontend *s_imgui_service{nullptr};
-ImguiFrontend *ImguiFrontend ::instance() { return s_imgui_service; }
 
-void ImguiFrontend::init(void *config_) {
+ImguiFrontend *ImguiFrontend::instance() {
+  return s_imgui_service;
+}
+
+void ImguiFrontend::init(const ImguiLayerConfiguration &config) {
   if (s_imgui_service) {
     HELIX_SERVICE_RECREATE_MSG(ImguiFrontend);
     return;
@@ -52,14 +55,13 @@ void ImguiFrontend::init(void *config_) {
   rf->copy_data_to_image(pixels, font_texture, width * height * sizeof(u32));
 
   // Create Index and Vertex buffer
-  ImguiLayerConfiguration *config = (ImguiLayerConfiguration *)config_;
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
-  vertex_buffers.init(allocator, config->max_frame_in_flight,
-                      config->max_frame_in_flight);
-  index_buffers.init(allocator, config->max_frame_in_flight,
-                     config->max_frame_in_flight);
+  HeapAllocator *allocator = MemorySys::system_allocator();
+  vertex_buffers.init(allocator, config.max_frame_in_flight,
+                      config.max_frame_in_flight);
+  index_buffers.init(allocator, config.max_frame_in_flight,
+                     config.max_frame_in_flight);
 
-  for (u32 i = 0; i < config->max_frame_in_flight; ++i) {
+  for (u32 i = 0; i < config.max_frame_in_flight; ++i) {
     BufferCreation creation{};
     creation.usage_flags = BufferUsage::Vertex;
     creation.mapped = true;
@@ -79,7 +81,7 @@ void ImguiFrontend::init(void *config_) {
   }
 
   // Create Pipeline
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
   PipelineCreation pipeline_creation;
   pipeline_creation.name = IMGUI_PIPELINE_NAME;
@@ -101,7 +103,7 @@ void ImguiFrontend::init(void *config_) {
 
   pipeline = RendererFrontEnd::instance()->create_pipeline(pipeline_creation);
 
-  platform_init(config_);
+  platform_init(config);
 
   s_imgui_service = this;
   HELIX_SERVICE_INIT_MSG(ImguiFrontend);

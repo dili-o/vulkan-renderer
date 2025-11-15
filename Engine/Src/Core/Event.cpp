@@ -18,41 +18,41 @@ struct EventSystemState {
 };
 
 static EventSystemState state;
-static EventService *s_event_service{nullptr};
+static bool is_initialized{false};
 
-EventService *EventService::instance() { return s_event_service; }
-
-void EventService::init(void *config) {
-  if (s_event_service) {
-    HELIX_SERVICE_RECREATE_MSG(EventService);
+void EventSys::init() {
+  if (is_initialized) {
+    HELIX_SERVICE_RECREATE_MSG(EventSys);
     return;
   }
 
   memset(&state, 0, sizeof(state));
 
-  s_event_service = this;
-  HELIX_SERVICE_INIT_MSG(EventService);
+  HELIX_SERVICE_INIT_MSG(EventSys);
+  is_initialized = true;
 }
 
-void EventService::shutdown() {
+void EventSys::shutdown() {
+  if (!is_initialized) {
+    return;
+  }
+
   for (u32 i = 0; i < MAX_MESSAGE_CODES; ++i) {
     if (state.registered[i].events.size != 0) {
       state.registered[i].events.shutdown();
     }
   }
-  HELIX_SERVICE_SHUTDOWN_MSG(EventService);
+  HELIX_SERVICE_SHUTDOWN_MSG(EventSys);
 }
 
-bool EventService::register_event(u16 code, void *listener,
+bool EventSys::register_event(u16 code, void *listener,
                                   PFN_on_event on_event) {
-  if (!s_event_service) {
-    return false;
-  }
+  HASSERT(is_initialized);
 
   Array<RegisteredEvent> &events_array = state.registered[code].events;
 
   if (events_array.size == 0) {
-    events_array.init(&MemoryService::instance()->system_allocator, 1);
+    events_array.init(MemorySys::system_allocator(), 1);
   }
 
   u32 registered_count = events_array.size;
@@ -71,11 +71,9 @@ bool EventService::register_event(u16 code, void *listener,
   return true;
 }
 
-bool EventService::unregister_event(u16 code, void *listener,
+bool EventSys::unregister_event(u16 code, void *listener,
                                     PFN_on_event on_event) {
-  if (!s_event_service) {
-    return false;
-  }
+  HASSERT(is_initialized);
 
   Array<RegisteredEvent> &events_array = state.registered[code].events;
 
@@ -97,10 +95,8 @@ bool EventService::unregister_event(u16 code, void *listener,
   return false;
 }
 
-bool EventService::fire_event(u16 code, void *sender, EventContext context) {
-  if (!s_event_service) {
-    return false;
-  }
+bool EventSys::fire_event(u16 code, void *sender, EventContext context) {
+  HASSERT(is_initialized);
 
   Array<RegisteredEvent> &events_array = state.registered[code].events;
 

@@ -1,15 +1,12 @@
 #pragma once
 
 #include "Core/Defines.hpp"
-#include "Core/Service.hpp"
 
 namespace hlx {
 
-struct FileWatcherService : public Service {
-  virtual void init(void *config = nullptr) override;
-  virtual void shutdown() override;
-
-  HELIX_DECLARE_SERVICE(FileWatcherService)
+struct FileWatcher {
+  void init();
+  void shutdown();
 
   bool set_watch_dir(cstring dir);
 

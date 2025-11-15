@@ -54,7 +54,7 @@ void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result,
   HASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
   // Descriptor Sets
-  StackAllocator *stack_allocator = &MemoryService::instance()->stack_allocator;
+  StackAllocator *stack_allocator = MemorySys::stack_allocator();
 
   // Push Constants
   u32 push_count = 0;
@@ -77,7 +77,7 @@ void parse_binary(const u32 *data, size_t data_size, ParseResult &parse_result,
   // Entry point
   *entry_point_name =
       (char *)halloca(strlen(module.entry_point_name) + 1,
-                      &MemoryService::instance()->system_allocator);
+                      MemorySys::system_allocator());
   memset(*entry_point_name, 0, strlen(module.entry_point_name) + 1);
   memcpy(*entry_point_name, module.entry_point_name,
          strlen(module.entry_point_name));

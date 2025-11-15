@@ -93,26 +93,21 @@ static void shadow_settings_ui();
 void Sandbox::init() {
   Engine::init();
   ImGui::SetCurrentContext(ImguiFrontend::instance()->get_ImGuiContext());
+  end_application = false;
 
-  platform = Platform::instance();
-  if (!platform) {
-    HCRITICAL("Failed to create a platform service!");
-  }
-
-  EventService *event_service = EventService::instance();
-  event_service->register_event(SDL_EVENT_QUIT, 0, application_on_event);
-  event_service->register_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
-  event_service->register_event(SDL_EVENT_KEY_UP, 0, application_on_key);
-  event_service->register_event(SDL_EVENT_WINDOW_RESIZED, 0,
+  EventSys::register_event(SDL_EVENT_QUIT, this, application_on_event);
+  EventSys::register_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
+  EventSys::register_event(SDL_EVENT_KEY_UP, 0, application_on_key);
+  EventSys::register_event(SDL_EVENT_WINDOW_RESIZED, 0,
                                 application_on_window_resize);
 
   RendererFrontEnd *rf = RendererFrontEnd::instance();
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
   
-  uniforms.init(&MemoryService::instance()->system_allocator, max_frames_in_flight,
+  uniforms.init(MemorySys::system_allocator(), max_frames_in_flight,
                 max_frames_in_flight);
-  scene_constants_sets.init(&MemoryService::instance()->system_allocator, max_frames_in_flight,
+  scene_constants_sets.init(MemorySys::system_allocator(), max_frames_in_flight,
                 max_frames_in_flight);
   {
     BufferCreation creation {
@@ -380,7 +375,7 @@ void Sandbox::init() {
   cam_config.near_plane = 0.5f;
   camera.init(cam_config);
 
-  mesh_draws.init(&MemoryService::instance()->system_allocator, MESH_COUNT, MESH_COUNT);
+  mesh_draws.init(MemorySys::system_allocator(), MESH_COUNT, MESH_COUNT);
   mesh_draws[0] = {
     36, 0, 0
   };
@@ -388,7 +383,7 @@ void Sandbox::init() {
     6, 36, 24
   };
 
-  scene.init(&MemoryService::instance()->system_allocator);
+  scene.init(MemorySys::system_allocator());
   i32 root = scene.add_node(-1, 0, "Root");
 
   i32 node = scene.add_node(root, 1, "Cube0");
@@ -403,16 +398,16 @@ void Sandbox::run() {
   last_time = clock.get_elapsed_time_s();
   f64 target_frame_seconds_ms = 1000.0 / 60.0;
 
-  while (!platform->requested_exit) {
+  while (!end_application) {
     platform->handle_os_messages();
 
-    if (!platform->is_suspended) {
+    if (!platform->is_suspended()) {
       f64 current_time = clock.get_elapsed_time_s();
       delta_time = current_time - last_time;
       f64 frame_start_time_ms = platform->get_absolute_time_ms();
 
-      InputService::instance()->update(delta_time);
-      JobService::instance()->update();
+      InputSys::update(delta_time);
+      JobSys::update();
 
       camera.update(delta_time);
 
@@ -442,7 +437,7 @@ void Sandbox::render_frame() {
 
   if (rf->begin_frame(nullptr)) {
     i32 width, height;
-    Platform::instance()->get_window_size(&width, &height);
+    Platform::get_window_size(&width, &height);
     glm::mat4 cam_proj = camera.get_projection();
     glm::mat4 cam_view = camera.get_view();
     glm::mat4 view_proj = cam_proj * cam_view;
@@ -608,15 +603,15 @@ void Sandbox::render_frame() {
       if (ImGui::Button("Load Model")) {
         char *file_path = nullptr;
         char *file_name = nullptr;
-        if (FileService::open_file_dialog(
+        if (FileSys::open_file_dialog(
                 &file_name, &file_path,
-                &MemoryService::instance()->system_allocator)) {
+                MemorySys::system_allocator())) {
           if (file_path && file_name) {
             string_replace(file_path, '\\', '/');
             load_gltf_scene(scene, mesh_draws, vertex_buffer, index_buffer, file_path, file_name);
 
-            MemoryService::instance()->system_allocator.deallocate(file_name);
-            MemoryService::instance()->system_allocator.deallocate(file_path);
+            MemorySys::system_allocator()->deallocate(file_name);
+            MemorySys::system_allocator()->deallocate(file_path);
           }
         }
       }
@@ -674,21 +669,20 @@ void Sandbox::shutdown() {
     rf->destroy_texture(cascade_textures[i]);
   }
 
-
-  EventService *event_service = EventService::instance();
-  event_service->unregister_event(SDL_EVENT_QUIT, 0, application_on_event);
-  event_service->unregister_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
-  event_service->unregister_event(SDL_EVENT_KEY_UP, 0, application_on_key);
-  event_service->unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
+  EventSys::unregister_event(SDL_EVENT_QUIT, 0, application_on_event);
+  EventSys::unregister_event(SDL_EVENT_KEY_DOWN, 0, application_on_key);
+  EventSys::unregister_event(SDL_EVENT_KEY_UP, 0, application_on_key);
+  EventSys::unregister_event(SDL_EVENT_WINDOW_RESIZED, this,
                                   application_on_window_resize);
   Engine::shutdown();
 }
 
 bool application_on_event(u16 event_code, void *sender, void *listener,
                           EventContext context) {
+  Sandbox* sandbox = (Sandbox*)listener;
   switch (event_code) {
   case SDL_EVENT_QUIT: {
-    Platform::instance()->requested_exit = true;
+    sandbox->end_application = true;
     return true;
   } break;
   }
@@ -702,12 +696,12 @@ bool application_on_key(u16 event_code, void *sender, void *listener,
     u16 key_code = context.data.u16[0];
     if (key_code == SDL_SCANCODE_ESCAPE) {
       EventContext context{};
-      EventService::instance()->fire_event(SDL_EVENT_QUIT, 0, context);
+      EventSys::fire_event(SDL_EVENT_QUIT, 0, context);
       return true;
     } else if (key_code == SDL_SCANCODE_A) {
       HWARN("Explicit A was pressed");
     } else if (key_code == SDL_SCANCODE_F) {
-      Platform::instance()->toggle_fullscreen();
+      Platform::toggle_fullscreen();
     } else {
       char k = (char)SDL_GetKeyFromScancode((SDL_Scancode)key_code,
                                             SDL_KMOD_NONE, false);
@@ -733,7 +727,7 @@ bool application_on_window_resize(u16 event_code, void *sender, void *listener,
   RendererFrontEnd *rf = RendererFrontEnd::instance();
 
   i32 width, height;
-  Platform::instance()->get_window_size(&width, &height);
+  Platform::get_window_size(&width, &height);
   rf->resize_texture(rf->depth_texture, width, height);
 
   return false;
@@ -780,7 +774,7 @@ static glm::mat4 get_light_view_proj(Camera &camera,
     const glm::vec3 &light_dir,
     f32 near, f32 far) {
   // Get frustum corners
-  ScopedAllocator scope_allocator(&MemoryService::instance()->stack_allocator);
+  ScopedAllocator scope_allocator(MemorySys::stack_allocator());
   StackAllocator *stack_allocator = scope_allocator.allocator;
   Array<glm::vec4> frustum_corners{};
   frustum_corners.init(stack_allocator, 8);

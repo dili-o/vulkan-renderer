@@ -1,8 +1,6 @@
 #pragma once
 
-#include "Containers/RingQueue.hpp"
 #include "Core/Defines.hpp"
-#include "Core/Service.hpp"
 #include "Platform/HMutex.hpp"
 #include "Platform/HThread.hpp"
 
@@ -63,38 +61,20 @@ struct JobResultEntry {
 
 #define MAX_JOB_RESULTS 512
 
-struct JobServiceConfiguration {
+struct Allocator;
+struct JobSysConfiguration {
   Allocator *allocator{nullptr};
   u8 thread_count{0};
   JobType::Enum *type_masks;
 };
 
-struct HLX_API JobService : public Service {
-  virtual void init(void *config = nullptr) override;
-  virtual void shutdown() override;
-  HELIX_DECLARE_SERVICE(JobService);
+struct HLX_API JobSys {
+  static void init(const JobSysConfiguration &config);
+  static void shutdown();
 
-  void update();
+  static void update();
 
-  void submit(JobInfo info);
-
-  bool running;
-  u8 thread_count;
-  JobThread job_threads[32];
-
-  RingQueue<JobInfo> low_priority_queue{};
-  RingQueue<JobInfo> medium_priority_queue{};
-  RingQueue<JobInfo> high_priority_queue{};
-
-  // Mutexes for each RingQueue since a job could be started from another job
-  HMutex low_priority_mutex{};
-  HMutex medium_priority_mutex{};
-  HMutex high_priority_mutex{};
-
-  JobResultEntry pending_results[MAX_JOB_RESULTS];
-  HMutex result_mutex;
-
-  Allocator *allocator;
+  static void submit(JobInfo info);
 };
 
 } // namespace hlx

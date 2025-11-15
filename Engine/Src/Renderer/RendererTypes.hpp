@@ -31,7 +31,6 @@ struct Platform;
 
 struct RendererConfig {
   cstring application_name{nullptr};
-  Platform *platform{nullptr};
   RendererBackendType backend_type{RENDERER_BACKEND_TYPE_VULKAN};
   VsyncMode::Enum vsync_mode{VsyncMode::On};
   u32 max_frames_in_flight;

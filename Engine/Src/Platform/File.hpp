@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Core/Defines.hpp"
-#include "Core/Service.hpp"
 namespace hlx {
 struct Allocator;
 struct HMutex;
@@ -18,11 +17,9 @@ struct HLX_API FileReadResult {
   void *internal_handle{nullptr};
 };
 
-struct HLX_API FileService : public Service {
-
-  virtual void init(void *config = nullptr) override;
-  virtual void shutdown() override;
-  HELIX_DECLARE_SERVICE(FileService);
+struct HLX_API FileSys {
+  static void init();
+  static void shutdown();
 
   static void current_directory(Directory *directory);
   static void change_directory(cstring path);

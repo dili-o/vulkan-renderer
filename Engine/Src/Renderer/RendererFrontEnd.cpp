@@ -16,16 +16,15 @@ namespace hlx {
 static RendererFrontEnd *s_renderer_frontend{nullptr};
 RendererFrontEnd *RendererFrontEnd::instance() { return s_renderer_frontend; }
 
-void RendererFrontEnd::init(void *_config) {
+void RendererFrontEnd::init(const RendererConfig &config) {
   if (s_renderer_frontend) {
     HELIX_SERVICE_RECREATE_MSG(RendererFrontEnd);
     return;
   }
 
-  RendererConfig *config = (RendererConfig *)_config;
-  device = create_device(config->backend_type);
+  device = create_device(config.backend_type);
 
-  HeapAllocator *allocator = &MemoryService::instance()->system_allocator;
+  HeapAllocator *allocator = MemorySys::system_allocator();
   bindless_textures_to_update.init(allocator, 10);
 
   if (!device) {
@@ -54,7 +53,7 @@ void RendererFrontEnd::init(void *_config) {
 
   {
     i32 width, height;
-    Platform::instance()->get_window_size(&width, &height);
+    Platform::get_window_size(&width, &height);
     TextureCreation creation{};
     creation.name = "DepthBuffer";
     creation.width = (u32)width;

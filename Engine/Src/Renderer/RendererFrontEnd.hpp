@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Core/Service.hpp"
 #include "Core/String.hpp"
 #include "Renderer/GPUResourceTypes.hpp"
 #include "Renderer/GPUResources.hpp"
@@ -32,11 +31,11 @@ struct WorkReceipt;
 struct TransferContext;
 struct ComputeContext;
 
-struct HLX_API RendererFrontEnd : public Service {
-  virtual void init(void *config) override;
-  virtual void shutdown() override;
+struct HLX_API RendererFrontEnd {
+  void init(const RendererConfig &config);
+  void shutdown();
 
-  HELIX_DECLARE_SERVICE(RendererFrontEnd);
+  static RendererFrontEnd *instance();
 
   void on_resize(u16 width, u16 height);
   bool begin_frame(RenderPacket *packet);

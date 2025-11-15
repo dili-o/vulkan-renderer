@@ -1,4 +1,5 @@
 #include "ImguiFrontend.hpp"
+#include "Platform/Platform.hpp"
 
 #ifdef HELIX_PLATFORM_SDL3
 #include "Renderer/RendererTypes.hpp"
@@ -9,16 +10,14 @@
 
 namespace hlx {
 
-bool ImguiFrontend::platform_init(void *configuration) {
-  ImguiLayerConfiguration *config = (ImguiLayerConfiguration *)configuration;
-
-  if (config->type == RendererBackendType::RENDERER_BACKEND_TYPE_VULKAN) {
-    return ImGui_ImplSDL3_InitForVulkan((SDL_Window *)config->window_handle);
+bool ImguiFrontend::platform_init(const ImguiLayerConfiguration &config) {
+  if (config.type == RendererBackendType::RENDERER_BACKEND_TYPE_VULKAN) {
+    return ImGui_ImplSDL3_InitForVulkan((SDL_Window *)Platform::get_platform_handle());
   }
   return false;
 }
 
-void ImguiFrontend::platform_shutdown(void *configuration) {
+void ImguiFrontend::platform_shutdown() {
   ImGui_ImplSDL3_Shutdown();
 }
 

@@ -24,21 +24,17 @@ std::string wstring_to_utf8(const std::wstring &wstr) {
   return result;
 }
 
-static FileWatcherService *s_file_watch_service{nullptr};
+static FileWatcher *s_file_watch_service{nullptr};
 static std::unique_ptr<filewatch::FileWatch<std::wstring>> watch;
 
-FileWatcherService *FileWatcherService ::instance() {
-  return s_file_watch_service;
-}
-
-void FileWatcherService ::init(void *config) {
+void FileWatcher ::init() {
   if (s_file_watch_service) {
-    HELIX_SERVICE_RECREATE_MSG(FileWatcherService);
+    HELIX_SERVICE_RECREATE_MSG(FileWatcher);
     return;
   }
 
   s_file_watch_service = this;
-  HELIX_SERVICE_INIT_MSG(FileWatcherService);
+  HELIX_SERVICE_INIT_MSG(FileWatcher);
   std::wstring shader_path = to_wstring(ASSETS_PATH "/Shaders/");
   watch = std::make_unique<filewatch::FileWatch<std::wstring>>(
       shader_path,
@@ -54,14 +50,14 @@ void FileWatcherService ::init(void *config) {
       });
 }
 
-void FileWatcherService::shutdown() {
+void FileWatcher::shutdown() {
   watch_dir = nullptr;
   watch.reset();
-  HELIX_SERVICE_SHUTDOWN_MSG(FileWatcherService);
+  HELIX_SERVICE_SHUTDOWN_MSG(FileWatcher);
 }
 
-bool FileWatcherService::set_watch_dir(cstring dir) {
-  if (FileService::directory_exists(dir)) {
+bool FileWatcher::set_watch_dir(cstring dir) {
+  if (FileSys::directory_exists(dir)) {
     watch_dir = dir;
     return true;
   }

@@ -1,10 +1,8 @@
 #pragma once
 #include "Core/Defines.hpp"
-#include "Core/Service.hpp"
 
 namespace hlx {
 struct PlatformConfiguration {
-
   u32 width;
   u32 height;
 
@@ -13,41 +11,35 @@ struct PlatformConfiguration {
 
 struct VkGpuDevice;
 
-struct HLX_API Platform : public Service {
+struct HLX_API Platform {
 
-  virtual void init(void *configuration) override;
-  virtual void shutdown() override;
+  static void init(const PlatformConfiguration& config);
+  static void shutdown();
 
-  HELIX_DECLARE_SERVICE(Platform)
+  static void* get_platform_handle();
 
-  bool create_vulkan_surface(VkGpuDevice *device);
-  const char *const *get_vulkan_extension_names(u32 *count);
+  static bool is_suspended();
 
-  void handle_os_messages();
-  f64 get_absolute_time_s();
-  f64 get_absolute_time_ms();
+  static bool create_vulkan_surface(VkGpuDevice *device);
+  static const char *const *get_vulkan_extension_names(u32 *count);
 
-  void get_mouse_position(f32 *mouseX, f32 *mouseY);
-  void get_window_size(i32 *width, i32 *height);
+  static void handle_os_messages();
+  static f64 get_absolute_time_s();
+  static f64 get_absolute_time_ms();
 
-  void sleep(u64 ms);
+  static void get_mouse_position(f32 *mouseX, f32 *mouseY);
+  static void get_window_size(i32 *width, i32 *height);
 
-  void set_window_relative_mouse_mode(bool enabled);
+  static void sleep(u64 ms);
 
-  void set_title(cstring title);
+  static void set_window_relative_mouse_mode(bool enabled);
 
-  bool toggle_fullscreen();
+  static void set_title(cstring title);
+
+  static bool toggle_fullscreen();
 
   static i32 get_logical_processor_count();
   static u64 get_current_processor_id();
-  u64 get_current_thread_id();
-
-  void *platform_handle = nullptr;
-  bool requested_exit{true};
-  bool is_suspended{false};
-  bool is_fullscreen{false};
-  i32 width{0};
-  i32 height{0};
-  cstring name{nullptr};
+  static u64 get_current_thread_id();
 };
 } // namespace hlx

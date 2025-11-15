@@ -3,7 +3,6 @@
 
 #include "Defines.hpp"
 #include "Platform/HMutex.hpp"
-#include "Service.hpp"
 #include <string.h>
 
 namespace hlx {
@@ -114,30 +113,18 @@ struct HLX_API ScopedAllocator {
   size_t stack_marker = 0;
 }; // struct ScopeAllocator
 
-// Memory Service /////////////////////////////////////////////////////
-//
-//
-struct MemoryServiceConfiguration {
-
+// Memory System  /////////////////////////////////////////////////////
+struct MemorySysConfig {
   size_t heap_size{0};
   size_t stack_size{0};
-}; // struct MemoryServiceConfiguration
-//
-//
-struct HLX_API MemoryService : public Service {
+}; // struct MemorySysConfig
 
-  HELIX_DECLARE_SERVICE(MemoryService);
-
-  void init(void *configuration);
-  void shutdown();
-
-  // Frame allocator
-  StackAllocator stack_allocator;
-  HeapAllocator system_allocator;
-
-  static constexpr cstring k_name = "helix_memory_service";
-
-}; // struct MemoryService
+struct HLX_API MemorySys {
+  static void init(const MemorySysConfig &config);
+  static void shutdown();
+  static HeapAllocator *system_allocator();
+  static StackAllocator *stack_allocator();
+}; // struct MemorySys
 
 // Macro helpers //////////////////////////////////////////////////////
 #define halloca(size, allocator)                                               \

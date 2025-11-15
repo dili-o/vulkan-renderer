@@ -4,29 +4,31 @@
 
 namespace hlx {
 std::shared_ptr<spdlog::logger> s_CoreLogger;
+static bool is_initialized{false};
 
-static LogService *s_log_service{nullptr};
-
-LogService *LogService::instance() { return s_log_service; }
-
-void LogService::init(void *configuration) {
-  if (s_log_service) {
-    HELIX_SERVICE_RECREATE_MSG(LogService);
+void LogSys::init() {
+  if (is_initialized) {
+    HELIX_SERVICE_RECREATE_MSG(LogSys);
     return;
   }
-  s_log_service = this;
+
   spdlog::set_pattern("%^[%T] %n [%l]: %v%$");
   s_CoreLogger = spdlog::stdout_color_mt("Helix Engine");
   s_CoreLogger->set_level(spdlog::level::trace);
-  HELIX_SERVICE_INIT_MSG(LogService);
+  is_initialized = true;
+  HELIX_SERVICE_INIT_MSG(LogSys);
 }
 
-void LogService::shutdown() {
-  s_log_service = nullptr;
-  HELIX_SERVICE_SHUTDOWN_MSG(LogService);
+void LogSys::shutdown() {
+  if(!is_initialized) {
+    return;
+  }
+  
+  is_initialized = false;
+  HELIX_SERVICE_SHUTDOWN_MSG(LogSys);
 }
 
-inline std::shared_ptr<spdlog::logger> &LogService::GetCoreLogger() {
+inline std::shared_ptr<spdlog::logger> &LogSys::GetCoreLogger() {
   return s_CoreLogger;
 }
 

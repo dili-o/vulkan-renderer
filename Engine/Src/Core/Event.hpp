@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Defines.hpp"
-#include "Service.hpp"
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
@@ -34,16 +33,12 @@ struct EventContext {
 typedef bool (*PFN_on_event)(u16 code, void *sender, void *listener_inst,
                              EventContext data);
 
-struct HLX_API EventService : Service {
-  virtual void init(void *config = nullptr) override;
-  virtual void shutdown() override;
+struct HLX_API EventSys {
+  static void init();
+  static void shutdown();
 
-  HELIX_DECLARE_SERVICE(EventService)
-
-  bool register_event(u16 code, void *listener, PFN_on_event on_event);
-
-  bool unregister_event(u16 code, void *listener, PFN_on_event on_event);
-
-  bool fire_event(u16 code, void *sender, EventContext context);
+  static bool register_event(u16 code, void *listener, PFN_on_event on_event);
+  static bool unregister_event(u16 code, void *listener, PFN_on_event on_event);
+  static bool fire_event(u16 code, void *sender, EventContext context);
 };
 } // namespace hlx

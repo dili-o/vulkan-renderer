@@ -19,7 +19,7 @@ GpuDevice *create_device(RendererBackendType type) {
 bool destroy_device(GpuDevice *device) {
   if (device->type == RENDERER_BACKEND_TYPE_VULKAN) {
     destroy_vulkan_device((VkGpuDevice *)device);
-    MemoryService::instance()->system_allocator.deallocate(device);
+    MemorySys::system_allocator()->deallocate(device);
   } else {
   }
   return false;

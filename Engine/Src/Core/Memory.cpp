@@ -193,29 +193,47 @@ void StackAllocator::clear() { allocated_size = 0; }
 
 #pragma region MemoryService
 
-static MemoryService *s_memory_service{nullptr};
+struct MemorySysState {
+  StackAllocator stack_allocator;
+  HeapAllocator system_allocator;
+};
 
-MemoryService *MemoryService::instance() { return s_memory_service; }
+static bool is_initialized = false;
+static MemorySysState memory_system_state;
 
-void MemoryService::init(void *config_) {
-  if (s_memory_service) {
-    HELIX_SERVICE_RECREATE_MSG(MemoryService);
+void MemorySys::init(const MemorySysConfig &config) {
+  if (is_initialized) {
+    HELIX_SERVICE_RECREATE_MSG(MemorySys);
     return;
   }
-  HELIX_SERVICE_INIT_MSG(MemoryService);
-  MemoryServiceConfiguration *config = (MemoryServiceConfiguration *)config_;
+  HELIX_SERVICE_INIT_MSG(MemorySys);
 
-  system_allocator.init(config ? config->heap_size : hmega(32));
-  stack_allocator.init(config ? config->stack_size : hmega(32));
-  s_memory_service = this;
+  memory_system_state.system_allocator.init(config.heap_size);
+  memory_system_state.stack_allocator.init(config.stack_size);
+  is_initialized = true;
 }
 
-void MemoryService::shutdown() {
-  system_allocator.shutdown();
-  stack_allocator.shutdown();
+void MemorySys::shutdown() {
+  if(!is_initialized)
+    return;
 
-  HELIX_SERVICE_SHUTDOWN_MSG(MemoryService);
+  memory_system_state.system_allocator.shutdown();
+  memory_system_state.stack_allocator.shutdown();
+
+  HELIX_SERVICE_SHUTDOWN_MSG(MemorySys);
+  is_initialized = false;
 }
 
-#pragma endregion MemoryService
+HeapAllocator *MemorySys::system_allocator() {
+  HASSERT(is_initialized);
+  return &memory_system_state.system_allocator;
+}
+
+StackAllocator *MemorySys::stack_allocator() {
+  HASSERT(is_initialized);
+  return &memory_system_state.stack_allocator;
+}
+
+
+#pragma endregion MemorySys
 } // namespace hlx
